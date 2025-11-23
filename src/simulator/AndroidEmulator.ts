@@ -1,7 +1,7 @@
-import { SimulatorManager } from './SimulatorManager';
-import { Device, ScreenInfo } from './types';
-import { CommandExecutor } from '../utils/CommandExecutor';
-import { Logger } from '../utils/Logger';
+import {CommandExecutor} from '../utils/CommandExecutor';
+import {Logger} from '../utils/Logger';
+import {SimulatorManager} from './SimulatorManager';
+import {Device, ScreenInfo} from './types';
 
 export class AndroidEmulator extends SimulatorManager {
   private screenInfoCache: Map<string, ScreenInfo> = new Map();
@@ -17,7 +17,7 @@ export class AndroidEmulator extends SimulatorManager {
 
   async listDevices(): Promise<Device[]> {
     try {
-      const { stdout } = await CommandExecutor.execute('adb', ['devices', '-l']);
+      const {stdout} = await CommandExecutor.execute('adb', ['devices', '-l']);
 
       const devices: Device[] = [];
       const lines = stdout.split('\n').slice(1);
@@ -46,7 +46,7 @@ export class AndroidEmulator extends SimulatorManager {
           id,
           name,
           platform: 'android',
-          state: status === 'device' ? 'Booted' : 'Unknown'
+          state: status === 'device' ? 'Booted' : 'Unknown',
         });
       }
 
@@ -73,7 +73,7 @@ export class AndroidEmulator extends SimulatorManager {
       deviceId,
       'exec-out',
       'screencap',
-      '-p'
+      '-p',
     ]);
 
     return buffer;
@@ -86,19 +86,19 @@ export class AndroidEmulator extends SimulatorManager {
     }
 
     try {
-      const { stdout } = await CommandExecutor.execute('adb', [
+      const {stdout} = await CommandExecutor.execute('adb', [
         '-s',
         deviceId,
         'shell',
         'wm',
-        'size'
+        'size',
       ]);
 
       const match = stdout.match(/(\d+)x(\d+)/);
       if (match) {
         const info: ScreenInfo = {
           width: parseInt(match[1], 10),
-          height: parseInt(match[2], 10)
+          height: parseInt(match[2], 10),
         };
         this.screenInfoCache.set(deviceId, info);
         return info;
@@ -107,7 +107,7 @@ export class AndroidEmulator extends SimulatorManager {
       Logger.warn(`Failed to get screen info for ${deviceId}`);
     }
 
-    const defaultInfo: ScreenInfo = { width: 1080, height: 2400 };
+    const defaultInfo: ScreenInfo = {width: 1080, height: 2400};
     return defaultInfo;
   }
 
@@ -123,7 +123,7 @@ export class AndroidEmulator extends SimulatorManager {
       'input',
       'tap',
       actualX.toString(),
-      actualY.toString()
+      actualY.toString(),
     ]);
   }
 
@@ -151,7 +151,7 @@ export class AndroidEmulator extends SimulatorManager {
       actualY1.toString(),
       actualX2.toString(),
       actualY2.toString(),
-      durationMs.toString()
+      durationMs.toString(),
     ]);
   }
 
@@ -162,7 +162,7 @@ export class AndroidEmulator extends SimulatorManager {
       'shell',
       'input',
       'keyevent',
-      'KEYCODE_HOME'
+      'KEYCODE_HOME',
     ]);
   }
 
@@ -173,22 +173,26 @@ export class AndroidEmulator extends SimulatorManager {
       'shell',
       'input',
       'keyevent',
-      'KEYCODE_BACK'
+      'KEYCODE_BACK',
     ]);
   }
 
-  async sendKey(deviceId: string, key: string, special?: boolean): Promise<void> {
+  async sendKey(
+    deviceId: string,
+    key: string,
+    special?: boolean
+  ): Promise<void> {
     Logger.info(`Sending key to Android: ${key}${special ? ' (special)' : ''}`);
 
     try {
       if (special) {
         // Handle special keys with keyevent
-        const keyEventMap: { [key: string]: string } = {
-          'delete': 'KEYCODE_DEL',
-          'return': 'KEYCODE_ENTER',
-          'escape': 'KEYCODE_ESCAPE',
-          'tab': 'KEYCODE_TAB',
-          'space': 'KEYCODE_SPACE',
+        const keyEventMap: {[key: string]: string} = {
+          delete: 'KEYCODE_DEL',
+          return: 'KEYCODE_ENTER',
+          escape: 'KEYCODE_ESCAPE',
+          tab: 'KEYCODE_TAB',
+          space: 'KEYCODE_SPACE',
         };
 
         const keyEvent = keyEventMap[key.toLowerCase()];
@@ -199,7 +203,7 @@ export class AndroidEmulator extends SimulatorManager {
             'shell',
             'input',
             'keyevent',
-            keyEvent
+            keyEvent,
           ]);
         } else {
           Logger.warn(`Unknown special key: ${key}`);
@@ -215,7 +219,7 @@ export class AndroidEmulator extends SimulatorManager {
           'shell',
           'input',
           'text',
-          escapedKey
+          escapedKey,
         ]);
       }
       Logger.debug(`Key sent to Android: ${key}`);

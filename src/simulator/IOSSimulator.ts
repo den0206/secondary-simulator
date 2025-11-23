@@ -1,11 +1,11 @@
+import {randomUUID} from 'crypto';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import * as fs from 'fs/promises';
-import { randomUUID } from 'crypto';
-import { SimulatorManager } from './SimulatorManager';
-import { Device, ScreenInfo } from './types';
-import { CommandExecutor } from '../utils/CommandExecutor';
-import { Logger } from '../utils/Logger';
+import {CommandExecutor} from '../utils/CommandExecutor';
+import {Logger} from '../utils/Logger';
+import {SimulatorManager} from './SimulatorManager';
+import {Device, ScreenInfo} from './types';
 
 interface SimctlDevice {
   udid: string;
@@ -15,7 +15,7 @@ interface SimctlDevice {
 }
 
 interface SimctlOutput {
-  devices: { [runtime: string]: SimctlDevice[] };
+  devices: {[runtime: string]: SimctlDevice[]};
 }
 
 export class IOSSimulator extends SimulatorManager {
@@ -32,11 +32,11 @@ export class IOSSimulator extends SimulatorManager {
 
   async listDevices(): Promise<Device[]> {
     try {
-      const { stdout } = await CommandExecutor.execute('xcrun', [
+      const {stdout} = await CommandExecutor.execute('xcrun', [
         'simctl',
         'list',
         'devices',
-        '-j'
+        '-j',
       ]);
 
       const data: SimctlOutput = JSON.parse(stdout);
@@ -58,7 +58,7 @@ export class IOSSimulator extends SimulatorManager {
             name: device.name,
             platform: 'ios',
             state: device.state === 'Booted' ? 'Booted' : 'Shutdown',
-            runtime: runtimeName
+            runtime: runtimeName,
           });
         }
       }
@@ -83,6 +83,7 @@ export class IOSSimulator extends SimulatorManager {
 
   async takeScreenshot(deviceId: string): Promise<Buffer> {
     const tmpFile = path.join(os.tmpdir(), `sim-${randomUUID()}.png`);
+    let buffer: Buffer | null = null;
 
     try {
       await CommandExecutor.execute('xcrun', [
@@ -91,16 +92,29 @@ export class IOSSimulator extends SimulatorManager {
         deviceId,
         'screenshot',
         '--type=png',
-        tmpFile
+        tmpFile,
       ]);
 
-      const buffer = await fs.readFile(tmpFile);
+      buffer = await fs.readFile(tmpFile);
       return buffer;
+    } catch (error) {
+      Logger.error('Failed to take screenshot', error as Error);
+      throw error;
     } finally {
+      // Always try to delete the temporary file, even if there was an error
       try {
-        await fs.unlink(tmpFile);
+        await fs.unlink(tmpFile).catch(() => {
+          // If unlink fails, try again after a short delay
+          setTimeout(async () => {
+            try {
+              await fs.unlink(tmpFile);
+            } catch {
+              // Ignore if still fails - file will be cleaned up by OS eventually
+            }
+          }, 100);
+        });
       } catch {
-        // Ignore cleanup errors
+        // Ignore cleanup errors - file will be cleaned up by OS eventually
       }
     }
   }
@@ -112,18 +126,18 @@ export class IOSSimulator extends SimulatorManager {
     }
 
     try {
-      const { stdout } = await CommandExecutor.execute('xcrun', [
+      const {stdout} = await CommandExecutor.execute('xcrun', [
         'simctl',
         'io',
         deviceId,
-        'enumerate'
+        'enumerate',
       ]);
 
       const match = stdout.match(/Main Screen.*?(\d+)\s*x\s*(\d+)/i);
       if (match) {
         const info: ScreenInfo = {
           width: parseInt(match[1], 10),
-          height: parseInt(match[2], 10)
+          height: parseInt(match[2], 10),
         };
         this.screenInfoCache.set(deviceId, info);
         return info;
@@ -132,7 +146,7 @@ export class IOSSimulator extends SimulatorManager {
       Logger.warn(`Failed to get screen info for ${deviceId}`);
     }
 
-    const defaultInfo: ScreenInfo = { width: 1170, height: 2532 };
+    const defaultInfo: ScreenInfo = {width: 1170, height: 2532};
     return defaultInfo;
   }
 
@@ -146,8 +160,8 @@ export class IOSSimulator extends SimulatorManager {
 
     Logger.debug(`Tap at pixel coordinates: (${pixelX}, ${pixelY})`);
 
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
+    const {execFile} = await import('child_process');
+    const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
@@ -229,12 +243,21 @@ export class IOSSimulator extends SimulatorManager {
         end tell
       `;
 
-      const { stdout } = await execFileAsync('osascript', ['-e', getWindowScript]);
+      const {stdout} = await execFileAsync('osascript', [
+        '-e',
+        getWindowScript,
+      ]);
       // Parse the output - handle cases where there might be extra commas or spaces
-      const values = stdout.trim().split(',').filter(v => v.trim() !== '').map(v => parseInt(v.trim(), 10));
+      const values = stdout
+        .trim()
+        .split(',')
+        .filter((v) => v.trim() !== '')
+        .map((v) => parseInt(v.trim(), 10));
 
       if (values.length < 4) {
-        throw new Error(`Invalid window info from AppleScript: ${stdout.trim()}`);
+        throw new Error(
+          `Invalid window info from AppleScript: ${stdout.trim()}`
+        );
       }
 
       const [winX, winY, winW, winH] = values;
@@ -243,7 +266,9 @@ export class IOSSimulator extends SimulatorManager {
 
       // Validate window size
       if (isNaN(winW) || isNaN(winH) || winW <= 0 || winH <= 0) {
-        throw new Error(`Invalid window size: ${winW}x${winH} (raw output: ${stdout.trim()})`);
+        throw new Error(
+          `Invalid window size: ${winW}x${winH} (raw output: ${stdout.trim()})`
+        );
       }
 
       // Calculate click position: Simulator window contains device screen
@@ -260,8 +285,8 @@ export class IOSSimulator extends SimulatorManager {
       const screenOffsetY = (winH - scaledHeight) / 2;
 
       // Map device pixel coordinates to window coordinates
-      const clickX = Math.round(winX + screenOffsetX + (pixelX * scale));
-      const clickY = Math.round(winY + screenOffsetY + (pixelY * scale));
+      const clickX = Math.round(winX + screenOffsetX + pixelX * scale);
+      const clickY = Math.round(winY + screenOffsetY + pixelY * scale);
 
       Logger.debug(`Calculated click position: (${clickX}, ${clickY})`);
 
@@ -288,7 +313,11 @@ export class IOSSimulator extends SimulatorManager {
     y2: number,
     _durationMs?: number
   ): Promise<void> {
-    Logger.info(`Swipe from (${x1.toFixed(3)}, ${y1.toFixed(3)}) to (${x2.toFixed(3)}, ${y2.toFixed(3)})`);
+    Logger.info(
+      `Swipe from (${x1.toFixed(3)}, ${y1.toFixed(3)}) to (${x2.toFixed(
+        3
+      )}, ${y2.toFixed(3)})`
+    );
 
     // Get screen info to convert normalized coordinates to pixel coordinates
     const screenInfo = await this.getScreenInfo(deviceId);
@@ -297,10 +326,12 @@ export class IOSSimulator extends SimulatorManager {
     const pixelX2 = Math.round(x2 * screenInfo.width);
     const pixelY2 = Math.round(y2 * screenInfo.height);
 
-    Logger.debug(`Swipe at pixel coordinates: (${pixelX1}, ${pixelY1}) -> (${pixelX2}, ${pixelY2})`);
+    Logger.debug(
+      `Swipe at pixel coordinates: (${pixelX1}, ${pixelY1}) -> (${pixelX2}, ${pixelY2})`
+    );
 
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
+    const {execFile} = await import('child_process');
+    const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
@@ -381,12 +412,21 @@ export class IOSSimulator extends SimulatorManager {
         end tell
       `;
 
-      const { stdout } = await execFileAsync('osascript', ['-e', getWindowScript]);
+      const {stdout} = await execFileAsync('osascript', [
+        '-e',
+        getWindowScript,
+      ]);
       // Parse the output - handle cases where there might be extra commas or spaces
-      const values = stdout.trim().split(',').filter(v => v.trim() !== '').map(v => parseInt(v.trim(), 10));
+      const values = stdout
+        .trim()
+        .split(',')
+        .filter((v) => v.trim() !== '')
+        .map((v) => parseInt(v.trim(), 10));
 
       if (values.length < 4) {
-        throw new Error(`Invalid window info from AppleScript: ${stdout.trim()}`);
+        throw new Error(
+          `Invalid window info from AppleScript: ${stdout.trim()}`
+        );
       }
 
       const [winX, winY, winW, winH] = values;
@@ -395,7 +435,9 @@ export class IOSSimulator extends SimulatorManager {
 
       // Validate window size
       if (isNaN(winW) || isNaN(winH) || winW <= 0 || winH <= 0) {
-        throw new Error(`Invalid window size: ${winW}x${winH} (raw output: ${stdout.trim()})`);
+        throw new Error(
+          `Invalid window size: ${winW}x${winH} (raw output: ${stdout.trim()})`
+        );
       }
 
       // Calculate screen area bounds (similar to tap)
@@ -409,12 +451,14 @@ export class IOSSimulator extends SimulatorManager {
       const screenOffsetX = (winW - scaledWidth) / 2;
       const screenOffsetY = (winH - scaledHeight) / 2;
 
-      const startX = Math.round(winX + screenOffsetX + (pixelX1 * scale));
-      const startY = Math.round(winY + screenOffsetY + (pixelY1 * scale));
-      const endX = Math.round(winX + screenOffsetX + (pixelX2 * scale));
-      const endY = Math.round(winY + screenOffsetY + (pixelY2 * scale));
+      const startX = Math.round(winX + screenOffsetX + pixelX1 * scale);
+      const startY = Math.round(winY + screenOffsetY + pixelY1 * scale);
+      const endX = Math.round(winX + screenOffsetX + pixelX2 * scale);
+      const endY = Math.round(winY + screenOffsetY + pixelY2 * scale);
 
-      Logger.debug(`Swipe coords: (${startX}, ${startY}) -> (${endX}, ${endY})`);
+      Logger.debug(
+        `Swipe coords: (${startX}, ${startY}) -> (${endX}, ${endY})`
+      );
 
       // Perform drag using JXA (JavaScript for Automation) for smoother drag
       const dragScript = `
@@ -457,8 +501,8 @@ export class IOSSimulator extends SimulatorManager {
     Logger.info(`Pressing home on device: ${deviceId}`);
 
     // Use AppleScript to send Cmd+Shift+H (Home shortcut) to Simulator
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
+    const {execFile} = await import('child_process');
+    const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
@@ -481,11 +525,15 @@ export class IOSSimulator extends SimulatorManager {
     Logger.warn('iOS does not have a back button');
   }
 
-  async sendKey(deviceId: string, key: string, special?: boolean): Promise<void> {
+  async sendKey(
+    deviceId: string,
+    key: string,
+    special?: boolean
+  ): Promise<void> {
     Logger.info(`Sending key: ${key}${special ? ' (special)' : ''}`);
 
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
+    const {execFile} = await import('child_process');
+    const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
@@ -493,12 +541,12 @@ export class IOSSimulator extends SimulatorManager {
 
       if (special) {
         // Handle special keys with key code
-        const keyCodeMap: { [key: string]: number } = {
-          'delete': 51,    // Backspace
-          'return': 36,    // Enter
-          'escape': 53,    // Escape
-          'tab': 48,      // Tab
-          'space': 49,     // Space
+        const keyCodeMap: {[key: string]: number} = {
+          delete: 51, // Backspace
+          return: 36, // Enter
+          escape: 53, // Escape
+          tab: 48, // Tab
+          space: 49, // Space
         };
 
         const keyCode = keyCodeMap[key.toLowerCase()];

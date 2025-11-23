@@ -1,10 +1,13 @@
-import * as vscode from 'vscode';
 import sharp from 'sharp';
-import { SimulatorManager } from '../simulator/SimulatorManager';
-import { FrameBuffer } from './FrameBuffer';
-import { Logger } from '../utils/Logger';
+import * as vscode from 'vscode';
+import {SimulatorManager} from '../simulator/SimulatorManager';
+import {Logger} from '../utils/Logger';
+import {FrameBuffer} from './FrameBuffer';
 
-export type FrameCallback = (frame: string, stats: { fps: number; latency: number }) => void;
+export type FrameCallback = (
+  frame: string,
+  stats: {fps: number; latency: number}
+) => void;
 
 export class ScreenshotCapture {
   private manager: SimulatorManager;
@@ -114,7 +117,7 @@ export class ScreenshotCapture {
       if (this.frameCallback) {
         this.frameCallback(base64, {
           fps: this.currentFps,
-          latency
+          latency,
         });
       }
 
@@ -140,11 +143,11 @@ export class ScreenshotCapture {
       const processed = await sharp(buffer)
         .resize(maxWidth, null, {
           fit: 'inside',
-          withoutEnlargement: true
+          withoutEnlargement: true,
         })
         .jpeg({
           quality,
-          mozjpeg: true
+          mozjpeg: true,
         })
         .toBuffer();
 
@@ -164,5 +167,7 @@ export class ScreenshotCapture {
     this.stop();
     this.frameCallback = null;
     this.deviceId = null;
+    // Clear frame buffer to free memory
+    this.frameBuffer.reset();
   }
 }
