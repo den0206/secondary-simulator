@@ -1,6 +1,8 @@
 import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
+import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {ScreenshotCapture} from '../capture/ScreenshotCapture';
+import {StreamingCapture} from '../capture/StreamingCapture';
 import {AndroidEmulator} from '../simulator/AndroidEmulator';
 import {IOSSimulator} from '../simulator/IOSSimulator';
 import {SimulatorManager} from '../simulator/SimulatorManager';
@@ -15,7 +17,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private iosSimulator: IOSSimulator;
   private androidEmulator: AndroidEmulator;
   private currentManager: SimulatorManager | null = null;
-  private currentCapture: ScreenshotCapture | null = null;
+  private currentCapture: CaptureStrategy | null = null;
   private currentDeviceId: string | null = null;
   private currentPlatform: Platform = 'ios';
   private devices: Device[] = [];
@@ -70,6 +72,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       switch (message.type) {
         case 'init':
           await this.refreshDevices();
+          break;
+
+        case 'getCaptureMode':
+          const currentMode = vscode.workspace
+            .getConfiguration('secondarySimulator')
+            .get<string>('captureMode', 'screenshot');
+          this.postMessage({
+            type: 'captureModeChanged',
+            mode: currentMode,
+          });
           break;
 
         case 'platformChange':
@@ -138,6 +150,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             this.currentCapture.setMaxWidth(this.currentWidth);
           }
           break;
+
+        case 'captureModeChange':
+          await this.handleCaptureModeChange(message.mode as string);
+          break;
       }
     } catch (error) {
       Logger.error('Failed to handle message', error as Error);
@@ -186,16 +202,29 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    await this.startCaptureForDevice(deviceId, device);
+  }
+
+  private async startCaptureForDevice(
+    deviceId: string,
+    device: Device
+  ): Promise<void> {
     this.stopCapture();
 
     this.currentDeviceId = deviceId;
     this.currentManager =
       device.platform === 'ios' ? this.iosSimulator : this.androidEmulator;
 
-    this.currentCapture = new ScreenshotCapture(
-      this.currentManager,
-      this.currentWidth
-    );
+    // キャプチャモードを設定から取得
+    const captureMode = vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .get<string>('captureMode', 'screenshot');
+
+    await this.createCaptureInstance(captureMode);
+    if (!this.currentCapture) {
+      throw new Error('Failed to create capture instance');
+    }
+
     this.currentCapture.setDevice(deviceId);
 
     this.currentCapture.onFrame((frame, stats) => {
@@ -213,11 +242,54 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     try {
       await this.currentCapture.start();
       this.postMessage({type: 'status', text: 'Capturing'});
-      Logger.info(`Started capturing device: ${device.name}`);
+      Logger.info(
+        `Started capturing device: ${device.name} (mode: ${captureMode})`
+      );
     } catch (error) {
       Logger.error('Failed to start capture', error as Error);
-      this.sendError('Failed to start capture');
+      this.sendError((error as Error).message || 'Failed to start capture');
     }
+  }
+
+  private async createCaptureInstance(mode: string): Promise<void> {
+    if (mode === 'streaming') {
+      this.currentCapture = new StreamingCapture(
+        this.currentManager!,
+        this.currentWidth
+      );
+    } else {
+      this.currentCapture = new ScreenshotCapture(
+        this.currentManager!,
+        this.currentWidth
+      );
+    }
+  }
+
+  private async handleCaptureModeChange(mode: string): Promise<void> {
+    if (!this.currentDeviceId) {
+      this.sendError('No device selected');
+      return;
+    }
+
+    const device = this.devices.find((d) => d.id === this.currentDeviceId);
+    if (!device) {
+      this.sendError('Device not found');
+      return;
+    }
+
+    // 設定を更新
+    const config = vscode.workspace.getConfiguration('secondarySimulator');
+    await config.update('captureMode', mode, vscode.ConfigurationTarget.Global);
+
+    Logger.info(`Switching capture mode to: ${mode}`);
+
+    // 新しいモードでキャプチャを再開
+    await this.startCaptureForDevice(this.currentDeviceId, device);
+
+    this.postMessage({
+      type: 'captureModeChanged',
+      mode,
+    });
   }
 
   private async handleTap(x: number, y: number): Promise<void> {
@@ -370,10 +442,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       display: flex;
       gap: 4px;
       margin-bottom: 8px;
+      flex-wrap: wrap;
     }
 
     .device-selector select {
       flex: 1;
+      min-width: 100px;
       padding: 4px 8px;
       background: var(--vscode-input-background);
       color: var(--vscode-input-foreground);
@@ -464,6 +538,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     <select id="device">
       <option value="">Select Device...</option>
     </select>
+    <select id="capture-mode" title="Capture Mode">
+      <option value="screenshot">Screenshot</option>
+      <option value="streaming">Streaming</option>
+    </select>
   </div>
 
   <div class="simulator-container">
@@ -493,6 +571,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const overlay = document.getElementById('overlay');
     const platformSelect = document.getElementById('platform');
     const deviceSelect = document.getElementById('device');
+    const captureModeSelect = document.getElementById('capture-mode');
 
     // Touch/Mouse event handling for tap and swipe
     let isDragging = false;
@@ -637,6 +716,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       });
     });
 
+    if (captureModeSelect) {
+      captureModeSelect.addEventListener('change', () => {
+        vscode.postMessage({
+          type: 'captureModeChange',
+          mode: captureModeSelect.value
+        });
+      });
+    }
+
     document.getElementById('btn-home').addEventListener('click', () => {
       vscode.postMessage({ type: 'home' });
     });
@@ -694,6 +782,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           document.getElementById('fps').textContent = '-- FPS';
           document.getElementById('latency').textContent = '-- ms';
           break;
+
+        case 'captureModeChanged':
+          if (captureModeSelect) {
+            captureModeSelect.value = message.mode;
+          }
+          break;
       }
     });
 
@@ -722,7 +816,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       resizeTimeout = setTimeout(sendResize, 200);
     });
 
+    // 初期キャプチャモードを取得
     vscode.postMessage({ type: 'init' });
+    vscode.postMessage({ type: 'getCaptureMode' });
     setTimeout(sendResize, 100);
   </script>
 </body>
@@ -737,6 +833,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+  }
+
+  onConfigurationChanged(): void {
+    if (this.currentCapture) {
+      this.currentCapture.updateConfig();
+    }
   }
 
   dispose(): void {

@@ -2,14 +2,10 @@ import sharp from 'sharp';
 import * as vscode from 'vscode';
 import {SimulatorManager} from '../simulator/SimulatorManager';
 import {Logger} from '../utils/Logger';
+import {CaptureStrategy, FrameCallback} from './CaptureStrategy';
 import {FrameBuffer} from './FrameBuffer';
 
-export type FrameCallback = (
-  frame: string,
-  stats: {fps: number; latency: number}
-) => void;
-
-export class ScreenshotCapture {
+export class ScreenshotCapture implements CaptureStrategy {
   private manager: SimulatorManager;
   private deviceId: string | null = null;
   private frameBuffer: FrameBuffer;
@@ -90,17 +86,29 @@ export class ScreenshotCapture {
 
     this.isTakingScreenshot = true;
     const startTime = Date.now();
+    let screenshot: Buffer | null = null;
 
     try {
-      const screenshot = await this.manager.takeScreenshot(this.deviceId);
+      screenshot = await this.manager.takeScreenshot(this.deviceId);
 
       if (!this.frameBuffer.shouldSendFrame(screenshot)) {
+        // 送信しないフレームもメモリをクリア
+        if (screenshot && Buffer.isBuffer(screenshot)) {
+          screenshot.fill(0);
+        }
+        screenshot = null;
         this.scheduleNextCapture();
         return;
       }
 
       const processed = await this.processImage(screenshot);
       const base64 = processed.toString('base64');
+
+      // 元のscreenshot Bufferもクリア
+      if (screenshot && Buffer.isBuffer(screenshot)) {
+        screenshot.fill(0);
+      }
+      screenshot = null;
 
       this.frameCount++;
       const now = Date.now();
@@ -125,6 +133,11 @@ export class ScreenshotCapture {
       processed.fill(0);
     } catch (error) {
       Logger.error('Failed to capture frame', error as Error);
+      // エラー時もscreenshot Bufferをクリア（取得できた場合）
+      if (screenshot && Buffer.isBuffer(screenshot)) {
+        screenshot.fill(0);
+      }
+      screenshot = null;
     } finally {
       this.isTakingScreenshot = false;
       this.scheduleNextCapture();

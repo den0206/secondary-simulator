@@ -96,6 +96,28 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically adjust refresh rate based on screen activity"
+        },
+        "secondarySimulator.captureMode": {
+          "type": "string",
+          "enum": ["screenshot", "streaming"],
+          "enumDescriptions": [
+            "Screenshot mode: Lower resource usage, configurable refresh rate",
+            "Streaming mode: Higher frame rate, lower latency (requires more resources)"
+          ],
+          "default": "screenshot",
+          "description": "Capture mode: screenshot or streaming"
+        },
+        "secondarySimulator.streamingFps": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "maximum": 30,
+          "description": "Target frame rate for streaming mode (frames per second)"
+        },
+        "secondarySimulator.streamingLowLatency": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable low latency mode for streaming (may drop frames if system is busy)"
         }
       }
     }

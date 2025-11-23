@@ -55,6 +55,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('secondarySimulator')) {
       Logger.info('Configuration changed');
+      if (provider) {
+        provider.onConfigurationChanged();
+      }
     }
   });
 
