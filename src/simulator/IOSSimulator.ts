@@ -136,19 +136,39 @@ export class IOSSimulator extends SimulatorManager {
     return defaultInfo;
   }
 
-  async tap(deviceId: string, x: number, y: number): Promise<void> {
-    const screenInfo = await this.getScreenInfo(deviceId);
-    const actualX = Math.round(x * screenInfo.width);
-    const actualY = Math.round(y * screenInfo.height);
+  async tap(_deviceId: string, x: number, y: number): Promise<void> {
+    Logger.info(`Tap at normalized (${x.toFixed(3)}, ${y.toFixed(3)})`);
 
-    await CommandExecutor.execute('xcrun', [
-      'simctl',
-      'io',
-      deviceId,
-      'tap',
-      actualX.toString(),
-      actualY.toString()
-    ]);
+    // iOS Simulator requires clicking on the Simulator window itself
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    try {
+      // Use AppleScript to click at relative position within Simulator window
+      const script = `
+        tell application "Simulator" to activate
+        delay 0.1
+        tell application "System Events"
+          tell process "Simulator"
+            set frontWindow to front window
+            set windowPosition to position of frontWindow
+            set windowSize to size of frontWindow
+
+            -- Calculate click position relative to window
+            -- x and y are normalized (0-1)
+            set clickX to (item 1 of windowPosition) + (${x} * (item 1 of windowSize))
+            set clickY to (item 2 of windowPosition) + (${y} * (item 2 of windowSize))
+          end tell
+          click at {clickX, clickY}
+        end tell
+      `;
+
+      await execFileAsync('osascript', ['-e', script]);
+      Logger.debug('Tap sent via AppleScript');
+    } catch (error) {
+      Logger.error('Failed to send tap', error as Error);
+    }
   }
 
   async swipe(
@@ -178,12 +198,27 @@ export class IOSSimulator extends SimulatorManager {
   }
 
   async pressHome(deviceId: string): Promise<void> {
-    await CommandExecutor.execute('xcrun', [
-      'simctl',
-      'io',
-      deviceId,
-      'home'
-    ]);
+    Logger.info(`Pressing home on device: ${deviceId}`);
+
+    // Use AppleScript to send Cmd+Shift+H (Home shortcut) to Simulator
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    try {
+      const script = `
+        tell application "Simulator" to activate
+        delay 0.1
+        tell application "System Events"
+          keystroke "h" using {command down, shift down}
+        end tell
+      `;
+
+      await execFileAsync('osascript', ['-e', script]);
+      Logger.debug('Home button sent via AppleScript');
+    } catch (error) {
+      Logger.error('Failed to press home via AppleScript', error as Error);
+    }
   }
 
   async pressBack(_deviceId: string): Promise<void> {

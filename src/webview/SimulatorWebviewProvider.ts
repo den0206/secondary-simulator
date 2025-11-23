@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import * as fs from 'fs/promises';
 import { Device, Platform } from '../simulator/types';
 import { SimulatorManager } from '../simulator/SimulatorManager';
@@ -62,6 +61,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleMessage(message: { type: string; [key: string]: unknown }): Promise<void> {
+    Logger.debug(`Received message: ${message.type}`);
+
     try {
       switch (message.type) {
         case 'init':
@@ -78,23 +79,32 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
 
         case 'tap':
+          Logger.info(`Tap received: x=${message.x}, y=${message.y}`);
           await this.handleTap(message.x as number, message.y as number);
           break;
 
         case 'home':
+          Logger.info('Home button pressed');
           await this.pressHome();
           break;
 
         case 'back':
+          Logger.info('Back button pressed');
           await this.pressBack();
           break;
 
         case 'refreshDevices':
+          Logger.info('Refresh devices requested');
           await this.refreshDevices();
           break;
 
         case 'saveScreenshot':
           await this.saveScreenshot();
+          break;
+
+        case 'disconnect':
+          Logger.info('Disconnect requested');
+          this.disconnect();
           break;
 
         case 'resize':
@@ -181,6 +191,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private async handleTap(x: number, y: number): Promise<void> {
     if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot tap: no device selected');
       return;
     }
 
@@ -193,11 +204,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private async pressHome(): Promise<void> {
     if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot press home: no device selected');
       return;
     }
 
     try {
+      Logger.debug(`Pressing home on device: ${this.currentDeviceId}`);
       await this.currentManager.pressHome(this.currentDeviceId);
+      Logger.debug('Home pressed successfully');
     } catch (error) {
       Logger.error('Failed to press home', error as Error);
     }
@@ -205,6 +219,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private async pressBack(): Promise<void> {
     if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot press back: no device selected');
       return;
     }
 
@@ -247,6 +262,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.currentCapture = null;
     }
     this.postMessage({ type: 'status', text: 'Idle' });
+  }
+
+  private disconnect(): void {
+    this.stopCapture();
+    this.currentDeviceId = null;
+    this.currentManager = null;
+    this.postMessage({ type: 'disconnected' });
+    this.postMessage({ type: 'status', text: 'Disconnected' });
+    Logger.info('Device disconnected');
   }
 
   private postMessage(message: unknown): void {
@@ -388,6 +412,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     <button class="control-btn" id="btn-back" title="Back">Back</button>
     <button class="control-btn" id="btn-screenshot" title="Save Screenshot">Save</button>
     <button class="control-btn" id="btn-refresh" title="Refresh Devices">Refresh</button>
+    <button class="control-btn" id="btn-disconnect" title="Disconnect">Disconnect</button>
   </div>
 
   <div class="status-bar">
@@ -440,6 +465,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'refreshDevices' });
     });
 
+    document.getElementById('btn-disconnect').addEventListener('click', () => {
+      vscode.postMessage({ type: 'disconnect' });
+    });
+
     window.addEventListener('message', (event) => {
       const message = event.data;
 
@@ -467,6 +496,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           overlay.classList.remove('hidden');
           overlay.querySelector('span').textContent = message.text;
           screen.style.display = 'none';
+          break;
+
+        case 'disconnected':
+          overlay.classList.remove('hidden');
+          overlay.querySelector('span').textContent = 'Select a device to start';
+          screen.style.display = 'none';
+          deviceSelect.value = '';
+          document.getElementById('fps').textContent = '-- FPS';
+          document.getElementById('latency').textContent = '-- ms';
           break;
       }
     });
