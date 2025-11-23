@@ -1,0 +1,121 @@
+{
+  "name": "secondary-simulator",
+  "displayName": "Secondary Simulator",
+  "description": "Display iOS/Android simulators in the sidebar with real-time screen capture",
+  "version": "0.1.0",
+  "publisher": "secondary-simulator",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "ios",
+    "android",
+    "simulator",
+    "emulator",
+    "preview",
+    "mobile"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "simulator-container",
+          "title": "Simulator",
+          "icon": "$(device-mobile)"
+        }
+      ]
+    },
+    "views": {
+      "simulator-container": [
+        {
+          "type": "webview",
+          "id": "simulatorView",
+          "name": "Device Preview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "simulator.selectDevice",
+        "title": "Simulator: Select Device"
+      },
+      {
+        "command": "simulator.startCapture",
+        "title": "Simulator: Start Capture"
+      },
+      {
+        "command": "simulator.stopCapture",
+        "title": "Simulator: Stop Capture"
+      },
+      {
+        "command": "simulator.takeScreenshot",
+        "title": "Simulator: Save Screenshot"
+      },
+      {
+        "command": "simulator.home",
+        "title": "Simulator: Press Home"
+      },
+      {
+        "command": "simulator.back",
+        "title": "Simulator: Press Back"
+      },
+      {
+        "command": "simulator.refresh",
+        "title": "Simulator: Refresh Device List"
+      }
+    ],
+    "configuration": {
+      "title": "Secondary Simulator",
+      "properties": {
+        "secondarySimulator.refreshInterval": {
+          "type": "number",
+          "default": 500,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Screenshot refresh interval in milliseconds"
+        },
+        "secondarySimulator.imageQuality": {
+          "type": "number",
+          "default": 70,
+          "minimum": 10,
+          "maximum": 100,
+          "description": "JPEG compression quality (10-100)"
+        },
+        "secondarySimulator.maxWidth": {
+          "type": "number",
+          "default": 320,
+          "description": "Maximum display width in pixels"
+        },
+        "secondarySimulator.adaptiveRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically adjust refresh rate based on screen activity"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "clean": "rm -rf out"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^8.47.0",
+    "@typescript-eslint/parser": "^8.47.0",
+    "eslint": "^9.39.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}
