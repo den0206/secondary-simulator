@@ -17,5 +17,6 @@ export abstract class SimulatorManager {
   ): Promise<void>;
   abstract pressHome(deviceId: string): Promise<void>;
   abstract pressBack(deviceId: string): Promise<void>;
+  abstract sendKey(deviceId: string, key: string, special?: boolean): Promise<void>;
   abstract isAvailable(): Promise<boolean>;
 }

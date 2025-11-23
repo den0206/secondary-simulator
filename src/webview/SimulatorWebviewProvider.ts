@@ -1,11 +1,11 @@
-import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
-import { Device, Platform } from '../simulator/types';
-import { SimulatorManager } from '../simulator/SimulatorManager';
-import { IOSSimulator } from '../simulator/IOSSimulator';
-import { AndroidEmulator } from '../simulator/AndroidEmulator';
-import { ScreenshotCapture } from '../capture/ScreenshotCapture';
-import { Logger } from '../utils/Logger';
+import * as vscode from 'vscode';
+import {ScreenshotCapture} from '../capture/ScreenshotCapture';
+import {AndroidEmulator} from '../simulator/AndroidEmulator';
+import {IOSSimulator} from '../simulator/IOSSimulator';
+import {SimulatorManager} from '../simulator/SimulatorManager';
+import {Device, Platform} from '../simulator/types';
+import {Logger} from '../utils/Logger';
 
 export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'simulatorView';
@@ -36,7 +36,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this.extensionUri]
+      localResourceRoots: [this.extensionUri],
     };
 
     webviewView.webview.html = this.getHtmlContent(webviewView.webview);
@@ -60,7 +60,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.refreshDevices();
   }
 
-  private async handleMessage(message: { type: string; [key: string]: unknown }): Promise<void> {
+  private async handleMessage(message: {
+    type: string;
+    [key: string]: unknown;
+  }): Promise<void> {
     Logger.debug(`Received message: ${message.type}`);
 
     try {
@@ -81,6 +84,28 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         case 'tap':
           Logger.info(`Tap received: x=${message.x}, y=${message.y}`);
           await this.handleTap(message.x as number, message.y as number);
+          break;
+
+        case 'swipe':
+          Logger.info(
+            `Swipe received: (${message.x1}, ${message.y1}) -> (${message.x2}, ${message.y2})`
+          );
+          await this.handleSwipe(
+            message.x1 as number,
+            message.y1 as number,
+            message.x2 as number,
+            message.y2 as number
+          );
+          break;
+
+        case 'keypress':
+          Logger.info(
+            `Key pressed: ${message.key}${message.special ? ' (special)' : ''}`
+          );
+          await this.handleKeypress(
+            message.key as string,
+            message.special as boolean
+          );
           break;
 
         case 'home':
@@ -121,22 +146,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async refreshDevices(): Promise<void> {
-    const manager = this.currentPlatform === 'ios'
-      ? this.iosSimulator
-      : this.androidEmulator;
+    const manager =
+      this.currentPlatform === 'ios' ? this.iosSimulator : this.androidEmulator;
 
     const isAvailable = await manager.isAvailable();
     if (!isAvailable) {
       const platform = this.currentPlatform === 'ios' ? 'Xcode' : 'Android SDK';
       this.sendError(`${platform} is not installed or not in PATH`);
       this.devices = [];
-      this.postMessage({ type: 'devices', devices: [] });
+      this.postMessage({type: 'devices', devices: []});
       return;
     }
 
     this.devices = await manager.listDevices();
-    this.postMessage({ type: 'devices', devices: this.devices });
-    this.postMessage({ type: 'status', text: `${this.devices.length} devices found` });
+    this.postMessage({type: 'devices', devices: this.devices});
+    this.postMessage({
+      type: 'status',
+      text: `${this.devices.length} devices found`,
+    });
   }
 
   async selectDevice(deviceId: string): Promise<void> {
@@ -146,42 +173,46 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const device = this.devices.find(d => d.id === deviceId);
+    const device = this.devices.find((d) => d.id === deviceId);
     if (!device) {
       this.sendError('Device not found');
       return;
     }
 
     if (device.state !== 'Booted') {
-      this.sendError('Device is not running. Please start the simulator first.');
+      this.sendError(
+        'Device is not running. Please start the simulator first.'
+      );
       return;
     }
 
     this.stopCapture();
 
     this.currentDeviceId = deviceId;
-    this.currentManager = device.platform === 'ios'
-      ? this.iosSimulator
-      : this.androidEmulator;
+    this.currentManager =
+      device.platform === 'ios' ? this.iosSimulator : this.androidEmulator;
 
-    this.currentCapture = new ScreenshotCapture(this.currentManager, this.currentWidth);
+    this.currentCapture = new ScreenshotCapture(
+      this.currentManager,
+      this.currentWidth
+    );
     this.currentCapture.setDevice(deviceId);
 
     this.currentCapture.onFrame((frame, stats) => {
       this.postMessage({
         type: 'frame',
-        data: frame
+        data: frame,
       });
       this.postMessage({
         type: 'stats',
         fps: stats.fps,
-        latency: stats.latency
+        latency: stats.latency,
       });
     });
 
     try {
       await this.currentCapture.start();
-      this.postMessage({ type: 'status', text: 'Capturing' });
+      this.postMessage({type: 'status', text: 'Capturing'});
       Logger.info(`Started capturing device: ${device.name}`);
     } catch (error) {
       Logger.error('Failed to start capture', error as Error);
@@ -199,6 +230,37 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       await this.currentManager.tap(this.currentDeviceId, x, y);
     } catch (error) {
       Logger.error('Failed to send tap', error as Error);
+    }
+  }
+
+  private async handleSwipe(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number
+  ): Promise<void> {
+    if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot swipe: no device selected');
+      return;
+    }
+
+    try {
+      await this.currentManager.swipe(this.currentDeviceId, x1, y1, x2, y2);
+    } catch (error) {
+      Logger.error('Failed to send swipe', error as Error);
+    }
+  }
+
+  private async handleKeypress(key: string, special?: boolean): Promise<void> {
+    if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot send key: no device selected');
+      return;
+    }
+
+    try {
+      await this.currentManager.sendKey(this.currentDeviceId, key, special);
+    } catch (error) {
+      Logger.error('Failed to send key', error as Error);
     }
   }
 
@@ -237,18 +299,22 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      const screenshot = await this.currentManager.takeScreenshot(this.currentDeviceId);
+      const screenshot = await this.currentManager.takeScreenshot(
+        this.currentDeviceId
+      );
 
       const uri = await vscode.window.showSaveDialog({
         defaultUri: vscode.Uri.file(`screenshot-${Date.now()}.png`),
         filters: {
-          'PNG Images': ['png']
-        }
+          'PNG Images': ['png'],
+        },
       });
 
       if (uri) {
         await fs.writeFile(uri.fsPath, screenshot);
-        vscode.window.showInformationMessage(`Screenshot saved to ${uri.fsPath}`);
+        vscode.window.showInformationMessage(
+          `Screenshot saved to ${uri.fsPath}`
+        );
       }
     } catch (error) {
       Logger.error('Failed to save screenshot', error as Error);
@@ -261,15 +327,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.currentCapture.dispose();
       this.currentCapture = null;
     }
-    this.postMessage({ type: 'status', text: 'Idle' });
+    this.postMessage({type: 'status', text: 'Idle'});
   }
 
   private disconnect(): void {
     this.stopCapture();
     this.currentDeviceId = null;
     this.currentManager = null;
-    this.postMessage({ type: 'disconnected' });
-    this.postMessage({ type: 'status', text: 'Disconnected' });
+    this.postMessage({type: 'disconnected'});
+    this.postMessage({type: 'status', text: 'Disconnected'});
     Logger.info('Device disconnected');
   }
 
@@ -278,7 +344,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private sendError(text: string): void {
-    this.postMessage({ type: 'error', text });
+    this.postMessage({type: 'error', text});
   }
 
   private getHtmlContent(webview: vscode.Webview): string {
@@ -428,11 +494,133 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const platformSelect = document.getElementById('platform');
     const deviceSelect = document.getElementById('device');
 
-    screen.addEventListener('click', (e) => {
+    // Touch/Mouse event handling for tap and swipe
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    const SWIPE_THRESHOLD = 30; // minimum pixels for swipe
+    const TAP_THRESHOLD = 10; // maximum pixels for tap
+
+    screen.addEventListener('mousedown', (e) => {
+      isDragging = true;
       const rect = screen.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.height;
-      vscode.postMessage({ type: 'tap', x, y });
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      startTime = Date.now();
+      e.preventDefault();
+    });
+
+    screen.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+    });
+
+    screen.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+
+      const rect = screen.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+      const duration = Date.now() - startTime;
+
+      const deltaX = endX - startX;
+      const deltaY = endY - startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      if (distance < TAP_THRESHOLD) {
+        // It's a tap
+        const x = endX / rect.width;
+        const y = endY / rect.height;
+        vscode.postMessage({ type: 'tap', x, y });
+      } else if (distance >= SWIPE_THRESHOLD) {
+        // It's a swipe
+        const x1 = startX / rect.width;
+        const y1 = startY / rect.height;
+        const x2 = endX / rect.width;
+        const y2 = endY / rect.height;
+        vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
+      }
+    });
+
+    screen.addEventListener('mouseleave', () => {
+      isDragging = false;
+    });
+
+    // Touch events for mobile/trackpad
+    screen.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const rect = screen.getBoundingClientRect();
+        startX = touch.clientX - rect.left;
+        startY = touch.clientY - rect.top;
+        startTime = Date.now();
+        isDragging = true;
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    screen.addEventListener('touchend', (e) => {
+      if (!isDragging || e.changedTouches.length !== 1) return;
+      isDragging = false;
+
+      const touch = e.changedTouches[0];
+      const rect = screen.getBoundingClientRect();
+      const endX = touch.clientX - rect.left;
+      const endY = touch.clientY - rect.top;
+      const duration = Date.now() - startTime;
+
+      const deltaX = endX - startX;
+      const deltaY = endY - startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      if (distance < TAP_THRESHOLD) {
+        const x = endX / rect.width;
+        const y = endY / rect.height;
+        vscode.postMessage({ type: 'tap', x, y });
+      } else if (distance >= SWIPE_THRESHOLD) {
+        const x1 = startX / rect.width;
+        const y1 = startY / rect.height;
+        const x2 = endX / rect.width;
+        const y2 = endY / rect.height;
+        vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    // Keyboard input handling
+    document.addEventListener('keydown', (e) => {
+      // Only capture when screen is visible and focused
+      if (screen.style.display === 'none') return;
+
+      // Ignore modifier-only keys and some special keys
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
+
+      // Handle special keys
+      if (e.key === 'Backspace') {
+        vscode.postMessage({ type: 'keypress', key: 'delete', special: true });
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        vscode.postMessage({ type: 'keypress', key: 'return', special: true });
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        vscode.postMessage({ type: 'keypress', key: 'escape', special: true });
+        e.preventDefault();
+        return;
+      }
+
+      // For regular characters
+      if (e.key.length === 1) {
+        vscode.postMessage({ type: 'keypress', key: e.key });
+        e.preventDefault();
+      }
     });
 
     platformSelect.addEventListener('change', () => {
@@ -543,7 +731,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private getNonce(): string {
     let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const possible =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     for (let i = 0; i < 32; i++) {
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }

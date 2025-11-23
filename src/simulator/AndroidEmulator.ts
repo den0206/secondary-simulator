@@ -177,6 +177,54 @@ export class AndroidEmulator extends SimulatorManager {
     ]);
   }
 
+  async sendKey(deviceId: string, key: string, special?: boolean): Promise<void> {
+    Logger.info(`Sending key to Android: ${key}${special ? ' (special)' : ''}`);
+
+    try {
+      if (special) {
+        // Handle special keys with keyevent
+        const keyEventMap: { [key: string]: string } = {
+          'delete': 'KEYCODE_DEL',
+          'return': 'KEYCODE_ENTER',
+          'escape': 'KEYCODE_ESCAPE',
+          'tab': 'KEYCODE_TAB',
+          'space': 'KEYCODE_SPACE',
+        };
+
+        const keyEvent = keyEventMap[key.toLowerCase()];
+        if (keyEvent) {
+          await CommandExecutor.execute('adb', [
+            '-s',
+            deviceId,
+            'shell',
+            'input',
+            'keyevent',
+            keyEvent
+          ]);
+        } else {
+          Logger.warn(`Unknown special key: ${key}`);
+          throw new Error(`Unknown special key: ${key}`);
+        }
+      } else {
+        // Regular text input
+        // Escape special characters for shell
+        const escapedKey = key.replace(/[;&|`$(){}]/g, '');
+        await CommandExecutor.execute('adb', [
+          '-s',
+          deviceId,
+          'shell',
+          'input',
+          'text',
+          escapedKey
+        ]);
+      }
+      Logger.debug(`Key sent to Android: ${key}`);
+    } catch (error) {
+      Logger.error('Failed to send key to Android', error as Error);
+      throw error;
+    }
+  }
+
   dispose(): void {
     this.screenInfoCache.clear();
   }
