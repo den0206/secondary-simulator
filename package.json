@@ -89,7 +89,7 @@
         },
         "secondarySimulator.maxWidth": {
           "type": "number",
-          "default": 320,
+          "default": 420,
           "description": "Maximum display width in pixels"
         },
         "secondarySimulator.adaptiveRefresh": {

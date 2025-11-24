@@ -24,7 +24,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private currentDeviceId: string | null = null;
   private currentPlatform: Platform = 'ios';
   private devices: Device[] = [];
-  private currentWidth: number = 250;
+  private currentWidth: number = 420;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -563,6 +563,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     .simulator-container {
       position: relative;
       width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
       background: #000;
       border-radius: 8px;
       overflow: hidden;
@@ -602,6 +604,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       gap: 4px;
       margin-top: 8px;
       flex-wrap: wrap;
+      max-width: 420px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
     .control-btn {
@@ -630,7 +635,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       padding-top: 8px;
       border-top: 1px solid var(--vscode-widget-border);
       opacity: 0.7;
+      max-width: 420px;
+      margin-left: auto;
+      margin-right: auto;
     }
+
   </style>
 </head>
 <body>
@@ -1124,7 +1133,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       resizeTimeout = setTimeout(sendResize, 200);
     });
 
-    // 初期キャプチャモードを取得
+    // 初期設定を取得
     vscode.postMessage({ type: 'init' });
     vscode.postMessage({ type: 'getCaptureMode' });
     setTimeout(sendResize, 100);

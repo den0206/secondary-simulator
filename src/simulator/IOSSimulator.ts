@@ -135,163 +135,67 @@ export class IOSSimulator extends SimulatorManager {
     return defaultInfo;
   }
 
-  async tap(deviceId: string, x: number, y: number): Promise<void> {
+  async tap(_deviceId: string, x: number, y: number): Promise<void> {
     Logger.info(`Tap at normalized (${x.toFixed(3)}, ${y.toFixed(3)})`);
-
-    // Get screen info to convert normalized coordinates to pixel coordinates
-    const screenInfo = await this.getScreenInfo(deviceId);
-    const pixelX = Math.round(x * screenInfo.width);
-    const pixelY = Math.round(y * screenInfo.height);
-
-    Logger.debug(`Tap at pixel coordinates: (${pixelX}, ${pixelY})`);
 
     const {execFile} = await import('child_process');
     const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
-      // Use AppleScript to click at the calculated position within Simulator window
-      // First, get the Simulator window bounds - find the device window by name and size
-      const getWindowScript = `
-        tell application "Simulator" to activate
-        delay 0.15
+      // Combined script: get window info, activate, click, and return to previous app
+      const tapScript = `
         tell application "System Events"
+          -- Get current frontmost app to return to later
+          set frontApp to name of first application process whose frontmost is true
+
           tell process "Simulator"
-            -- Try to find the main device window by name and size
-            set deviceWindow to missing value
-            set allWindows to every window
-
-            -- First, try to find by name (iPhone, iPad, etc.)
-            repeat with aWindow in allWindows
-              try
-                set windowName to name of aWindow
-                if windowName contains "iPhone" or windowName contains "iPad" or windowName contains "iPod" then
-                  set windowSize to size of aWindow
-                  set windowWidth to item 1 of windowSize
-                  set windowHeight to item 2 of windowSize
-                  -- Make sure it's a reasonable size (not a toolbar or menu)
-                  if windowWidth > 200 and windowHeight > 200 then
-                    set deviceWindow to aWindow
-                    exit repeat
-                  end if
-                end if
-              end try
-            end repeat
-
-            -- If not found by name, find the largest window (usually the device window)
-            if deviceWindow is missing value then
-              set largestWindow to missing value
-              set largestArea to 0
-              repeat with aWindow in allWindows
-                try
-                  set windowSize to size of aWindow
-                  set windowWidth to item 1 of windowSize
-                  set windowHeight to item 2 of windowSize
-                  set windowArea to windowWidth * windowHeight
-                  -- Only consider windows that are reasonably large
-                  if windowArea > largestArea and windowWidth > 200 and windowHeight > 200 then
-                    set largestWindow to aWindow
-                    set largestArea to windowArea
-                  end if
-                end try
-              end repeat
-              if largestWindow is not missing value then
-                set deviceWindow to largestWindow
-              end if
-            end if
-
-            -- Last resort: use front window if it's large enough
-            if deviceWindow is missing value then
-              try
-                set frontWindow to front window
-                set windowSize to size of frontWindow
-                set windowWidth to item 1 of windowSize
-                set windowHeight to item 2 of windowSize
-                if windowWidth > 200 and windowHeight > 200 then
-                  set deviceWindow to frontWindow
-                end if
-              end try
-            end if
-
-            if deviceWindow is not missing value then
-              set windowPosition to position of deviceWindow
-              set windowSize to size of deviceWindow
-              set posX to item 1 of windowPosition as string
-              set posY to item 2 of windowPosition as string
-              set sizeW to item 1 of windowSize as string
-              set sizeH to item 2 of windowSize as string
-              return posX & "," & posY & "," & sizeW & "," & sizeH
-            else
-              error "Could not find Simulator device window"
-            end if
+            set frontWindow to front window
+            set windowPosition to position of frontWindow
+            set windowSize to size of frontWindow
+            set winX to item 1 of windowPosition
+            set winY to item 2 of windowPosition
+            set winW to item 1 of windowSize
+            set winH to item 2 of windowSize
           end tell
         end tell
-      `;
 
-      const {stdout} = await execFileAsync('osascript', [
-        '-e',
-        getWindowScript,
-      ]);
-      // Parse the output - handle cases where there might be extra commas or spaces
-      const values = stdout
-        .trim()
-        .split(',')
-        .filter((v) => v.trim() !== '')
-        .map((v) => parseInt(v.trim(), 10));
+        -- Calculate click position
+        set clickX to winX + (${x} * winW)
+        set clickY to winY + (${y} * winH)
 
-      if (values.length < 4) {
-        throw new Error(
-          `Invalid window info from AppleScript: ${stdout.trim()}`
-        );
-      }
+        -- Activate Simulator and click
+        tell application "Simulator" to activate
+        delay 0.05
 
-      const [winX, winY, winW, winH] = values;
-
-      Logger.debug(`Window: pos(${winX}, ${winY}), size(${winW}, ${winH})`);
-
-      // Validate window size
-      if (isNaN(winW) || isNaN(winH) || winW <= 0 || winH <= 0) {
-        throw new Error(
-          `Invalid window size: ${winW}x${winH} (raw output: ${stdout.trim()})`
-        );
-      }
-
-      // Calculate click position: Simulator window contains device screen
-      // The device screen is typically centered in the window
-      // Calculate scale factor to map device pixels to window pixels
-      const scaleX = winW / screenInfo.width;
-      const scaleY = winH / screenInfo.height;
-      const scale = Math.min(scaleX, scaleY); // Use uniform scaling to maintain aspect ratio
-
-      // Calculate the actual screen area in the window (centered)
-      const scaledWidth = screenInfo.width * scale;
-      const scaledHeight = screenInfo.height * scale;
-      const screenOffsetX = (winW - scaledWidth) / 2;
-      const screenOffsetY = (winH - scaledHeight) / 2;
-
-      // Map device pixel coordinates to window coordinates
-      const clickX = Math.round(winX + screenOffsetX + pixelX * scale);
-      const clickY = Math.round(winY + screenOffsetY + pixelY * scale);
-
-      Logger.debug(`Calculated click position: (${clickX}, ${clickY})`);
-
-      // Perform the click
-      const clickScript = `
         tell application "System Events"
-          click at {${clickX}, ${clickY}}
+          click at {clickX, clickY}
         end tell
+
+        delay 0.05
+
+        -- Return to previous app
+        tell application frontApp to activate
       `;
 
-      await execFileAsync('osascript', ['-e', clickScript]);
-      Logger.debug('Tap sent via AppleScript');
+      await execFileAsync('osascript', ['-e', tapScript]);
+      Logger.debug('Tap sent via AppleScript with app switching');
     } catch (error) {
-      Logger.error('Failed to send tap', error as Error);
+      const err = error as Error;
+      if (err.message && err.message.includes('-25211')) {
+        Logger.error(
+          'Accessibility permission required. Please grant permission in System Settings > Privacy & Security > Accessibility for Terminal or VS Code.',
+          err
+        );
+      } else {
+        Logger.error('Failed to send tap', err);
+      }
       throw error;
     }
   }
 
   async swipe(
-    deviceId: string,
+    _deviceId: string,
     x1: number,
     y1: number,
     x2: number,
@@ -304,162 +208,47 @@ export class IOSSimulator extends SimulatorManager {
       )}, ${y2.toFixed(3)}) duration=${durationMs ?? 'default'}ms`
     );
 
-    // Get screen info to convert normalized coordinates to pixel coordinates
-    const screenInfo = await this.getScreenInfo(deviceId);
-    const pixelX1 = Math.round(x1 * screenInfo.width);
-    const pixelY1 = Math.round(y1 * screenInfo.height);
-    const pixelX2 = Math.round(x2 * screenInfo.width);
-    const pixelY2 = Math.round(y2 * screenInfo.height);
-
-    Logger.debug(
-      `Swipe at pixel coordinates: (${pixelX1}, ${pixelY1}) -> (${pixelX2}, ${pixelY2})`
-    );
-
     const {execFile} = await import('child_process');
     const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
-      // First, get window position and size - use the same improved method as tap
-      const getWindowScript = `
-        tell application "Simulator" to activate
-        delay 0.15
-        tell application "System Events"
-          tell process "Simulator"
-            -- Try to find the main device window by name and size
-            set deviceWindow to missing value
-            set allWindows to every window
+      const duration = Number.isFinite(durationMs) && durationMs > 0
+        ? Math.max(50, Math.min(durationMs, 3000))
+        : 300;
+      const steps = Math.max(10, Math.min(60, Math.round(duration / 16)));
+      const stepDelay = duration / steps / 1000;
 
-            -- First, try to find by name (iPhone, iPad, etc.)
-            repeat with aWindow in allWindows
-              try
-                set windowName to name of aWindow
-                if windowName contains "iPhone" or windowName contains "iPad" or windowName contains "iPod" then
-                  set windowSize to size of aWindow
-                  set windowWidth to item 1 of windowSize
-                  set windowHeight to item 2 of windowSize
-                  -- Make sure it's a reasonable size (not a toolbar or menu)
-                  if windowWidth > 200 and windowHeight > 200 then
-                    set deviceWindow to aWindow
-                    exit repeat
-                  end if
-                end if
-              end try
-            end repeat
-
-            -- If not found by name, find the largest window
-            if deviceWindow is missing value then
-              set largestWindow to missing value
-              set largestArea to 0
-              repeat with aWindow in allWindows
-                try
-                  set windowSize to size of aWindow
-                  set windowWidth to item 1 of windowSize
-                  set windowHeight to item 2 of windowSize
-                  set windowArea to windowWidth * windowHeight
-                  -- Only consider windows that are reasonably large
-                  if windowArea > largestArea and windowWidth > 200 and windowHeight > 200 then
-                    set largestWindow to aWindow
-                    set largestArea to windowArea
-                  end if
-                end try
-              end repeat
-              if largestWindow is not missing value then
-                set deviceWindow to largestWindow
-              end if
-            end if
-
-            -- Last resort: use front window if it's large enough
-            if deviceWindow is missing value then
-              try
-                set frontWindow to front window
-                set windowSize to size of frontWindow
-                set windowWidth to item 1 of windowSize
-                set windowHeight to item 2 of windowSize
-                if windowWidth > 200 and windowHeight > 200 then
-                  set deviceWindow to frontWindow
-                end if
-              end try
-            end if
-
-            if deviceWindow is not missing value then
-              set windowPosition to position of deviceWindow
-              set windowSize to size of deviceWindow
-              set posX to item 1 of windowPosition as string
-              set posY to item 2 of windowPosition as string
-              set sizeW to item 1 of windowSize as string
-              set sizeH to item 2 of windowSize as string
-              return posX & "," & posY & "," & sizeW & "," & sizeH
-            else
-              error "Could not find Simulator device window"
-            end if
-          end tell
-        end tell
-      `;
-
-      const {stdout} = await execFileAsync('osascript', [
-        '-e',
-        getWindowScript,
-      ]);
-      // Parse the output - handle cases where there might be extra commas or spaces
-      const values = stdout
-        .trim()
-        .split(',')
-        .filter((v) => v.trim() !== '')
-        .map((v) => parseInt(v.trim(), 10));
-
-      if (values.length < 4) {
-        throw new Error(
-          `Invalid window info from AppleScript: ${stdout.trim()}`
-        );
-      }
-
-      const [winX, winY, winW, winH] = values;
-
-      Logger.debug(`Window: pos(${winX}, ${winY}), size(${winW}, ${winH})`);
-
-      // Validate window size
-      if (isNaN(winW) || isNaN(winH) || winW <= 0 || winH <= 0) {
-        throw new Error(
-          `Invalid window size: ${winW}x${winH} (raw output: ${stdout.trim()})`
-        );
-      }
-
-      // Calculate screen area bounds (similar to tap)
-      const scaleX = winW / screenInfo.width;
-      const scaleY = winH / screenInfo.height;
-      const scale = Math.min(scaleX, scaleY); // Use uniform scaling
-
-      // Calculate the actual screen area in the window (centered)
-      const scaledWidth = screenInfo.width * scale;
-      const scaledHeight = screenInfo.height * scale;
-      const screenOffsetX = (winW - scaledWidth) / 2;
-      const screenOffsetY = (winH - scaledHeight) / 2;
-
-      const startX = Math.round(winX + screenOffsetX + pixelX1 * scale);
-      const startY = Math.round(winY + screenOffsetY + pixelY1 * scale);
-      const endX = Math.round(winX + screenOffsetX + pixelX2 * scale);
-      const endY = Math.round(winY + screenOffsetY + pixelY2 * scale);
-
-      Logger.debug(
-        `Swipe coords: (${startX}, ${startY}) -> (${endX}, ${endY})`
-      );
-
-      // Perform drag using JXA (JavaScript for Automation) for smoother drag
-      const duration =
-        Number.isFinite(durationMs) && durationMs > 0
-          ? Math.max(50, Math.min(durationMs, 3000))
-          : 300;
-      const steps = Math.max(6, Math.min(60, Math.round(duration / 16)));
-      const stepDelay = duration / steps / 1000; // seconds
-
-      const dragScript = `
+      // Combined script: get window info, activate, swipe using CGEvent, and return to previous app
+      const swipeScript = `
         ObjC.import('Cocoa');
 
-        var startX = ${startX};
-        var startY = ${startY};
-        var endX = ${endX};
-        var endY = ${endY};
+        // Get current frontmost app
+        var sysEvents = Application('System Events');
+        var frontApp = sysEvents.processes.whose({frontmost: true})[0].name();
+
+        // Get Simulator window info
+        var simProcess = sysEvents.processes['Simulator'];
+        var frontWindow = simProcess.windows[0];
+        var pos = frontWindow.position();
+        var size = frontWindow.size();
+        var winX = pos[0];
+        var winY = pos[1];
+        var winW = size[0];
+        var winH = size[1];
+
+        // Calculate swipe positions
+        var startX = winX + ${x1} * winW;
+        var startY = winY + ${y1} * winH;
+        var endX = winX + ${x2} * winW;
+        var endY = winY + ${y2} * winH;
+
+        // Activate Simulator
+        var sim = Application('Simulator');
+        sim.activate();
+        delay(0.05);
+
+        // Perform swipe using CGEvent
         var steps = ${steps};
         var stepDelay = ${stepDelay};
 
@@ -479,25 +268,39 @@ export class IOSSimulator extends SimulatorManager {
         // Mouse up
         var mouseUp = $.CGEventCreateMouseEvent($(), $.kCGEventLeftMouseUp, $.CGPointMake(endX, endY), $.kCGMouseButtonLeft);
         $.CGEventPost($.kCGHIDEventTap, mouseUp);
+
+        delay(0.05);
+
+        // Return to previous app
+        var prevApp = Application(frontApp);
+        prevApp.activate();
       `;
 
-      await execFileAsync('osascript', ['-l', 'JavaScript', '-e', dragScript]);
-      Logger.debug('Swipe sent via JXA');
+      await execFileAsync('osascript', ['-l', 'JavaScript', '-e', swipeScript]);
+      Logger.debug('Swipe sent via JXA with app switching');
     } catch (error) {
-      Logger.error('Failed to send swipe', error as Error);
+      const err = error as Error;
+      if (err.message && err.message.includes('-25211')) {
+        Logger.error(
+          'Accessibility permission required. Please grant permission in System Settings > Privacy & Security > Accessibility for Terminal or VS Code.',
+          err
+        );
+      } else {
+        Logger.error('Failed to send swipe', err);
+      }
       throw error;
     }
   }
 
-  async pressHome(deviceId: string): Promise<void> {
-    Logger.info(`Pressing home on device: ${deviceId}`);
+  async pressHome(_deviceId: string): Promise<void> {
+    Logger.info('Pressing home button');
 
-    // Use AppleScript to send Cmd+Shift+H (Home shortcut) to Simulator
     const {execFile} = await import('child_process');
     const {promisify} = await import('util');
     const execFileAsync = promisify(execFile);
 
     try {
+      // Use AppleScript to send Cmd+Shift+H (Home shortcut)
       const script = `
         tell application "Simulator" to activate
         delay 0.1
@@ -509,7 +312,8 @@ export class IOSSimulator extends SimulatorManager {
       await execFileAsync('osascript', ['-e', script]);
       Logger.debug('Home button sent via AppleScript');
     } catch (error) {
-      Logger.error('Failed to press home via AppleScript', error as Error);
+      Logger.error('Failed to press home', error as Error);
+      throw error;
     }
   }
 
@@ -518,7 +322,7 @@ export class IOSSimulator extends SimulatorManager {
   }
 
   async sendKey(
-    deviceId: string,
+    _deviceId: string,
     key: string,
     special?: boolean
   ): Promise<void> {
@@ -555,12 +359,10 @@ export class IOSSimulator extends SimulatorManager {
           throw new Error(`Unknown special key: ${key}`);
         }
       } else {
-        // Regular character - escape special characters for AppleScript
+        // Regular character
         const escapedKey = key
           .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"')
-          .replace(/\$/g, '\\$')
-          .replace(/`/g, '\\`');
+          .replace(/"/g, '\\"');
 
         script = `
           tell application "Simulator" to activate
@@ -574,7 +376,7 @@ export class IOSSimulator extends SimulatorManager {
       await execFileAsync('osascript', ['-e', script]);
       Logger.debug(`Key sent via AppleScript: ${key}`);
     } catch (error) {
-      Logger.error('Failed to send key via AppleScript', error as Error);
+      Logger.error('Failed to send key', error as Error);
       throw error;
     }
   }
