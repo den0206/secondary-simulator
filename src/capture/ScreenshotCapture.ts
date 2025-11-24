@@ -102,7 +102,11 @@ export class ScreenshotCapture implements CaptureStrategy {
       }
 
       const processed = await this.processImage(screenshot);
-      const base64 = processed.toString('base64');
+      const frameBytes = new Uint8Array(
+        processed.buffer,
+        processed.byteOffset,
+        processed.byteLength
+      );
 
       // 元のscreenshot Bufferもクリア
       if (screenshot && Buffer.isBuffer(screenshot)) {
@@ -123,7 +127,7 @@ export class ScreenshotCapture implements CaptureStrategy {
       const latency = now - startTime;
 
       if (this.frameCallback) {
-        this.frameCallback(base64, {
+        this.frameCallback(frameBytes, {
           fps: this.currentFps,
           latency,
         });

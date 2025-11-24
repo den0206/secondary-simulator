@@ -118,6 +118,11 @@
           "type": "boolean",
           "default": false,
           "description": "Enable low latency mode for streaming (may drop frames if system is busy)"
+        },
+        "secondarySimulator.experimentalH264": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable experimental H.264 streaming (requires adb/simctl and WebCodecs). Falls back to JPEG if not available."
         }
       }
     }

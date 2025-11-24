@@ -140,6 +140,10 @@ export class AndroidEmulator extends SimulatorManager {
     const actualY1 = Math.round(y1 * screenInfo.height);
     const actualX2 = Math.round(x2 * screenInfo.width);
     const actualY2 = Math.round(y2 * screenInfo.height);
+    const duration =
+      Number.isFinite(durationMs) && durationMs > 0
+        ? Math.max(50, Math.min(durationMs, 3000))
+        : 300;
 
     await CommandExecutor.execute('adb', [
       '-s',
@@ -151,7 +155,7 @@ export class AndroidEmulator extends SimulatorManager {
       actualY1.toString(),
       actualX2.toString(),
       actualY2.toString(),
-      durationMs.toString(),
+      duration.toString(),
     ]);
   }
 

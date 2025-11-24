@@ -191,7 +191,11 @@ export class StreamingCapture implements CaptureStrategy {
 
     try {
       const processed = await this.processImage(screenshot);
-      const base64 = processed.toString('base64');
+      const frameBytes = new Uint8Array(
+        processed.buffer,
+        processed.byteOffset,
+        processed.byteLength
+      );
 
       this.frameCount++;
       const now = Date.now();
@@ -206,7 +210,7 @@ export class StreamingCapture implements CaptureStrategy {
       const latency = now - startTime;
 
       if (this.frameCallback) {
-        this.frameCallback(base64, {
+        this.frameCallback(frameBytes, {
           fps: this.currentFps,
           latency,
         });
@@ -262,4 +266,3 @@ export class StreamingCapture implements CaptureStrategy {
     }
   }
 }
-

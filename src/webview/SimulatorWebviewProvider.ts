@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {ScreenshotCapture} from '../capture/ScreenshotCapture';
 import {StreamingCapture} from '../capture/StreamingCapture';
+import {H264Streamer} from '../capture/H264Streamer';
 import {AndroidEmulator} from '../simulator/AndroidEmulator';
 import {IOSSimulator} from '../simulator/IOSSimulator';
 import {SimulatorManager} from '../simulator/SimulatorManager';
@@ -18,6 +19,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private androidEmulator: AndroidEmulator;
   private currentManager: SimulatorManager | null = null;
   private currentCapture: CaptureStrategy | null = null;
+  private h264Streamer: H264Streamer | null = null;
+  private forceJpegFallback = false;
   private currentDeviceId: string | null = null;
   private currentPlatform: Platform = 'ios';
   private devices: Device[] = [];
@@ -98,17 +101,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.handleTap(message.x as number, message.y as number);
           break;
 
-        case 'swipe':
+        case 'swipe': {
           Logger.info(
-            `Swipe received: (${message.x1}, ${message.y1}) -> (${message.x2}, ${message.y2})`
+            `Swipe received: (${message.x1}, ${message.y1}) -> (${message.x2}, ${message.y2}), duration=${message.duration}ms`
           );
           await this.handleSwipe(
             message.x1 as number,
             message.y1 as number,
             message.x2 as number,
-            message.y2 as number
+            message.y2 as number,
+            (message.duration as number | undefined) ?? undefined
           );
           break;
+        }
 
         case 'keypress':
           Logger.info(
@@ -153,6 +158,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
         case 'captureModeChange':
           await this.handleCaptureModeChange(message.mode as string);
+          break;
+
+        case 'fallback-jpeg':
+          Logger.warn(
+            `Webview requested JPEG fallback: ${message.reason ?? 'unknown'}`
+          );
+          await this.fallbackToJpeg();
           break;
       }
     } catch (error) {
@@ -202,6 +214,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    this.forceJpegFallback = false;
     await this.startCaptureForDevice(deviceId, device);
   }
 
@@ -220,34 +233,53 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       .getConfiguration('secondarySimulator')
       .get<string>('captureMode', 'screenshot');
 
-    await this.createCaptureInstance(captureMode);
-    if (!this.currentCapture) {
-      throw new Error('Failed to create capture instance');
+    const useH264 =
+      captureMode === 'streaming' &&
+      vscode.workspace
+        .getConfiguration('secondarySimulator')
+        .get<boolean>('experimentalH264', false) &&
+      !this.forceJpegFallback;
+
+    if (useH264) {
+      await this.startH264Streaming(device);
+    } else {
+      await this.createCaptureInstance(captureMode);
+      if (!this.currentCapture) {
+        throw new Error('Failed to create capture instance');
+      }
+
+      this.currentCapture.setDevice(deviceId);
+
+      this.currentCapture.onFrame((frame, stats) => {
+        this.postMessage({
+          type: 'frame',
+          data: frame,
+        });
+        this.postMessage({
+          type: 'stats',
+          fps: stats.fps,
+          latency: stats.latency,
+        });
+      });
     }
 
-    this.currentCapture.setDevice(deviceId);
-
-    this.currentCapture.onFrame((frame, stats) => {
+    if (useH264) {
       this.postMessage({
-        type: 'frame',
-        data: frame,
+        type: 'status',
+        text: 'Capturing (H.264 experimental)',
       });
-      this.postMessage({
-        type: 'stats',
-        fps: stats.fps,
-        latency: stats.latency,
-      });
-    });
-
-    try {
-      await this.currentCapture.start();
-      this.postMessage({type: 'status', text: 'Capturing'});
-      Logger.info(
-        `Started capturing device: ${device.name} (mode: ${captureMode})`
-      );
-    } catch (error) {
-      Logger.error('Failed to start capture', error as Error);
-      this.sendError((error as Error).message || 'Failed to start capture');
+      Logger.info(`Started H.264 streaming for device: ${device.name}`);
+    } else if (this.currentCapture) {
+      try {
+        await this.currentCapture.start();
+        this.postMessage({type: 'status', text: 'Capturing'});
+        Logger.info(
+          `Started capturing device: ${device.name} (mode: ${captureMode})`
+        );
+      } catch (error) {
+        Logger.error('Failed to start capture', error as Error);
+        this.sendError((error as Error).message || 'Failed to start capture');
+      }
     }
   }
 
@@ -263,6 +295,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         this.currentWidth
       );
     }
+  }
+
+  private async startH264Streaming(device: Device): Promise<void> {
+    if (this.h264Streamer) {
+      this.h264Streamer.dispose();
+      this.h264Streamer = null;
+    }
+    this.h264Streamer = new H264Streamer(
+      device.platform,
+      device.id,
+      (msg) => this.postMessage(msg)
+    );
+    this.h264Streamer.start();
   }
 
   private async handleCaptureModeChange(mode: string): Promise<void> {
@@ -283,6 +328,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     Logger.info(`Switching capture mode to: ${mode}`);
 
+    this.forceJpegFallback = false;
     // 新しいモードでキャプチャを再開
     await this.startCaptureForDevice(this.currentDeviceId, device);
 
@@ -292,14 +338,29 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private clamp01(value: number): number {
+    if (Number.isNaN(value)) {
+      return 0.5;
+    }
+    return Math.min(1, Math.max(0, value));
+  }
+
   private async handleTap(x: number, y: number): Promise<void> {
     if (!this.currentManager || !this.currentDeviceId) {
       Logger.warn('Cannot tap: no device selected');
       return;
     }
 
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      Logger.warn(`Tap ignored due to invalid coordinates: x=${x}, y=${y}`);
+      return;
+    }
+
+    const clampedX = this.clamp01(x);
+    const clampedY = this.clamp01(y);
+
     try {
-      await this.currentManager.tap(this.currentDeviceId, x, y);
+      await this.currentManager.tap(this.currentDeviceId, clampedX, clampedY);
     } catch (error) {
       Logger.error('Failed to send tap', error as Error);
     }
@@ -309,15 +370,44 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     x1: number,
     y1: number,
     x2: number,
-    y2: number
+    y2: number,
+    durationMs?: number
   ): Promise<void> {
     if (!this.currentManager || !this.currentDeviceId) {
       Logger.warn('Cannot swipe: no device selected');
       return;
     }
 
+    if (
+      !Number.isFinite(x1) ||
+      !Number.isFinite(y1) ||
+      !Number.isFinite(x2) ||
+      !Number.isFinite(y2)
+    ) {
+      Logger.warn(
+        `Swipe ignored due to invalid coordinates: (${x1}, ${y1}) -> (${x2}, ${y2})`
+      );
+      return;
+    }
+
+    const clampedX1 = this.clamp01(x1);
+    const clampedY1 = this.clamp01(y1);
+    const clampedX2 = this.clamp01(x2);
+    const clampedY2 = this.clamp01(y2);
+    const safeDuration =
+      typeof durationMs === 'number' && Number.isFinite(durationMs)
+        ? Math.max(50, Math.min(durationMs, 3000))
+        : undefined;
+
     try {
-      await this.currentManager.swipe(this.currentDeviceId, x1, y1, x2, y2);
+      await this.currentManager.swipe(
+        this.currentDeviceId,
+        clampedX1,
+        clampedY1,
+        clampedX2,
+        clampedY2,
+        safeDuration
+      );
     } catch (error) {
       Logger.error('Failed to send swipe', error as Error);
     }
@@ -399,7 +489,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.currentCapture.dispose();
       this.currentCapture = null;
     }
+    if (this.h264Streamer) {
+      this.h264Streamer.dispose();
+      this.h264Streamer = null;
+    }
     this.postMessage({type: 'status', text: 'Idle'});
+  }
+
+  private async fallbackToJpeg(): Promise<void> {
+    if (!this.currentDeviceId) return;
+    const device = this.devices.find((d) => d.id === this.currentDeviceId);
+    if (!device) return;
+
+    this.forceJpegFallback = true;
+    this.stopCapture();
+    await this.startCaptureForDevice(this.currentDeviceId, device);
   }
 
   private disconnect(): void {
@@ -465,7 +569,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       min-height: 200px;
     }
 
-    #simulator-screen {
+    #simulator-canvas {
       width: 100%;
       height: auto;
       display: block;
@@ -545,7 +649,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="simulator-container">
-    <img id="simulator-screen" src="" alt="Simulator Screen" style="display: none;" />
+    <canvas id="simulator-canvas" style="display: none;"></canvas>
     <div class="overlay" id="overlay">
       <span>Select a device to start</span>
     </div>
@@ -563,17 +667,22 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     <span id="fps">-- FPS</span>
     <span id="status">Idle</span>
     <span id="latency">-- ms</span>
+    <span id="render-latency">Render -- ms</span>
+    <span id="queue">Q:0</span>
   </div>
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const screen = document.getElementById('simulator-screen');
+    const canvas = document.getElementById('simulator-canvas');
+    const ctx = canvas.getContext('2d');
     const overlay = document.getElementById('overlay');
     const platformSelect = document.getElementById('platform');
     const deviceSelect = document.getElementById('device');
     const captureModeSelect = document.getElementById('capture-mode');
 
     // Touch/Mouse event handling for tap and swipe
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
     let isDragging = false;
     let startX = 0;
     let startY = 0;
@@ -581,25 +690,25 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const SWIPE_THRESHOLD = 30; // minimum pixels for swipe
     const TAP_THRESHOLD = 10; // maximum pixels for tap
 
-    screen.addEventListener('mousedown', (e) => {
+    canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
-      const rect = screen.getBoundingClientRect();
+      const rect = canvas.getBoundingClientRect();
       startX = e.clientX - rect.left;
       startY = e.clientY - rect.top;
       startTime = Date.now();
       e.preventDefault();
     });
 
-    screen.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       e.preventDefault();
     });
 
-    screen.addEventListener('mouseup', (e) => {
+    canvas.addEventListener('mouseup', (e) => {
       if (!isDragging) return;
       isDragging = false;
 
-      const rect = screen.getBoundingClientRect();
+      const rect = canvas.getBoundingClientRect();
       const endX = e.clientX - rect.left;
       const endY = e.clientY - rect.top;
       const duration = Date.now() - startTime;
@@ -610,28 +719,28 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
       if (distance < TAP_THRESHOLD) {
         // It's a tap
-        const x = endX / rect.width;
-        const y = endY / rect.height;
+        const x = clamp01(endX / rect.width);
+        const y = clamp01(endY / rect.height);
         vscode.postMessage({ type: 'tap', x, y });
       } else if (distance >= SWIPE_THRESHOLD) {
         // It's a swipe
-        const x1 = startX / rect.width;
-        const y1 = startY / rect.height;
-        const x2 = endX / rect.width;
-        const y2 = endY / rect.height;
+        const x1 = clamp01(startX / rect.width);
+        const y1 = clamp01(startY / rect.height);
+        const x2 = clamp01(endX / rect.width);
+        const y2 = clamp01(endY / rect.height);
         vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
       }
     });
 
-    screen.addEventListener('mouseleave', () => {
+    canvas.addEventListener('mouseleave', () => {
       isDragging = false;
     });
 
     // Touch events for mobile/trackpad
-    screen.addEventListener('touchstart', (e) => {
+    canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
-        const rect = screen.getBoundingClientRect();
+        const rect = canvas.getBoundingClientRect();
         startX = touch.clientX - rect.left;
         startY = touch.clientY - rect.top;
         startTime = Date.now();
@@ -640,12 +749,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       e.preventDefault();
     }, { passive: false });
 
-    screen.addEventListener('touchend', (e) => {
+    canvas.addEventListener('touchend', (e) => {
       if (!isDragging || e.changedTouches.length !== 1) return;
       isDragging = false;
 
       const touch = e.changedTouches[0];
-      const rect = screen.getBoundingClientRect();
+      const rect = canvas.getBoundingClientRect();
       const endX = touch.clientX - rect.left;
       const endY = touch.clientY - rect.top;
       const duration = Date.now() - startTime;
@@ -655,14 +764,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
       if (distance < TAP_THRESHOLD) {
-        const x = endX / rect.width;
-        const y = endY / rect.height;
+        const x = clamp01(endX / rect.width);
+        const y = clamp01(endY / rect.height);
         vscode.postMessage({ type: 'tap', x, y });
       } else if (distance >= SWIPE_THRESHOLD) {
-        const x1 = startX / rect.width;
-        const y1 = startY / rect.height;
-        const x2 = endX / rect.width;
-        const y2 = endY / rect.height;
+        const x1 = clamp01(startX / rect.width);
+        const y1 = clamp01(startY / rect.height);
+        const x2 = clamp01(endX / rect.width);
+        const y2 = clamp01(endY / rect.height);
         vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
       }
       e.preventDefault();
@@ -671,7 +780,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // Keyboard input handling
     document.addEventListener('keydown', (e) => {
       // Only capture when screen is visible and focused
-      if (screen.style.display === 'none') return;
+      if (!canvas || canvas.style.display === 'none') return;
 
       // Ignore modifier-only keys and some special keys
       if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
@@ -745,13 +854,212 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'disconnect' });
     });
 
+    let pendingFrame = null;
+    let isRendering = false;
+    let lastRenderAt = 0;
+
+    // WebCodecs (H.264) pipeline groundwork
+    let decoder = null;
+    let decoderConfig = null;
+    let decodedQueue = 0;
+    let lastChunkTime = performance.now();
+
+    const maxDecodeQueue = 3;
+    let askedFallback = false;
+
+    function normalizeToUint8Array(data) {
+      if (data instanceof Uint8Array) return data;
+      if (data?.data && Array.isArray(data.data)) {
+        return new Uint8Array(data.data);
+      }
+      if (Array.isArray(data)) {
+        return new Uint8Array(data);
+      }
+      return null;
+    }
+
+    async function renderFrame(bytes) {
+      if (!bytes) return;
+      const started = performance.now();
+      try {
+        const blob = new Blob([bytes], { type: 'image/jpeg' });
+        const bitmap = await createImageBitmap(blob);
+
+        // Resize canvas to frame size once
+        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+        }
+
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close?.();
+
+        lastRenderAt = performance.now();
+        const renderLatency = Math.round(lastRenderAt - started);
+        document.getElementById('render-latency').textContent =
+          'Render ' + renderLatency + ' ms';
+      } catch (err) {
+        console.error('Failed to render frame', err);
+      }
+    }
+
+    // --- WebCodecs decode path for future H.264 stream support ---
+    function requestFallback(reason) {
+      if (askedFallback) return;
+      askedFallback = true;
+      vscode.postMessage({ type: 'fallback-jpeg', reason });
+    }
+
+    function ensureDecoder(config) {
+      if (!('VideoDecoder' in window)) {
+        console.warn('WebCodecs not available');
+        requestFallback('VideoDecoder unavailable');
+        return null;
+      }
+      if (decoder && decoderConfig && JSON.stringify(decoderConfig) === JSON.stringify(config)) {
+        return decoder;
+      }
+      if (decoder) {
+        try { decoder.close(); } catch (_) {}
+        decoder = null;
+      }
+      decoderConfig = config;
+      decoder = new VideoDecoder({
+        output: handleDecodedFrame,
+        error: (e) => {
+          console.error('Decoder error', e);
+          requestFallback('decoder error');
+        },
+      });
+      try {
+        decoder.configure(config);
+      } catch (e) {
+        console.error('Failed to configure decoder', e);
+        requestFallback('configure failed');
+        decoder = null;
+      }
+      decodedQueue = 0;
+      return decoder;
+    }
+
+    function handleDecodedFrame(videoFrame) {
+      decodedQueue = Math.max(0, decodedQueue - 1);
+      try {
+        if (canvas.width !== videoFrame.codedWidth || canvas.height !== videoFrame.codedHeight) {
+          canvas.width = videoFrame.codedWidth;
+          canvas.height = videoFrame.codedHeight;
+        }
+        const started = performance.now();
+        const renderWidth = canvas.width;
+        const renderHeight = canvas.height;
+
+        // drawImage accepts VideoFrame directly
+        ctx.drawImage(videoFrame, 0, 0, renderWidth, renderHeight);
+        lastRenderAt = performance.now();
+        document.getElementById('render-latency').textContent =
+          'Render ' + Math.round(lastRenderAt - started) + ' ms';
+      } catch (e) {
+        console.error('Failed to draw decoded frame', e);
+      } finally {
+        videoFrame.close();
+      }
+    }
+
+    function convertAnnexBToAvcc(bytes) {
+      // strip start code if present and prefix length (4 bytes)
+      let offset = 0;
+      if (bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x00 && bytes[3] === 0x01) {
+        offset = 4;
+      } else if (bytes.length >= 3 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x01) {
+        offset = 3;
+      }
+      const nal = bytes.subarray(offset);
+      const len = nal.length;
+      const out = new Uint8Array(4 + len);
+      out[0] = (len >>> 24) & 0xff;
+      out[1] = (len >>> 16) & 0xff;
+      out[2] = (len >>> 8) & 0xff;
+      out[3] = len & 0xff;
+      out.set(nal, 4);
+      return out;
+    }
+
+    function handleH264Chunk(data, isKeyframe) {
+      const bytes = normalizeToUint8Array(data);
+      if (!bytes || !decoder) return;
+      const chunkData = convertAnnexBToAvcc(bytes);
+      if (decoder.decodeQueueSize >= maxDecodeQueue) {
+        // Drop to keep latency low
+        return;
+      }
+      decodedQueue = Math.min(maxDecodeQueue, decodedQueue + 1);
+      lastChunkTime = performance.now();
+      try {
+        decoder.decode(new EncodedVideoChunk({
+          type: isKeyframe ? 'key' : 'delta',
+          timestamp: lastChunkTime * 1000, // microseconds
+          data: chunkData,
+        }));
+        document.getElementById('queue').textContent = 'Q:' + decodedQueue;
+      } catch (e) {
+        console.error('decode failed', e);
+        requestFallback('decode failed');
+      }
+    }
+
+    function dequeueAndRender() {
+      if (isRendering || !pendingFrame) return;
+      const frame = pendingFrame;
+      pendingFrame = null;
+      isRendering = true;
+      renderFrame(frame).finally(() => {
+        isRendering = false;
+        document.getElementById('queue').textContent = 'Q:' + (pendingFrame ? 1 : 0);
+        // If another frame arrived while rendering, render it next
+        if (pendingFrame) {
+          requestAnimationFrame(dequeueAndRender);
+        }
+      });
+    }
+
+    function enqueueFrame(data) {
+      const bytes = normalizeToUint8Array(data);
+      if (!bytes) {
+        console.warn('Dropping frame: could not normalize data');
+        return;
+      }
+      pendingFrame = bytes;
+      document.getElementById('queue').textContent = 'Q:1';
+      if (!isRendering) {
+        requestAnimationFrame(dequeueAndRender);
+      }
+    }
+
     window.addEventListener('message', (event) => {
       const message = event.data;
 
       switch (message.type) {
+        case 'h264-config': {
+          // Expect {codec, description} etc.
+          const config = {
+            codec: message.codec || 'avc1.42E01E',
+            description: message.description
+              ? new Uint8Array(message.description)
+              : undefined,
+          };
+          ensureDecoder(config);
+          break;
+        }
+
+        case 'h264-chunk':
+          handleH264Chunk(message.data, !!message.isKeyframe);
+          canvas.style.display = 'block';
+          overlay.classList.add('hidden');
+          break;
+
         case 'frame':
-          screen.src = 'data:image/jpeg;base64,' + message.data;
-          screen.style.display = 'block';
+          enqueueFrame(message.data);
+          canvas.style.display = 'block';
           overlay.classList.add('hidden');
           break;
 

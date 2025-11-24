@@ -1,7 +1,3 @@
-import {randomUUID} from 'crypto';
-import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 import {CommandExecutor} from '../utils/CommandExecutor';
 import {Logger} from '../utils/Logger';
 import {SimulatorManager} from './SimulatorManager';
@@ -82,41 +78,30 @@ export class IOSSimulator extends SimulatorManager {
   }
 
   async takeScreenshot(deviceId: string): Promise<Buffer> {
-    const tmpFile = path.join(os.tmpdir(), `sim-${randomUUID()}.png`);
-    let buffer: Buffer | null = null;
-
     try {
-      await CommandExecutor.execute('xcrun', [
+      // stdout に直接 PNG を吐かせ、ディスクを書かない
+      const buffer = await CommandExecutor.executeWithBinary('xcrun', [
         'simctl',
         'io',
         deviceId,
         'screenshot',
         '--type=png',
-        tmpFile,
+        '-', // stdout
       ]);
-
-      buffer = await fs.readFile(tmpFile);
       return buffer;
     } catch (error) {
       Logger.error('Failed to take screenshot', error as Error);
       throw error;
-    } finally {
-      // Always try to delete the temporary file, even if there was an error
-      try {
-        await fs.unlink(tmpFile).catch(() => {
-          // If unlink fails, try again after a short delay
-          setTimeout(async () => {
-            try {
-              await fs.unlink(tmpFile);
-            } catch {
-              // Ignore if still fails - file will be cleaned up by OS eventually
-            }
-          }, 100);
-        });
-      } catch {
-        // Ignore cleanup errors - file will be cleaned up by OS eventually
-      }
     }
+  }
+
+  /**
+   * 旧実装で残留した sim-*.png を除去するためのヘルパー。
+   * 現状は stdout 出力のみだが、将来の回 regresion に備えて残す。
+   */
+  async cleanLegacyTempFiles(): Promise<void> {
+    const {TempCleaner} = await import('../utils/TempCleaner');
+    await TempCleaner.cleanOnce();
   }
 
   async getScreenInfo(deviceId: string): Promise<ScreenInfo> {
@@ -311,12 +296,12 @@ export class IOSSimulator extends SimulatorManager {
     y1: number,
     x2: number,
     y2: number,
-    _durationMs?: number
+    durationMs: number = 300
   ): Promise<void> {
     Logger.info(
       `Swipe from (${x1.toFixed(3)}, ${y1.toFixed(3)}) to (${x2.toFixed(
         3
-      )}, ${y2.toFixed(3)})`
+      )}, ${y2.toFixed(3)}) duration=${durationMs ?? 'default'}ms`
     );
 
     // Get screen info to convert normalized coordinates to pixel coordinates
@@ -461,6 +446,13 @@ export class IOSSimulator extends SimulatorManager {
       );
 
       // Perform drag using JXA (JavaScript for Automation) for smoother drag
+      const duration =
+        Number.isFinite(durationMs) && durationMs > 0
+          ? Math.max(50, Math.min(durationMs, 3000))
+          : 300;
+      const steps = Math.max(6, Math.min(60, Math.round(duration / 16)));
+      const stepDelay = duration / steps / 1000; // seconds
+
       const dragScript = `
         ObjC.import('Cocoa');
 
@@ -468,20 +460,20 @@ export class IOSSimulator extends SimulatorManager {
         var startY = ${startY};
         var endX = ${endX};
         var endY = ${endY};
+        var steps = ${steps};
+        var stepDelay = ${stepDelay};
 
         // Mouse down
         var mouseDown = $.CGEventCreateMouseEvent($(), $.kCGEventLeftMouseDown, $.CGPointMake(startX, startY), $.kCGMouseButtonLeft);
         $.CGEventPost($.kCGHIDEventTap, mouseDown);
 
-        // Drag in steps for smooth movement
-        var steps = 15;
         for (var i = 1; i <= steps; i++) {
           var t = i / steps;
           var currentX = startX + (endX - startX) * t;
           var currentY = startY + (endY - startY) * t;
           var dragEvent = $.CGEventCreateMouseEvent($(), $.kCGEventLeftMouseDragged, $.CGPointMake(currentX, currentY), $.kCGMouseButtonLeft);
           $.CGEventPost($.kCGHIDEventTap, dragEvent);
-          delay(0.01);
+          delay(stepDelay);
         }
 
         // Mouse up

@@ -1,7 +1,7 @@
 import {SimulatorManager} from '../simulator/SimulatorManager';
 
 export type FrameCallback = (
-  frame: string,
+  frame: Uint8Array,
   stats: {fps: number; latency: number}
 ) => void;
 
