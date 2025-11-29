@@ -166,6 +166,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           );
           await this.fallbackToJpeg();
           break;
+
+        case 'adjustFps':
+          await this.handleFpsAdjustment(message.fps as number);
+          break;
       }
     } catch (error) {
       Logger.error('Failed to handle message', error as Error);
@@ -506,6 +510,25 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     await this.startCaptureForDevice(this.currentDeviceId, device);
   }
 
+  private async handleFpsAdjustment(fps: number): Promise<void> {
+    if (!this.currentCapture) return;
+
+    Logger.info(`Adjusting FPS to ${fps} based on adaptive algorithm`);
+
+    // Update the streaming FPS configuration
+    const config = vscode.workspace.getConfiguration('secondarySimulator');
+    await config.update('streamingFps', fps, vscode.ConfigurationTarget.Global);
+
+    // Restart capture with new FPS if in streaming mode
+    const captureMode = config.get<string>('captureMode', 'screenshot');
+    if (captureMode === 'streaming' && this.currentDeviceId) {
+      const device = this.devices.find((d) => d.id === this.currentDeviceId);
+      if (device) {
+        await this.startCaptureForDevice(this.currentDeviceId, device);
+      }
+    }
+  }
+
   private disconnect(): void {
     this.stopCapture();
     this.currentDeviceId = null;
@@ -678,7 +701,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     <span id="latency">-- ms</span>
     <span id="render-latency">Render -- ms</span>
     <span id="queue">Q:0</span>
+    <span id="health" style="display: none;">●</span>
   </div>
+
+  <!-- Visual feedback overlay for gestures -->
+  <div id="gesture-feedback" style="position: fixed; pointer-events: none; z-index: 9999;"></div>
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -698,6 +725,69 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     let startTime = 0;
     const SWIPE_THRESHOLD = 30; // minimum pixels for swipe
     const TAP_THRESHOLD = 10; // maximum pixels for tap
+
+    // Visual feedback functions (mobiledeck-inspired)
+    function showTapFeedback(x, y) {
+      const feedback = document.getElementById('gesture-feedback');
+      if (!feedback) return;
+
+      const ripple = document.createElement('div');
+      ripple.style.position = 'absolute';
+      ripple.style.left = (x - 20) + 'px';
+      ripple.style.top = (y - 20) + 'px';
+      ripple.style.width = '40px';
+      ripple.style.height = '40px';
+      ripple.style.borderRadius = '50%';
+      ripple.style.background = 'rgba(33, 150, 243, 0.5)';
+      ripple.style.animation = 'ripple 0.6s ease-out';
+      ripple.style.pointerEvents = 'none';
+
+      feedback.appendChild(ripple);
+
+      setTimeout(() => {
+        ripple.remove();
+      }, 600);
+    }
+
+    function showSwipeFeedback(x1, y1, x2, y2) {
+      const feedback = document.getElementById('gesture-feedback');
+      if (!feedback) return;
+
+      const line = document.createElement('div');
+      const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+      const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+
+      line.style.position = 'absolute';
+      line.style.left = x1 + 'px';
+      line.style.top = y1 + 'px';
+      line.style.width = length + 'px';
+      line.style.height = '3px';
+      line.style.background = 'rgba(76, 175, 80, 0.7)';
+      line.style.transformOrigin = '0 0';
+      line.style.transform = 'rotate(' + angle + 'deg)';
+      line.style.animation = 'fadeOut 0.5s ease-out';
+      line.style.pointerEvents = 'none';
+
+      feedback.appendChild(line);
+
+      setTimeout(() => {
+        line.remove();
+      }, 500);
+    }
+
+    // Add CSS animations
+    const style = document.createElement('style');
+    style.textContent = \`
+      @keyframes ripple {
+        0% { transform: scale(0); opacity: 1; }
+        100% { transform: scale(2); opacity: 0; }
+      }
+      @keyframes fadeOut {
+        0% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+    \`;
+    document.head.appendChild(style);
 
     canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
@@ -730,6 +820,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         // It's a tap
         const x = clamp01(endX / rect.width);
         const y = clamp01(endY / rect.height);
+        showTapFeedback(endX, endY);
         vscode.postMessage({ type: 'tap', x, y });
       } else if (distance >= SWIPE_THRESHOLD) {
         // It's a swipe
@@ -737,6 +828,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         const y1 = clamp01(startY / rect.height);
         const x2 = clamp01(endX / rect.width);
         const y2 = clamp01(endY / rect.height);
+        showSwipeFeedback(startX, startY, endX, endY);
         vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
       }
     });
@@ -876,6 +968,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     let lastStatsUpdate = performance.now();
 
     const MAX_FRAME_QUEUE = 3;  // mobiledeck approach
+
+    // Adaptive frame rate adjustment
+    let targetFps = 15;
+    let currentDropRate = 0;
+    let lastFpsAdjustment = performance.now();
+    const FPS_ADJUSTMENT_INTERVAL = 5000;  // Adjust every 5 seconds
+    const MAX_DROP_RATE = 0.15;  // 15% max acceptable drop rate
+    const MIN_DROP_RATE = 0.05;  // 5% target drop rate
+
+    // Connection health monitoring
+    let lastFrameTime = performance.now();
+    let connectionHealthy = true;
+    const CONNECTION_TIMEOUT = 3000;  // 3 seconds without frames = unhealthy
 
     // WebCodecs (H.264) pipeline groundwork
     let decoder = null;
@@ -1078,6 +1183,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       }
 
       totalFramesReceived++;
+      lastFrameTime = performance.now();  // Update connection health
 
       // Drop oldest frame if queue is full (low latency approach)
       if (frameQueue.length >= MAX_FRAME_QUEUE) {
@@ -1099,9 +1205,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       // Update drop rate every second
       const now = performance.now();
       if (now - lastStatsUpdate >= 1000) {
-        const dropRate = totalFramesReceived > 0
-          ? Math.round((totalFramesDropped / totalFramesReceived) * 100)
+        currentDropRate = totalFramesReceived > 0
+          ? totalFramesDropped / totalFramesReceived
           : 0;
+        const dropRatePercent = Math.round(currentDropRate * 100);
 
         // Add drop rate to stats display
         const statsEl = document.getElementById('status');
@@ -1110,11 +1217,67 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             'Received: ' + totalFramesReceived +
             ', Rendered: ' + totalFramesRendered +
             ', Dropped: ' + totalFramesDropped +
-            ' (' + dropRate + '%)'
+            ' (' + dropRatePercent + '%)' +
+            '\\nTarget FPS: ' + targetFps
           );
         }
 
+        // Adaptive FPS adjustment
+        adjustFrameRate(now);
+
         lastStatsUpdate = now;
+      }
+
+      // Update connection health indicator
+      updateConnectionHealth();
+    }
+
+    // Adaptive frame rate adjustment
+    function adjustFrameRate(now) {
+      if (now - lastFpsAdjustment < FPS_ADJUSTMENT_INTERVAL) return;
+
+      lastFpsAdjustment = now;
+
+      // Too many drops - reduce FPS
+      if (currentDropRate > MAX_DROP_RATE && targetFps > 5) {
+        targetFps = Math.max(5, targetFps - 2);
+        console.log('Reducing target FPS to', targetFps, 'due to high drop rate:', Math.round(currentDropRate * 100) + '%');
+        vscode.postMessage({ type: 'adjustFps', fps: targetFps });
+      }
+      // Very few drops - can increase FPS
+      else if (currentDropRate < MIN_DROP_RATE && targetFps < 30) {
+        targetFps = Math.min(30, targetFps + 1);
+        console.log('Increasing target FPS to', targetFps, 'due to low drop rate:', Math.round(currentDropRate * 100) + '%');
+        vscode.postMessage({ type: 'adjustFps', fps: targetFps });
+      }
+    }
+
+    // Connection health monitoring
+    function updateConnectionHealth() {
+      const now = performance.now();
+      const timeSinceLastFrame = now - lastFrameTime;
+      const wasHealthy = connectionHealthy;
+
+      connectionHealthy = timeSinceLastFrame < CONNECTION_TIMEOUT;
+
+      const healthEl = document.getElementById('health');
+      if (healthEl) {
+        if (connectionHealthy) {
+          healthEl.style.color = '#4CAF50';  // Green
+          healthEl.style.display = 'inline';
+          healthEl.title = 'Connection healthy';
+        } else {
+          healthEl.style.color = '#F44336';  // Red
+          healthEl.style.display = 'inline';
+          healthEl.title = 'Connection unhealthy (no frames for ' + Math.round(timeSinceLastFrame / 1000) + 's)';
+        }
+      }
+
+      // Alert on health change
+      if (wasHealthy && !connectionHealthy) {
+        console.warn('Connection unhealthy: no frames received for', Math.round(timeSinceLastFrame / 1000), 'seconds');
+      } else if (!wasHealthy && connectionHealthy) {
+        console.log('Connection recovered');
       }
     }
 
