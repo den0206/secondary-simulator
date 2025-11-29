@@ -1,9 +1,9 @@
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
+import {H264Streamer} from '../capture/H264Streamer';
 import {ScreenshotCapture} from '../capture/ScreenshotCapture';
 import {StreamingCapture} from '../capture/StreamingCapture';
-import {H264Streamer} from '../capture/H264Streamer';
 import {AndroidEmulator} from '../simulator/AndroidEmulator';
 import {IOSSimulator} from '../simulator/IOSSimulator';
 import {SimulatorManager} from '../simulator/SimulatorManager';
@@ -51,6 +51,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       undefined,
       []
     );
+
+    // 初期設定をWebviewへ送信
+    this.sendConfig();
 
     webviewView.onDidDispose(() => {
       this.stopCapture();
@@ -115,6 +118,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'longPress': {
+          Logger.info(
+            `Long press received: (${message.x}, ${message.y}), duration=${message.duration}ms`
+          );
+          await this.handleLongPress(
+            message.x as number,
+            message.y as number,
+            message.duration as number | undefined
+          );
+          break;
+        }
+
+        case 'doubleTap': {
+          Logger.info(`Double tap received: (${message.x}, ${message.y})`);
+          await this.handleDoubleTap(message.x as number, message.y as number);
+          break;
+        }
+
         case 'keypress':
           Logger.info(
             `Key pressed: ${message.key}${message.special ? ' (special)' : ''}`
@@ -170,11 +191,31 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         case 'adjustFps':
           await this.handleFpsAdjustment(message.fps as number);
           break;
+
+        case 'toggleOverlay':
+          await this.handleOverlayToggle(message.enabled as boolean);
+          break;
       }
     } catch (error) {
       Logger.error('Failed to handle message', error as Error);
       this.sendError((error as Error).message);
     }
+  }
+
+  private sendConfig(): void {
+    if (!this.view) return;
+    const config = vscode.workspace.getConfiguration('secondarySimulator');
+    const tapThreshold = config.get<number>('tapThreshold', 10);
+    const swipeThreshold = config.get<number>('swipeThreshold', 30);
+    const showGestureOverlay = config.get<boolean>('showGestureOverlay', true);
+    const longPressDuration = config.get<number>('longPressDuration', 600);
+    this.postMessage({
+      type: 'config',
+      tapThreshold,
+      swipeThreshold,
+      showGestureOverlay,
+      longPressDuration,
+    });
   }
 
   async refreshDevices(): Promise<void> {
@@ -306,10 +347,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.h264Streamer.dispose();
       this.h264Streamer = null;
     }
-    this.h264Streamer = new H264Streamer(
-      device.platform,
-      device.id,
-      (msg) => this.postMessage(msg)
+    this.h264Streamer = new H264Streamer(device.platform, device.id, (msg) =>
+      this.postMessage(msg)
     );
     this.h264Streamer.start();
   }
@@ -417,6 +456,71 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async handleLongPress(
+    x: number,
+    y: number,
+    durationMs?: number
+  ): Promise<void> {
+    if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot long-press: no device selected');
+      return;
+    }
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      Logger.warn(`Long press ignored due to invalid coordinates: x=${x}, y=${y}`);
+      return;
+    }
+
+    const config = vscode.workspace.getConfiguration('secondarySimulator');
+    const defaultDuration = config.get<number>('longPressDuration', 600);
+    const duration =
+      typeof durationMs === 'number' && Number.isFinite(durationMs)
+        ? Math.max(200, Math.min(durationMs, 2000))
+        : defaultDuration;
+
+    const clampedX = this.clamp01(x);
+    const clampedY = this.clamp01(y);
+    const epsilon = 0.001;
+    const x2 = this.clamp01(clampedX + epsilon);
+    const y2 = this.clamp01(clampedY + epsilon);
+
+    try {
+      await this.currentManager.swipe(
+        this.currentDeviceId,
+        clampedX,
+        clampedY,
+        x2,
+        y2,
+        duration
+      );
+    } catch (error) {
+      Logger.error('Failed to send long press', error as Error);
+    }
+  }
+
+  private async handleDoubleTap(x: number, y: number): Promise<void> {
+    if (!this.currentManager || !this.currentDeviceId) {
+      Logger.warn('Cannot double-tap: no device selected');
+      return;
+    }
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      Logger.warn(`Double tap ignored due to invalid coordinates: x=${x}, y=${y}`);
+      return;
+    }
+
+    const clampedX = this.clamp01(x);
+    const clampedY = this.clamp01(y);
+
+    try {
+      await this.currentManager.tap(this.currentDeviceId, clampedX, clampedY);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await this.currentManager.tap(this.currentDeviceId, clampedX, clampedY);
+    } catch (error) {
+      Logger.error('Failed to send double tap', error as Error);
+    }
+  }
+
   private async handleKeypress(key: string, special?: boolean): Promise<void> {
     if (!this.currentManager || !this.currentDeviceId) {
       Logger.warn('Cannot send key: no device selected');
@@ -477,7 +581,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       });
 
       if (uri) {
-        await fs.writeFile(uri.fsPath, screenshot);
+        await fs.promises.writeFile(uri.fsPath, screenshot);
         vscode.window.showInformationMessage(
           `Screenshot saved to ${uri.fsPath}`
         );
@@ -529,6 +633,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async handleOverlayToggle(enabled: boolean): Promise<void> {
+    const config = vscode.workspace.getConfiguration('secondarySimulator');
+    await config.update(
+      'showGestureOverlay',
+      !!enabled,
+      vscode.ConfigurationTarget.Global
+    );
+    this.sendConfig();
+  }
+
   private disconnect(): void {
     this.stopCapture();
     this.currentDeviceId = null;
@@ -548,878 +662,26 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private getHtmlContent(webview: vscode.Webview): string {
     const nonce = this.getNonce();
-
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <style>
-    body {
-      margin: 0;
-      padding: 8px;
-      background: var(--vscode-sideBar-background);
-      color: var(--vscode-foreground);
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-    }
-
-    .device-selector {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-    }
-
-    .device-selector select {
-      flex: 1;
-      min-width: 100px;
-      padding: 4px 8px;
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border: 1px solid var(--vscode-input-border);
-      border-radius: 2px;
-      font-size: 12px;
-    }
-
-    .simulator-container {
-      position: relative;
-      width: 100%;
-      max-width: 420px;
-      margin: 0 auto;
-      background: #000;
-      border-radius: 8px;
-      overflow: hidden;
-      min-height: 200px;
-    }
-
-    #simulator-canvas {
-      width: 100%;
-      height: auto;
-      display: block;
-      cursor: pointer;
-    }
-
-    .overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.8);
-      color: #fff;
-      font-size: 12px;
-      text-align: center;
-      padding: 20px;
-    }
-
-    .overlay.hidden {
-      display: none;
-    }
-
-    .controls {
-      display: flex;
-      justify-content: center;
-      gap: 4px;
-      margin-top: 8px;
-      flex-wrap: wrap;
-      max-width: 420px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .control-btn {
-      padding: 6px 10px;
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-    }
-
-    .control-btn:hover {
-      background: var(--vscode-button-secondaryHoverBackground);
-    }
-
-    .control-btn:active {
-      transform: scale(0.95);
-    }
-
-    .status-bar {
-      display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--vscode-widget-border);
-      opacity: 0.7;
-      max-width: 420px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-  </style>
-</head>
-<body>
-  <div class="device-selector">
-    <select id="platform">
-      <option value="ios">iOS</option>
-      <option value="android">Android</option>
-    </select>
-    <select id="device">
-      <option value="">Select Device...</option>
-    </select>
-    <select id="capture-mode" title="Capture Mode">
-      <option value="screenshot">Screenshot</option>
-      <option value="streaming">Streaming</option>
-    </select>
-  </div>
-
-  <div class="simulator-container">
-    <canvas id="simulator-canvas" style="display: none;"></canvas>
-    <div class="overlay" id="overlay">
-      <span>Select a device to start</span>
-    </div>
-  </div>
-
-  <div class="controls">
-    <button class="control-btn" id="btn-home" title="Home">Home</button>
-    <button class="control-btn" id="btn-back" title="Back">Back</button>
-    <button class="control-btn" id="btn-screenshot" title="Save Screenshot">Save</button>
-    <button class="control-btn" id="btn-refresh" title="Refresh Devices">Refresh</button>
-    <button class="control-btn" id="btn-disconnect" title="Disconnect">Disconnect</button>
-  </div>
-
-  <div class="status-bar">
-    <span id="fps">-- FPS</span>
-    <span id="status">Idle</span>
-    <span id="latency">-- ms</span>
-    <span id="render-latency">Render -- ms</span>
-    <span id="queue">Q:0</span>
-    <span id="health" style="display: none;">●</span>
-  </div>
-
-  <!-- Visual feedback overlay for gestures -->
-  <div id="gesture-feedback" style="position: fixed; pointer-events: none; z-index: 9999;"></div>
-
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    const canvas = document.getElementById('simulator-canvas');
-    const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
-    const platformSelect = document.getElementById('platform');
-    const deviceSelect = document.getElementById('device');
-    const captureModeSelect = document.getElementById('capture-mode');
-
-    // Touch/Mouse event handling for tap and swipe
-    const clamp01 = (v) => Math.max(0, Math.min(1, v));
-
-    let isDragging = false;
-    let startX = 0;
-    let startY = 0;
-    let startTime = 0;
-    const SWIPE_THRESHOLD = 30; // minimum pixels for swipe
-    const TAP_THRESHOLD = 10; // maximum pixels for tap
-
-    // Visual feedback functions (mobiledeck-inspired)
-    function showTapFeedback(x, y) {
-      const feedback = document.getElementById('gesture-feedback');
-      if (!feedback) return;
-
-      const ripple = document.createElement('div');
-      ripple.style.position = 'absolute';
-      ripple.style.left = (x - 20) + 'px';
-      ripple.style.top = (y - 20) + 'px';
-      ripple.style.width = '40px';
-      ripple.style.height = '40px';
-      ripple.style.borderRadius = '50%';
-      ripple.style.background = 'rgba(33, 150, 243, 0.5)';
-      ripple.style.animation = 'ripple 0.6s ease-out';
-      ripple.style.pointerEvents = 'none';
-
-      feedback.appendChild(ripple);
-
-      setTimeout(() => {
-        ripple.remove();
-      }, 600);
-    }
-
-    function showSwipeFeedback(x1, y1, x2, y2) {
-      const feedback = document.getElementById('gesture-feedback');
-      if (!feedback) return;
-
-      const line = document.createElement('div');
-      const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-      const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-
-      line.style.position = 'absolute';
-      line.style.left = x1 + 'px';
-      line.style.top = y1 + 'px';
-      line.style.width = length + 'px';
-      line.style.height = '3px';
-      line.style.background = 'rgba(76, 175, 80, 0.7)';
-      line.style.transformOrigin = '0 0';
-      line.style.transform = 'rotate(' + angle + 'deg)';
-      line.style.animation = 'fadeOut 0.5s ease-out';
-      line.style.pointerEvents = 'none';
-
-      feedback.appendChild(line);
-
-      setTimeout(() => {
-        line.remove();
-      }, 500);
-    }
-
-    // Add CSS animations
-    const style = document.createElement('style');
-    style.textContent = \`
-      @keyframes ripple {
-        0% { transform: scale(0); opacity: 1; }
-        100% { transform: scale(2); opacity: 0; }
-      }
-      @keyframes fadeOut {
-        0% { opacity: 1; }
-        100% { opacity: 0; }
-      }
-    \`;
-    document.head.appendChild(style);
-
-    canvas.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      const rect = canvas.getBoundingClientRect();
-      startX = e.clientX - rect.left;
-      startY = e.clientY - rect.top;
-      startTime = Date.now();
-      e.preventDefault();
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      e.preventDefault();
-    });
-
-    canvas.addEventListener('mouseup', (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-
-      const rect = canvas.getBoundingClientRect();
-      const endX = e.clientX - rect.left;
-      const endY = e.clientY - rect.top;
-      const duration = Date.now() - startTime;
-
-      const deltaX = endX - startX;
-      const deltaY = endY - startY;
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-      if (distance < TAP_THRESHOLD) {
-        // It's a tap
-        const x = clamp01(endX / rect.width);
-        const y = clamp01(endY / rect.height);
-        showTapFeedback(endX, endY);
-        vscode.postMessage({ type: 'tap', x, y });
-      } else if (distance >= SWIPE_THRESHOLD) {
-        // It's a swipe
-        const x1 = clamp01(startX / rect.width);
-        const y1 = clamp01(startY / rect.height);
-        const x2 = clamp01(endX / rect.width);
-        const y2 = clamp01(endY / rect.height);
-        showSwipeFeedback(startX, startY, endX, endY);
-        vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
-      }
-    });
-
-    canvas.addEventListener('mouseleave', () => {
-      isDragging = false;
-    });
-
-    // Touch events for mobile/trackpad
-    canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        const rect = canvas.getBoundingClientRect();
-        startX = touch.clientX - rect.left;
-        startY = touch.clientY - rect.top;
-        startTime = Date.now();
-        isDragging = true;
-      }
-      e.preventDefault();
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', (e) => {
-      if (!isDragging || e.changedTouches.length !== 1) return;
-      isDragging = false;
-
-      const touch = e.changedTouches[0];
-      const rect = canvas.getBoundingClientRect();
-      const endX = touch.clientX - rect.left;
-      const endY = touch.clientY - rect.top;
-      const duration = Date.now() - startTime;
-
-      const deltaX = endX - startX;
-      const deltaY = endY - startY;
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-      if (distance < TAP_THRESHOLD) {
-        const x = clamp01(endX / rect.width);
-        const y = clamp01(endY / rect.height);
-        vscode.postMessage({ type: 'tap', x, y });
-      } else if (distance >= SWIPE_THRESHOLD) {
-        const x1 = clamp01(startX / rect.width);
-        const y1 = clamp01(startY / rect.height);
-        const x2 = clamp01(endX / rect.width);
-        const y2 = clamp01(endY / rect.height);
-        vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
-      }
-      e.preventDefault();
-    }, { passive: false });
-
-    // Keyboard input handling
-    document.addEventListener('keydown', (e) => {
-      // Only capture when screen is visible and focused
-      if (!canvas || canvas.style.display === 'none') return;
-
-      // Ignore modifier-only keys and some special keys
-      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
-
-      // Handle special keys
-      if (e.key === 'Backspace') {
-        vscode.postMessage({ type: 'keypress', key: 'delete', special: true });
-        e.preventDefault();
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        vscode.postMessage({ type: 'keypress', key: 'return', special: true });
-        e.preventDefault();
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        vscode.postMessage({ type: 'keypress', key: 'escape', special: true });
-        e.preventDefault();
-        return;
-      }
-
-      // For regular characters
-      if (e.key.length === 1) {
-        vscode.postMessage({ type: 'keypress', key: e.key });
-        e.preventDefault();
-      }
-    });
-
-    platformSelect.addEventListener('change', () => {
-      vscode.postMessage({
-        type: 'platformChange',
-        platform: platformSelect.value
-      });
-    });
-
-    deviceSelect.addEventListener('change', () => {
-      vscode.postMessage({
-        type: 'deviceChange',
-        deviceId: deviceSelect.value
-      });
-    });
-
-    if (captureModeSelect) {
-      captureModeSelect.addEventListener('change', () => {
-        vscode.postMessage({
-          type: 'captureModeChange',
-          mode: captureModeSelect.value
-        });
-      });
-    }
-
-    document.getElementById('btn-home').addEventListener('click', () => {
-      vscode.postMessage({ type: 'home' });
-    });
-
-    document.getElementById('btn-back').addEventListener('click', () => {
-      vscode.postMessage({ type: 'back' });
-    });
-
-    document.getElementById('btn-screenshot').addEventListener('click', () => {
-      vscode.postMessage({ type: 'saveScreenshot' });
-    });
-
-    document.getElementById('btn-refresh').addEventListener('click', () => {
-      vscode.postMessage({ type: 'refreshDevices' });
-    });
-
-    document.getElementById('btn-disconnect').addEventListener('click', () => {
-      vscode.postMessage({ type: 'disconnect' });
-    });
-
-    let frameQueue = [];  // mobiledeck-style multi-frame queue
-    let currentBitmap = null;
-    let isRendering = false;
-    let lastRenderAt = 0;
-    let animationFrameId = null;
-
-    // Performance tracking
-    let totalFramesReceived = 0;
-    let totalFramesRendered = 0;
-    let totalFramesDropped = 0;
-    let lastStatsUpdate = performance.now();
-
-    const MAX_FRAME_QUEUE = 3;  // mobiledeck approach
-
-    // Adaptive frame rate adjustment
-    let targetFps = 15;
-    let currentDropRate = 0;
-    let lastFpsAdjustment = performance.now();
-    const FPS_ADJUSTMENT_INTERVAL = 5000;  // Adjust every 5 seconds
-    const MAX_DROP_RATE = 0.15;  // 15% max acceptable drop rate
-    const MIN_DROP_RATE = 0.05;  // 5% target drop rate
-
-    // Connection health monitoring
-    let lastFrameTime = performance.now();
-    let connectionHealthy = true;
-    const CONNECTION_TIMEOUT = 3000;  // 3 seconds without frames = unhealthy
-
-    // WebCodecs (H.264) pipeline groundwork
-    let decoder = null;
-    let decoderConfig = null;
-    let decodedQueue = 0;
-    let lastChunkTime = performance.now();
-
-    const maxDecodeQueue = 3;
-    let askedFallback = false;
-
-    function normalizeToUint8Array(data) {
-      if (data instanceof Uint8Array) return data;
-      if (data?.data && Array.isArray(data.data)) {
-        return new Uint8Array(data.data);
-      }
-      if (Array.isArray(data)) {
-        return new Uint8Array(data);
-      }
-      return null;
-    }
-
-    // Optimized rendering using requestAnimationFrame (mobiledeck approach)
-    async function renderFrame(bytes) {
-      if (!bytes) return;
-      const started = performance.now();
-      try {
-        const blob = new Blob([bytes], { type: 'image/jpeg' });
-        const bitmap = await createImageBitmap(blob);
-
-        // Clean up previous bitmap to free GPU memory
-        if (currentBitmap) {
-          currentBitmap.close?.();
-          currentBitmap = null;
-        }
-
-        currentBitmap = bitmap;
-
-        // Resize canvas to frame size once
-        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-        }
-
-        // Draw using RAF for smoother rendering
-        if (animationFrameId !== null) {
-          cancelAnimationFrame(animationFrameId);
-        }
-
-        animationFrameId = requestAnimationFrame(() => {
-          if (currentBitmap && ctx) {
-            ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
-
-            const renderLatency = Math.round(performance.now() - started);
-            document.getElementById('render-latency').textContent =
-              'Render ' + renderLatency + ' ms';
-          }
-          animationFrameId = null;
-        });
-
-        lastRenderAt = performance.now();
-      } catch (err) {
-        console.error('Failed to render frame', err);
-        // Clean up on error
-        if (currentBitmap) {
-          currentBitmap.close?.();
-          currentBitmap = null;
-        }
-      }
-    }
-
-    // --- WebCodecs decode path for future H.264 stream support ---
-    function requestFallback(reason) {
-      if (askedFallback) return;
-      askedFallback = true;
-      vscode.postMessage({ type: 'fallback-jpeg', reason });
-    }
-
-    function ensureDecoder(config) {
-      if (!('VideoDecoder' in window)) {
-        console.warn('WebCodecs not available');
-        requestFallback('VideoDecoder unavailable');
-        return null;
-      }
-      if (decoder && decoderConfig && JSON.stringify(decoderConfig) === JSON.stringify(config)) {
-        return decoder;
-      }
-      if (decoder) {
-        try { decoder.close(); } catch (_) {}
-        decoder = null;
-      }
-      decoderConfig = config;
-      decoder = new VideoDecoder({
-        output: handleDecodedFrame,
-        error: (e) => {
-          console.error('Decoder error', e);
-          requestFallback('decoder error');
-        },
-      });
-      try {
-        decoder.configure(config);
-      } catch (e) {
-        console.error('Failed to configure decoder', e);
-        requestFallback('configure failed');
-        decoder = null;
-      }
-      decodedQueue = 0;
-      return decoder;
-    }
-
-    function handleDecodedFrame(videoFrame) {
-      decodedQueue = Math.max(0, decodedQueue - 1);
-      try {
-        if (canvas.width !== videoFrame.codedWidth || canvas.height !== videoFrame.codedHeight) {
-          canvas.width = videoFrame.codedWidth;
-          canvas.height = videoFrame.codedHeight;
-        }
-        const started = performance.now();
-        const renderWidth = canvas.width;
-        const renderHeight = canvas.height;
-
-        // drawImage accepts VideoFrame directly
-        ctx.drawImage(videoFrame, 0, 0, renderWidth, renderHeight);
-        lastRenderAt = performance.now();
-        document.getElementById('render-latency').textContent =
-          'Render ' + Math.round(lastRenderAt - started) + ' ms';
-      } catch (e) {
-        console.error('Failed to draw decoded frame', e);
-      } finally {
-        videoFrame.close();
-      }
-    }
-
-    function convertAnnexBToAvcc(bytes) {
-      // strip start code if present and prefix length (4 bytes)
-      let offset = 0;
-      if (bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x00 && bytes[3] === 0x01) {
-        offset = 4;
-      } else if (bytes.length >= 3 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x01) {
-        offset = 3;
-      }
-      const nal = bytes.subarray(offset);
-      const len = nal.length;
-      const out = new Uint8Array(4 + len);
-      out[0] = (len >>> 24) & 0xff;
-      out[1] = (len >>> 16) & 0xff;
-      out[2] = (len >>> 8) & 0xff;
-      out[3] = len & 0xff;
-      out.set(nal, 4);
-      return out;
-    }
-
-    function handleH264Chunk(data, isKeyframe) {
-      const bytes = normalizeToUint8Array(data);
-      if (!bytes || !decoder) return;
-      const chunkData = convertAnnexBToAvcc(bytes);
-      if (decoder.decodeQueueSize >= maxDecodeQueue) {
-        // Drop to keep latency low
-        return;
-      }
-      decodedQueue = Math.min(maxDecodeQueue, decodedQueue + 1);
-      lastChunkTime = performance.now();
-      try {
-        decoder.decode(new EncodedVideoChunk({
-          type: isKeyframe ? 'key' : 'delta',
-          timestamp: lastChunkTime * 1000, // microseconds
-          data: chunkData,
-        }));
-        document.getElementById('queue').textContent = 'Q:' + decodedQueue;
-      } catch (e) {
-        console.error('decode failed', e);
-        requestFallback('decode failed');
-      }
-    }
-
-    // Optimized frame queue management (mobiledeck approach)
-    function dequeueAndRender() {
-      if (isRendering || frameQueue.length === 0) return;
-
-      const frame = frameQueue.shift();
-      isRendering = true;
-
-      renderFrame(frame).finally(() => {
-        isRendering = false;
-        totalFramesRendered++;
-        updateQueueDisplay();
-
-        // Continue rendering if more frames are queued
-        if (frameQueue.length > 0) {
-          requestAnimationFrame(dequeueAndRender);
-        }
-      });
-    }
-
-    function enqueueFrame(data) {
-      const bytes = normalizeToUint8Array(data);
-      if (!bytes) {
-        console.warn('Dropping frame: could not normalize data');
-        totalFramesDropped++;
-        return;
-      }
-
-      totalFramesReceived++;
-      lastFrameTime = performance.now();  // Update connection health
-
-      // Drop oldest frame if queue is full (low latency approach)
-      if (frameQueue.length >= MAX_FRAME_QUEUE) {
-        frameQueue.shift();  // Drop oldest frame
-        totalFramesDropped++;
-      }
-
-      frameQueue.push(bytes);
-      updateQueueDisplay();
-
-      if (!isRendering) {
-        requestAnimationFrame(dequeueAndRender);
-      }
-    }
-
-    function updateQueueDisplay() {
-      document.getElementById('queue').textContent = 'Q:' + frameQueue.length;
-
-      // Update drop rate every second
-      const now = performance.now();
-      if (now - lastStatsUpdate >= 1000) {
-        currentDropRate = totalFramesReceived > 0
-          ? totalFramesDropped / totalFramesReceived
-          : 0;
-        const dropRatePercent = Math.round(currentDropRate * 100);
-
-        // Add drop rate to stats display
-        const statsEl = document.getElementById('status');
-        if (statsEl && statsEl.textContent.includes('Capturing')) {
-          statsEl.setAttribute('title',
-            'Received: ' + totalFramesReceived +
-            ', Rendered: ' + totalFramesRendered +
-            ', Dropped: ' + totalFramesDropped +
-            ' (' + dropRatePercent + '%)' +
-            '\\nTarget FPS: ' + targetFps
-          );
-        }
-
-        // Adaptive FPS adjustment
-        adjustFrameRate(now);
-
-        lastStatsUpdate = now;
-      }
-
-      // Update connection health indicator
-      updateConnectionHealth();
-    }
-
-    // Adaptive frame rate adjustment
-    function adjustFrameRate(now) {
-      if (now - lastFpsAdjustment < FPS_ADJUSTMENT_INTERVAL) return;
-
-      lastFpsAdjustment = now;
-
-      // Too many drops - reduce FPS
-      if (currentDropRate > MAX_DROP_RATE && targetFps > 5) {
-        targetFps = Math.max(5, targetFps - 2);
-        console.log('Reducing target FPS to', targetFps, 'due to high drop rate:', Math.round(currentDropRate * 100) + '%');
-        vscode.postMessage({ type: 'adjustFps', fps: targetFps });
-      }
-      // Very few drops - can increase FPS
-      else if (currentDropRate < MIN_DROP_RATE && targetFps < 30) {
-        targetFps = Math.min(30, targetFps + 1);
-        console.log('Increasing target FPS to', targetFps, 'due to low drop rate:', Math.round(currentDropRate * 100) + '%');
-        vscode.postMessage({ type: 'adjustFps', fps: targetFps });
-      }
-    }
-
-    // Connection health monitoring
-    function updateConnectionHealth() {
-      const now = performance.now();
-      const timeSinceLastFrame = now - lastFrameTime;
-      const wasHealthy = connectionHealthy;
-
-      connectionHealthy = timeSinceLastFrame < CONNECTION_TIMEOUT;
-
-      const healthEl = document.getElementById('health');
-      if (healthEl) {
-        if (connectionHealthy) {
-          healthEl.style.color = '#4CAF50';  // Green
-          healthEl.style.display = 'inline';
-          healthEl.title = 'Connection healthy';
-        } else {
-          healthEl.style.color = '#F44336';  // Red
-          healthEl.style.display = 'inline';
-          healthEl.title = 'Connection unhealthy (no frames for ' + Math.round(timeSinceLastFrame / 1000) + 's)';
-        }
-      }
-
-      // Alert on health change
-      if (wasHealthy && !connectionHealthy) {
-        console.warn('Connection unhealthy: no frames received for', Math.round(timeSinceLastFrame / 1000), 'seconds');
-      } else if (!wasHealthy && connectionHealthy) {
-        console.log('Connection recovered');
-      }
-    }
-
-    window.addEventListener('message', (event) => {
-      const message = event.data;
-
-      switch (message.type) {
-        case 'h264-config': {
-          // Expect {codec, description} etc.
-          const config = {
-            codec: message.codec || 'avc1.42E01E',
-            description: message.description
-              ? new Uint8Array(message.description)
-              : undefined,
-          };
-          ensureDecoder(config);
-          break;
-        }
-
-        case 'h264-chunk':
-          handleH264Chunk(message.data, !!message.isKeyframe);
-          canvas.style.display = 'block';
-          overlay.classList.add('hidden');
-          break;
-
-        case 'frame':
-          enqueueFrame(message.data);
-          canvas.style.display = 'block';
-          overlay.classList.add('hidden');
-          break;
-
-        case 'devices':
-          updateDeviceList(message.devices);
-          break;
-
-        case 'stats':
-          document.getElementById('fps').textContent = message.fps + ' FPS';
-          document.getElementById('latency').textContent = message.latency + ' ms';
-          break;
-
-        case 'status':
-          document.getElementById('status').textContent = message.text;
-          break;
-
-        case 'error':
-          // Clean up resources on error
-          if (currentBitmap) {
-            currentBitmap.close?.();
-            currentBitmap = null;
-          }
-          if (animationFrameId !== null) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-          }
-
-          overlay.classList.remove('hidden');
-          overlay.querySelector('span').textContent = message.text;
-          screen.style.display = 'none';
-          break;
-
-        case 'disconnected':
-          // Clean up resources (mobiledeck approach)
-          if (currentBitmap) {
-            currentBitmap.close?.();
-            currentBitmap = null;
-          }
-          if (animationFrameId !== null) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-          }
-          frameQueue = [];  // Clear frame queue
-
-          // Reset performance stats
-          totalFramesReceived = 0;
-          totalFramesRendered = 0;
-          totalFramesDropped = 0;
-
-          overlay.classList.remove('hidden');
-          overlay.querySelector('span').textContent = 'Select a device to start';
-          screen.style.display = 'none';
-          deviceSelect.value = '';
-          document.getElementById('fps').textContent = '-- FPS';
-          document.getElementById('latency').textContent = '-- ms';
-          document.getElementById('queue').textContent = 'Q:0';
-          break;
-
-        case 'captureModeChanged':
-          if (captureModeSelect) {
-            captureModeSelect.value = message.mode;
-          }
-          break;
-      }
-    });
-
-    function updateDeviceList(devices) {
-      deviceSelect.innerHTML = '<option value="">Select Device...</option>';
-      devices.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.id;
-        const state = device.state === 'Booted' ? '' : ' (Shutdown)';
-        option.textContent = device.name + state;
-        deviceSelect.appendChild(option);
-      });
-    }
-
-    let resizeTimeout;
-    function sendResize() {
-      const container = document.querySelector('.simulator-container');
-      if (container) {
-        const width = Math.round(container.clientWidth);
-        vscode.postMessage({ type: 'resize', width: width });
-      }
-    }
-
-    window.addEventListener('resize', () => {
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(sendResize, 200);
-    });
-
-    // Clean up resources when page unloads (mobiledeck approach)
-    window.addEventListener('beforeunload', () => {
-      if (currentBitmap) {
-        currentBitmap.close?.();
-        currentBitmap = null;
-      }
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
-      }
-      if (decoder) {
-        try { decoder.close(); } catch (_) {}
-        decoder = null;
-      }
-    });
-
-    // 初期設定を取得
-    vscode.postMessage({ type: 'init' });
-    vscode.postMessage({ type: 'getCaptureMode' });
-    setTimeout(sendResize, 100);
-  </script>
-</body>
-</html>`;
+    const htmlPath = vscode.Uri.joinPath(
+      this.extensionUri,
+      'media',
+      'webview',
+      'index.html'
+    );
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'webview', 'main.js')
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'webview', 'style.css')
+    );
+    const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
+
+    const html = fs.readFileSync(htmlPath.fsPath, 'utf8');
+    return html
+      .replace('{{scriptUri}}', scriptUri.toString())
+      .replace('{{styleUri}}', styleUri.toString())
+      .replace('{{nonce}}', nonce)
+      .replace('{{cspMeta}}', cspMeta);
   }
 
   private getNonce(): string {
@@ -1436,6 +698,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (this.currentCapture) {
       this.currentCapture.updateConfig();
     }
+    this.sendConfig();
   }
 
   dispose(): void {
