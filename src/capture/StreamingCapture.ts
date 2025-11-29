@@ -24,6 +24,9 @@ export class StreamingCapture implements CaptureStrategy {
   private useFFmpeg: boolean = false;
   private pendingFrames: Buffer[] = [];
   private isProcessingFrame: boolean = false;
+  private readonly MAX_PENDING_FRAMES = 3;  // mobiledeck approach: limit queue size
+  private consecutiveErrors: number = 0;
+  private readonly MAX_CONSECUTIVE_ERRORS = 5;  // Stop after 5 consecutive errors
 
   constructor(manager: SimulatorManager, initialWidth?: number) {
     this.manager = manager;
@@ -120,11 +123,22 @@ export class StreamingCapture implements CaptureStrategy {
       return;
     }
 
-    // 低遅延モードの場合は、前のフレーム処理を待たない
+    // Drop oldest frames if queue is full (mobiledeck low-latency approach)
     const lowLatency = this.getConfig<boolean>('streamingLowLatency') || false;
-    if (lowLatency && this.pendingFrames.length > 2) {
-      // バッファが溜まりすぎている場合は、古いフレームを破棄
-      this.pendingFrames.shift();
+    if (lowLatency && this.pendingFrames.length >= this.MAX_PENDING_FRAMES) {
+      // Drop oldest frame to maintain low latency
+      const dropped = this.pendingFrames.shift();
+      if (dropped && Buffer.isBuffer(dropped)) {
+        dropped.fill(0);
+      }
+      Logger.debug(`Dropped frame to maintain low latency (queue: ${this.pendingFrames.length})`);
+    } else if (!lowLatency && this.pendingFrames.length >= this.MAX_PENDING_FRAMES * 2) {
+      // In normal mode, allow more buffering but still limit
+      const dropped = this.pendingFrames.shift();
+      if (dropped && Buffer.isBuffer(dropped)) {
+        dropped.fill(0);
+      }
+      Logger.debug(`Dropped frame due to queue overflow (queue: ${this.pendingFrames.length})`);
     }
 
     this.timer = setTimeout(() => {
@@ -151,6 +165,9 @@ export class StreamingCapture implements CaptureStrategy {
     try {
       const screenshot = await this.manager.takeScreenshot(this.deviceId);
 
+      // Success: reset error counter
+      this.consecutiveErrors = 0;
+
       // フレームをバッファに追加
       this.pendingFrames.push(screenshot);
 
@@ -159,8 +176,21 @@ export class StreamingCapture implements CaptureStrategy {
         setImmediate(() => this.processNextFrame(startTime, interval));
       }
     } catch (error) {
-      Logger.error('Failed to capture frame', error as Error);
+      this.consecutiveErrors++;
+      Logger.error(
+        `Failed to capture frame (${this.consecutiveErrors}/${this.MAX_CONSECUTIVE_ERRORS})`,
+        error as Error
+      );
+
       this.isTakingScreenshot = false;
+
+      // Stop capturing after too many consecutive errors
+      if (this.consecutiveErrors >= this.MAX_CONSECUTIVE_ERRORS) {
+        Logger.error('Too many consecutive errors, stopping capture');
+        this.stop();
+        return;
+      }
+
       // エラー時もバッファをクリア
       this.pendingFrames.forEach((buf) => {
         if (Buffer.isBuffer(buf)) {
@@ -168,8 +198,16 @@ export class StreamingCapture implements CaptureStrategy {
         }
       });
       this.pendingFrames = [];
-      this.scheduleNextCapture(interval);
+
+      // Exponential backoff on errors
+      const backoffInterval = Math.min(interval * Math.pow(2, this.consecutiveErrors - 1), 5000);
+      this.timer = setTimeout(() => {
+        this.captureFrame(interval);
+      }, backoffInterval);
+      return;
     }
+
+    this.isTakingScreenshot = false;
   }
 
   private async processNextFrame(startTime: number, interval: number): Promise<void> {
