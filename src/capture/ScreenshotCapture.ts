@@ -17,6 +17,8 @@ export class ScreenshotCapture implements CaptureStrategy {
   private lastFpsUpdate: number = 0;
   private currentFps: number = 0;
   private maxWidth: number | null = null;
+  private consecutiveErrors: number = 0;
+  private readonly MAX_CONSECUTIVE_ERRORS = 5;
 
   constructor(manager: SimulatorManager, initialWidth?: number) {
     this.manager = manager;
@@ -91,6 +93,9 @@ export class ScreenshotCapture implements CaptureStrategy {
     try {
       screenshot = await this.manager.takeScreenshot(this.deviceId);
 
+      // Success: reset error counter
+      this.consecutiveErrors = 0;
+
       if (!this.frameBuffer.shouldSendFrame(screenshot)) {
         // 送信しないフレームもメモリをクリア
         if (screenshot && Buffer.isBuffer(screenshot)) {
@@ -137,7 +142,19 @@ export class ScreenshotCapture implements CaptureStrategy {
         screenshot.fill(0);
       }
     } catch (error) {
-      Logger.error('Failed to capture frame', error as Error);
+      this.consecutiveErrors++;
+      Logger.error(
+        `Failed to capture frame (${this.consecutiveErrors}/${this.MAX_CONSECUTIVE_ERRORS})`,
+        error as Error
+      );
+
+      // Stop capturing after too many consecutive errors
+      if (this.consecutiveErrors >= this.MAX_CONSECUTIVE_ERRORS) {
+        Logger.error('Too many consecutive errors, stopping capture');
+        this.stop();
+        return;
+      }
+
       // エラー時もscreenshot Bufferをクリア（取得できた場合）
       if (screenshot && Buffer.isBuffer(screenshot)) {
         screenshot.fill(0);

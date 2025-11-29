@@ -863,11 +863,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'disconnect' });
     });
 
-    let pendingFrame = null;
+    let frameQueue = [];  // mobiledeck-style multi-frame queue
     let currentBitmap = null;
     let isRendering = false;
     let lastRenderAt = 0;
     let animationFrameId = null;
+
+    // Performance tracking
+    let totalFramesReceived = 0;
+    let totalFramesRendered = 0;
+    let totalFramesDropped = 0;
+    let lastStatsUpdate = performance.now();
+
+    const MAX_FRAME_QUEUE = 3;  // mobiledeck approach
 
     // WebCodecs (H.264) pipeline groundwork
     let decoder = null;
@@ -1042,16 +1050,20 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
+    // Optimized frame queue management (mobiledeck approach)
     function dequeueAndRender() {
-      if (isRendering || !pendingFrame) return;
-      const frame = pendingFrame;
-      pendingFrame = null;
+      if (isRendering || frameQueue.length === 0) return;
+
+      const frame = frameQueue.shift();
       isRendering = true;
+
       renderFrame(frame).finally(() => {
         isRendering = false;
-        document.getElementById('queue').textContent = 'Q:' + (pendingFrame ? 1 : 0);
-        // If another frame arrived while rendering, render it next
-        if (pendingFrame) {
+        totalFramesRendered++;
+        updateQueueDisplay();
+
+        // Continue rendering if more frames are queued
+        if (frameQueue.length > 0) {
           requestAnimationFrame(dequeueAndRender);
         }
       });
@@ -1061,12 +1073,48 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       const bytes = normalizeToUint8Array(data);
       if (!bytes) {
         console.warn('Dropping frame: could not normalize data');
+        totalFramesDropped++;
         return;
       }
-      pendingFrame = bytes;
-      document.getElementById('queue').textContent = 'Q:1';
+
+      totalFramesReceived++;
+
+      // Drop oldest frame if queue is full (low latency approach)
+      if (frameQueue.length >= MAX_FRAME_QUEUE) {
+        frameQueue.shift();  // Drop oldest frame
+        totalFramesDropped++;
+      }
+
+      frameQueue.push(bytes);
+      updateQueueDisplay();
+
       if (!isRendering) {
         requestAnimationFrame(dequeueAndRender);
+      }
+    }
+
+    function updateQueueDisplay() {
+      document.getElementById('queue').textContent = 'Q:' + frameQueue.length;
+
+      // Update drop rate every second
+      const now = performance.now();
+      if (now - lastStatsUpdate >= 1000) {
+        const dropRate = totalFramesReceived > 0
+          ? Math.round((totalFramesDropped / totalFramesReceived) * 100)
+          : 0;
+
+        // Add drop rate to stats display
+        const statsEl = document.getElementById('status');
+        if (statsEl && statsEl.textContent.includes('Capturing')) {
+          statsEl.setAttribute('title',
+            'Received: ' + totalFramesReceived +
+            ', Rendered: ' + totalFramesRendered +
+            ', Dropped: ' + totalFramesDropped +
+            ' (' + dropRate + '%)'
+          );
+        }
+
+        lastStatsUpdate = now;
       }
     }
 
@@ -1137,7 +1185,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
           }
-          pendingFrame = null;
+          frameQueue = [];  // Clear frame queue
+
+          // Reset performance stats
+          totalFramesReceived = 0;
+          totalFramesRendered = 0;
+          totalFramesDropped = 0;
 
           overlay.classList.remove('hidden');
           overlay.querySelector('span').textContent = 'Select a device to start';
@@ -1145,6 +1198,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           deviceSelect.value = '';
           document.getElementById('fps').textContent = '-- FPS';
           document.getElementById('latency').textContent = '-- ms';
+          document.getElementById('queue').textContent = 'Q:0';
           break;
 
         case 'captureModeChanged':
