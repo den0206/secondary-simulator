@@ -102,17 +102,13 @@ export class ScreenshotCapture implements CaptureStrategy {
       }
 
       const processed = await this.processImage(screenshot);
+
+      // Convert to Uint8Array for efficient transfer to Webview
       const frameBytes = new Uint8Array(
         processed.buffer,
         processed.byteOffset,
         processed.byteLength
       );
-
-      // 元のscreenshot Bufferもクリア
-      if (screenshot && Buffer.isBuffer(screenshot)) {
-        screenshot.fill(0);
-      }
-      screenshot = null;
 
       this.frameCount++;
       const now = Date.now();
@@ -133,8 +129,13 @@ export class ScreenshotCapture implements CaptureStrategy {
         });
       }
 
-      // Clear reference to free memory
-      processed.fill(0);
+      // Clean up buffers to free memory (mobiledeck approach)
+      if (processed && Buffer.isBuffer(processed)) {
+        processed.fill(0);
+      }
+      if (screenshot && Buffer.isBuffer(screenshot)) {
+        screenshot.fill(0);
+      }
     } catch (error) {
       Logger.error('Failed to capture frame', error as Error);
       // エラー時もscreenshot Bufferをクリア（取得できた場合）

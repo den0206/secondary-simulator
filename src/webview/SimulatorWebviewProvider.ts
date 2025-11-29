@@ -864,8 +864,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     let pendingFrame = null;
+    let currentBitmap = null;
     let isRendering = false;
     let lastRenderAt = 0;
+    let animationFrameId = null;
 
     // WebCodecs (H.264) pipeline groundwork
     let decoder = null;
@@ -887,6 +889,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return null;
     }
 
+    // Optimized rendering using requestAnimationFrame (mobiledeck approach)
     async function renderFrame(bytes) {
       if (!bytes) return;
       const started = performance.now();
@@ -894,21 +897,44 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         const blob = new Blob([bytes], { type: 'image/jpeg' });
         const bitmap = await createImageBitmap(blob);
 
+        // Clean up previous bitmap to free GPU memory
+        if (currentBitmap) {
+          currentBitmap.close?.();
+          currentBitmap = null;
+        }
+
+        currentBitmap = bitmap;
+
         // Resize canvas to frame size once
         if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
           canvas.width = bitmap.width;
           canvas.height = bitmap.height;
         }
 
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        bitmap.close?.();
+        // Draw using RAF for smoother rendering
+        if (animationFrameId !== null) {
+          cancelAnimationFrame(animationFrameId);
+        }
+
+        animationFrameId = requestAnimationFrame(() => {
+          if (currentBitmap && ctx) {
+            ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
+
+            const renderLatency = Math.round(performance.now() - started);
+            document.getElementById('render-latency').textContent =
+              'Render ' + renderLatency + ' ms';
+          }
+          animationFrameId = null;
+        });
 
         lastRenderAt = performance.now();
-        const renderLatency = Math.round(lastRenderAt - started);
-        document.getElementById('render-latency').textContent =
-          'Render ' + renderLatency + ' ms';
       } catch (err) {
         console.error('Failed to render frame', err);
+        // Clean up on error
+        if (currentBitmap) {
+          currentBitmap.close?.();
+          currentBitmap = null;
+        }
       }
     }
 
@@ -1086,12 +1112,33 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
 
         case 'error':
+          // Clean up resources on error
+          if (currentBitmap) {
+            currentBitmap.close?.();
+            currentBitmap = null;
+          }
+          if (animationFrameId !== null) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+          }
+
           overlay.classList.remove('hidden');
           overlay.querySelector('span').textContent = message.text;
           screen.style.display = 'none';
           break;
 
         case 'disconnected':
+          // Clean up resources (mobiledeck approach)
+          if (currentBitmap) {
+            currentBitmap.close?.();
+            currentBitmap = null;
+          }
+          if (animationFrameId !== null) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+          }
+          pendingFrame = null;
+
           overlay.classList.remove('hidden');
           overlay.querySelector('span').textContent = 'Select a device to start';
           screen.style.display = 'none';
@@ -1131,6 +1178,22 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(sendResize, 200);
+    });
+
+    // Clean up resources when page unloads (mobiledeck approach)
+    window.addEventListener('beforeunload', () => {
+      if (currentBitmap) {
+        currentBitmap.close?.();
+        currentBitmap = null;
+      }
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      if (decoder) {
+        try { decoder.close(); } catch (_) {}
+        decoder = null;
+      }
     });
 
     // 初期設定を取得
