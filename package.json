@@ -99,7 +99,10 @@
         },
         "secondarySimulator.captureMode": {
           "type": "string",
-          "enum": ["screenshot", "streaming"],
+          "enum": [
+            "screenshot",
+            "streaming"
+          ],
           "enumDescriptions": [
             "Screenshot mode: Lower resource usage, configurable refresh rate",
             "Streaming mode: Higher frame rate, lower latency (requires more resources)"
@@ -123,9 +126,61 @@
           "type": "boolean",
           "default": false,
           "description": "Enable experimental H.264 streaming (requires adb/simctl and WebCodecs). Falls back to JPEG if not available."
+        },
+        "secondarySimulator.tapThreshold": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Tap判定に使用する移動距離の閾値（ピクセル）。"
+        },
+        "secondarySimulator.swipeThreshold": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 200,
+          "description": "スワイプ判定に使用する移動距離の閾値（ピクセル）。"
+        },
+        "secondarySimulator.showGestureOverlay": {
+          "type": "boolean",
+          "default": true,
+          "description": "タップ／スワイプ時に視覚フィードバックを表示する。"
+        },
+        "secondarySimulator.longPressDuration": {
+          "type": "number",
+          "default": 600,
+          "minimum": 200,
+          "maximum": 2000,
+          "description": "ロングタップ判定までの時間（ミリ秒）。"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "simulator.takeScreenshot",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "view == simulatorView"
+      },
+      {
+        "command": "simulator.refresh",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "view == simulatorView"
+      },
+      {
+        "command": "simulator.home",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h",
+        "when": "view == simulatorView"
+      },
+      {
+        "command": "simulator.back",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "view == simulatorView"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

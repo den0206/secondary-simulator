@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {{cspMeta}}
+  <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+  <div class="device-selector">
+    <select id="platform">
+      <option value="ios">iOS</option>
+      <option value="android">Android</option>
+    </select>
+    <select id="device">
+      <option value="">Select Device...</option>
+    </select>
+    <select id="capture-mode" title="Capture Mode">
+      <option value="screenshot">Screenshot</option>
+      <option value="streaming">Streaming</option>
+    </select>
+  </div>
+
+  <div class="simulator-container">
+    <canvas id="simulator-canvas" style="display: none;"></canvas>
+    <div class="overlay" id="overlay">
+      <span>Select a device to start</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="control-btn" id="btn-home" title="Home">Home</button>
+    <button class="control-btn" id="btn-back" title="Back">Back</button>
+    <button class="control-btn" id="btn-screenshot" title="Save Screenshot">Save</button>
+    <button class="control-btn" id="btn-refresh" title="Refresh Devices">Refresh</button>
+    <button class="control-btn" id="btn-disconnect" title="Disconnect">Disconnect</button>
+  </div>
+
+  <div class="controls" style="justify-content:flex-start; max-width:420px;">
+    <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
+      <input type="checkbox" id="toggle-overlay" checked />
+      Show gesture overlay
+    </label>
+  </div>
+
+  <div class="status-bar">
+    <span id="fps">-- FPS</span>
+    <span id="status">Idle</span>
+    <span id="latency">-- ms</span>
+    <span id="render-latency">Render -- ms</span>
+    <span id="queue">Q:0</span>
+    <span id="health" style="display: none;">●</span>
+  </div>
+
+  <!-- Visual feedback overlay for gestures -->
+  <div id="gesture-feedback" style="position: fixed; pointer-events: none; z-index: 9999;"></div>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>
