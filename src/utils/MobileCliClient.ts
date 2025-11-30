@@ -39,10 +39,6 @@ export interface DeviceInfoResponse {
   };
 }
 
-export interface ScreenshotResponse {
-  data: string; // base64 encoded image
-}
-
 /**
  * mobilecli JSON-RPC クライアント
  * デバイス操作を統一されたAPIで実行
@@ -140,13 +136,5 @@ export class MobileCliClient {
       deviceId,
       button,
     });
-  }
-
-  // スクリーンショット
-  async takeScreenshot(deviceId: string): Promise<ScreenshotResponse> {
-    return this.jsonRpcClient.sendJsonRpcRequest<ScreenshotResponse>(
-      'screenshot',
-      {deviceId}
-    );
   }
 }

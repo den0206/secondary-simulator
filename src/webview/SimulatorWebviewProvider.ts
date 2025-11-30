@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {H264Streamer} from '../capture/H264Streamer';
 import {MjpegCapture} from '../capture/MjpegCapture';
-import {Device, Platform} from '../simulator/types';
+import {Device} from '../simulator/types';
 import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
@@ -18,11 +18,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private h264Streamer: H264Streamer | null = null;
   private mobileCliServer: MobileCliServer;
   private mobileCliClient: MobileCliClient | null = null;
-  private forceJpegFallback = false;
   private currentDeviceId: string | null = null;
-  private currentPlatform: Platform = 'ios';
   private devices: Device[] = [];
-  private currentWidth: number = 420;
   private screenSize: {width: number; height: number} | null = null;
 
   constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
@@ -76,11 +73,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     try {
       switch (message.type) {
         case 'init':
-          await this.refreshDevices();
-          break;
-
-        case 'platformChange':
-          this.currentPlatform = message.platform as Platform;
           await this.refreshDevices();
           break;
 
@@ -163,32 +155,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.pressBack();
           break;
 
-        case 'refreshDevices':
-          Logger.info('Refresh devices requested');
-          await this.refreshDevices();
-          break;
-
-        case 'saveScreenshot':
-          await this.saveScreenshot();
-          break;
-
         case 'disconnect':
           Logger.info('Disconnect requested');
           this.disconnect();
-          break;
-
-        case 'resize':
-          this.currentWidth = message.width as number;
-          if (this.currentCapture) {
-            this.currentCapture.setMaxWidth(this.currentWidth);
-          }
-          break;
-
-        case 'fallback-jpeg':
-          Logger.warn(
-            `Webview requested JPEG fallback: ${message.reason ?? 'unknown'}`
-          );
-          await this.fallbackToJpeg();
           break;
 
         case 'adjustFps':
@@ -196,10 +165,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           Logger.debug(
             `FPS adjustment requested: ${message.fps}, but not applicable for MJPEG streaming`
           );
-          break;
-
-        case 'toggleOverlay':
-          await this.handleOverlayToggle(message.enabled as boolean);
           break;
       }
     } catch (error) {
@@ -213,13 +178,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const config = vscode.workspace.getConfiguration('secondarySimulator');
     const tapThreshold = config.get<number>('tapThreshold', 10);
     const swipeThreshold = config.get<number>('swipeThreshold', 30);
-    const showGestureOverlay = config.get<boolean>('showGestureOverlay', true);
     const longPressDuration = config.get<number>('longPressDuration', 600);
     this.postMessage({
       type: 'config',
       tapThreshold,
       swipeThreshold,
-      showGestureOverlay,
       longPressDuration,
     });
   }
@@ -290,7 +253,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    this.forceJpegFallback = false;
     await this.startCaptureForDevice(deviceId, device);
   }
 
@@ -327,10 +289,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     // H.264ストリーミング（実験的）のチェック
-    const useH264 =
-      vscode.workspace
-        .getConfiguration('secondarySimulator')
-        .get<boolean>('experimentalH264', false) && !this.forceJpegFallback;
+    const useH264 = vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .get<boolean>('experimentalH264', false);
 
     if (useH264) {
       await this.startH264Streaming(device);
@@ -348,16 +309,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           type: 'frame',
           data: frame,
         });
-        this.postMessage({
-          type: 'stats',
-          fps: stats.fps,
-          latency: stats.latency,
-        });
       });
 
       try {
         await this.currentCapture.start();
-        this.postMessage({type: 'status', text: 'Capturing (MJPEG)'});
         Logger.info(`Started MJPEG streaming for device: ${device.name}`);
       } catch (error) {
         Logger.error('Failed to start capture', error as Error);
@@ -366,10 +321,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     if (useH264) {
-      this.postMessage({
-        type: 'status',
-        text: 'Capturing (H.264 experimental)',
-      });
       Logger.info(`Started H.264 streaming for device: ${device.name}`);
     }
   }
@@ -795,41 +746,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async saveScreenshot(): Promise<void> {
-    if (!this.currentDeviceId) {
-      vscode.window.showWarningMessage('No device selected');
-      return;
-    }
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      const response = await this.mobileCliClient.takeScreenshot(
-        this.currentDeviceId
-      );
-      // base64デコード
-      const screenshot = Buffer.from(response.data, 'base64');
-
-      const uri = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`screenshot-${Date.now()}.png`),
-        filters: {
-          'PNG Images': ['png'],
-        },
-      });
-
-      if (uri) {
-        await fs.promises.writeFile(uri.fsPath, screenshot);
-        vscode.window.showInformationMessage(
-          `Screenshot saved to ${uri.fsPath}`
-        );
-      }
-    } catch (error) {
-      Logger.error('Failed to save screenshot', error as Error);
-      vscode.window.showErrorMessage('Failed to save screenshot');
-    }
-  }
-
   private stopCapture(): void {
     if (this.currentCapture) {
       this.currentCapture.dispose();
@@ -839,40 +755,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.h264Streamer.dispose();
       this.h264Streamer = null;
     }
-    this.postMessage({type: 'status', text: 'Idle'});
-  }
-
-  private async fallbackToJpeg(): Promise<void> {
-    if (!this.currentDeviceId) return;
-    const device = this.devices.find((d) => d.id === this.currentDeviceId);
-    if (!device) return;
-
-    this.forceJpegFallback = true;
-    this.stopCapture();
-    await this.startCaptureForDevice(this.currentDeviceId, device);
-  }
-
-  private async handleFpsAdjustment(_fps: number): Promise<void> {
-    // MJPEGストリーミングではFPS調整は不要
-    // FPSはmobilecliサーバー側で制御されるため、クライアント側での調整は不要
-    Logger.debug('FPS adjustment is not applicable for MJPEG streaming');
-  }
-
-  private async handleOverlayToggle(enabled: boolean): Promise<void> {
-    const config = vscode.workspace.getConfiguration('secondarySimulator');
-    await config.update(
-      'showGestureOverlay',
-      !!enabled,
-      vscode.ConfigurationTarget.Global
-    );
-    this.sendConfig();
   }
 
   private disconnect(): void {
     this.stopCapture();
     this.currentDeviceId = null;
     this.postMessage({type: 'disconnected'});
-    this.postMessage({type: 'status', text: 'Disconnected'});
     Logger.info('Device disconnected');
   }
 

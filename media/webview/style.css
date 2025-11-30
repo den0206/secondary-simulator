@@ -92,17 +92,19 @@ body {
   transform: scale(0.95);
 }
 
-.status-bar {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
+.operation-indicator {
+  text-align: center;
   margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--vscode-widget-border);
-  opacity: 0.7;
+  padding: 6px 16px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
   max-width: 420px;
   margin-left: auto;
   margin-right: auto;
+  display: none;
 }
 
 @keyframes ripple {

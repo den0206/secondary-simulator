@@ -1,5 +1,3 @@
-import {SimulatorManager} from '../simulator/SimulatorManager';
-
 export type FrameCallback = (
   frame: Uint8Array,
   stats: {fps: number; latency: number}
@@ -7,7 +5,7 @@ export type FrameCallback = (
 
 /**
  * キャプチャ戦略のインターフェース
- * スクリーンショット方式とストリーミング方式の両方をサポート
+ * MJPEGストリーミング方式をサポート
  */
 export interface CaptureStrategy {
   /**
@@ -45,4 +43,3 @@ export interface CaptureStrategy {
    */
   dispose(): void;
 }
-
