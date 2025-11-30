@@ -1,0 +1,229 @@
+import {ChildProcess, execFileSync, spawn} from 'node:child_process';
+import * as vscode from 'vscode';
+import {Logger} from './Logger';
+
+export class MobileCliServer {
+  private static DEFAULT_SERVER_PORT = 12000;
+  private static SERVER_STARTUP_TIMEOUT_MS = 10000; // 10 seconds
+  private static SERVER_HEALTH_CHECK_INTERVAL_MS = 200; // 200ms between checks
+
+  private mobilecliPath: string | null = null;
+  private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
+  private mobilecliServerProcess: ChildProcess | null = null;
+
+  constructor(private readonly context: vscode.ExtensionContext) {
+    this.mobilecliPath = this.findMobilecliPath();
+  }
+
+  private findMobilecliPath(): string | null {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+
+      // 1. node_modulesから探す（npmパッケージとしてインストールされた場合）
+      try {
+        const packageJsonPath = require.resolve(
+          '@mobilenext/mobilecli/package.json'
+        );
+        const packageDir = path.dirname(packageJsonPath);
+        const binDir = path.join(packageDir, 'bin');
+
+        // プラットフォーム別のバイナリ名を決定
+        let binaryName: string;
+        if (process.platform === 'win32') {
+          binaryName = 'mobilecli-windows-amd64.exe';
+        } else if (process.platform === 'darwin') {
+          binaryName =
+            process.arch === 'arm64'
+              ? 'mobilecli-darwin-arm64'
+              : 'mobilecli-darwin-amd64';
+        } else {
+          // Linux
+          binaryName =
+            process.arch === 'arm64'
+              ? 'mobilecli-linux-arm64'
+              : 'mobilecli-linux-amd64';
+        }
+
+        const binaryPath = path.join(binDir, binaryName);
+        if (fs.existsSync(binaryPath)) {
+          try {
+            execFileSync(binaryPath, ['--version']);
+            Logger.info(`Found mobilecli at: ${binaryPath}`);
+            return binaryPath;
+          } catch {
+            // バイナリは存在するが実行できない場合は次を試す
+          }
+        }
+      } catch {
+        // node_modulesから見つからない場合は次を試す
+      }
+
+      // 2. 拡張機能のassetsディレクトリにmobilecliバイナリがある場合
+      const basePath = vscode.Uri.joinPath(
+        this.context.extensionUri,
+        'assets',
+        'mobilecli'
+      ).fsPath;
+      const mobilecliPath =
+        process.platform === 'win32' ? `${basePath}.exe` : basePath;
+
+      try {
+        execFileSync(mobilecliPath, ['--version']);
+        Logger.info(`Found mobilecli at: ${mobilecliPath}`);
+        return mobilecliPath;
+      } catch {
+        // バイナリが見つからない場合はnpxを使用
+      }
+
+      // 3. npx経由で実行（フォールバック）
+      Logger.info('Using npx to run mobilecli');
+      return 'npx';
+    } catch (error) {
+      Logger.error('Failed to find mobilecli path', error as Error);
+      // 最後の手段としてnpxを使用
+      return 'npx';
+    }
+  }
+
+  private async checkServerHealth(port: number): Promise<boolean> {
+    try {
+      const response = await fetch(`http://localhost:${port}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(1000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  private async findAvailablePort(
+    minPort: number,
+    maxPort: number
+  ): Promise<number> {
+    for (let port = minPort; port <= maxPort; port++) {
+      const isHealthy = await this.checkServerHealth(port);
+      if (!isHealthy) {
+        return port;
+      }
+    }
+    throw new Error('No available port found');
+  }
+
+  private async waitForServerReady(
+    port: number,
+    timeoutMs: number
+  ): Promise<void> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeoutMs) {
+      const isHealthy = await this.checkServerHealth(port);
+      if (isHealthy) {
+        Logger.info(`mobilecli server is ready on port ${port}`);
+        return;
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, MobileCliServer.SERVER_HEALTH_CHECK_INTERVAL_MS)
+      );
+    }
+
+    throw new Error(
+      `mobilecli server failed to become ready within ${timeoutMs}ms`
+    );
+  }
+
+  public async launchServer(): Promise<void> {
+    if (!this.mobilecliPath) {
+      throw new Error('mobilecli not found');
+    }
+
+    const isRunning = await this.checkServerHealth(
+      MobileCliServer.DEFAULT_SERVER_PORT
+    );
+    if (isRunning) {
+      Logger.info(
+        `mobilecli server is already running on default port ${MobileCliServer.DEFAULT_SERVER_PORT}`
+      );
+      this.serverPort = MobileCliServer.DEFAULT_SERVER_PORT;
+      return;
+    }
+
+    if (this.mobilecliServerProcess) {
+      Logger.info('mobilecli server process already exists');
+      return;
+    }
+
+    // 利用可能なポートを探す
+    const minPort = MobileCliServer.DEFAULT_SERVER_PORT + 1;
+    const maxPort = MobileCliServer.DEFAULT_SERVER_PORT + 100;
+    this.serverPort = await this.findAvailablePort(minPort, maxPort);
+    Logger.info(`Launching mobilecli server on port ${this.serverPort}...`);
+
+    const args =
+      this.mobilecliPath === 'npx'
+        ? [
+            '-y',
+            '@mobilenext/mobilecli@latest',
+            'server',
+            'start',
+            '--cors',
+            '--listen',
+            `localhost:${this.serverPort}`,
+          ]
+        : [
+            '-v',
+            'server',
+            'start',
+            '--cors',
+            '--listen',
+            `localhost:${this.serverPort}`,
+          ];
+
+    this.mobilecliServerProcess = spawn(this.mobilecliPath, args, {
+      detached: false,
+      stdio: 'pipe',
+    });
+
+    this.mobilecliServerProcess.stdout?.on('data', (data: Buffer) => {
+      Logger.debug(`mobilecli server stdout: ${data.toString().trimEnd()}`);
+    });
+
+    this.mobilecliServerProcess.stderr?.on('data', (data: Buffer) => {
+      Logger.debug(`mobilecli server stderr: ${data.toString().trimEnd()}`);
+    });
+
+    this.mobilecliServerProcess.on('close', (code: number) => {
+      Logger.info(`mobilecli server process exited with code ${code}`);
+      this.mobilecliServerProcess = null;
+    });
+
+    this.mobilecliServerProcess.on('error', (error: Error) => {
+      Logger.error(`mobilecli server error: ${error.message}`);
+      this.mobilecliServerProcess = null;
+    });
+
+    // サーバーの準備完了を待つ
+    await this.waitForServerReady(
+      this.serverPort,
+      MobileCliServer.SERVER_STARTUP_TIMEOUT_MS
+    );
+  }
+
+  public async stopServer(): Promise<void> {
+    if (this.mobilecliServerProcess) {
+      this.mobilecliServerProcess.kill();
+      this.mobilecliServerProcess = null;
+      Logger.info('mobilecli server stopped');
+    }
+  }
+
+  public getServerPort(): number {
+    return this.serverPort;
+  }
+
+  public isServerRunning(): boolean {
+    return this.mobilecliServerProcess !== null;
+  }
+}

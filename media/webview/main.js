@@ -4,11 +4,19 @@ const ctx = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
 const platformSelect = document.getElementById('platform');
 const deviceSelect = document.getElementById('device');
-const captureModeSelect = document.getElementById('capture-mode');
 const overlayToggle = document.getElementById('toggle-overlay');
 
-// Touch/Mouse event handling for tap and swipe
+// Touch/Mouse event handling for tap and swipe (mobiledeck-style)
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+// Gesture state (mobiledeck-style)
+let gestureState = {
+  isGesturing: false,
+  startTime: 0,
+  lastTimestamp: 0,
+  points: [], // Array of {x, y, duration}
+  path: [], // Array of [x, y] for visual feedback
+};
 
 let isDragging = false;
 let startX = 0;
@@ -22,6 +30,29 @@ let TAP_THRESHOLD = 10; // maximum pixels for tap
 let SHOW_GESTURE_OVERLAY = true;
 let LONG_PRESS_DURATION = 600;
 const DOUBLE_TAP_INTERVAL = 300;
+const GESTURE_THRESHOLD_MS = 100; // mobiledeck: 100ms以内はタップ、それ以上はジェスチャー
+
+// Screen size for coordinate conversion (will be set from extension)
+let screenSize = {width: 0, height: 0};
+
+// Convert canvas coordinates to screen coordinates (mobiledeck-style)
+function convertToScreenCoords(clientX, clientY, element) {
+  const rect = element.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  // If screen size is available, convert to screen coordinates
+  // Otherwise, use normalized coordinates (0-1)
+  if (screenSize.width > 0 && screenSize.height > 0) {
+    const screenX = Math.floor((x / rect.width) * screenSize.width);
+    const screenY = Math.floor((y / rect.height) * screenSize.height);
+    return {x, y, screenX, screenY};
+  } else {
+    // Fallback to normalized coordinates
+    const normalizedX = clamp01(x / rect.width);
+    const normalizedY = clamp01(y / rect.height);
+    return {x, y, screenX: normalizedX, screenY: normalizedY};
+  }
+}
 
 // Visual feedback functions (mobiledeck-inspired)
 function showTapFeedback(x, y) {
@@ -31,8 +62,8 @@ function showTapFeedback(x, y) {
 
   const ripple = document.createElement('div');
   ripple.style.position = 'absolute';
-  ripple.style.left = (x - 20) + 'px';
-  ripple.style.top = (y - 20) + 'px';
+  ripple.style.left = x - 20 + 'px';
+  ripple.style.top = y - 20 + 'px';
   ripple.style.width = '40px';
   ripple.style.height = '40px';
   ripple.style.borderRadius = '50%';
@@ -53,7 +84,7 @@ function showSwipeFeedback(x1, y1, x2, y2) {
   if (!feedback) return;
 
   const line = document.createElement('div');
-  const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+  const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
   const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
 
   line.style.position = 'absolute';
@@ -76,29 +107,77 @@ function showSwipeFeedback(x1, y1, x2, y2) {
 
 canvas.addEventListener('mousedown', (e) => {
   isDragging = true;
-  const rect = canvas.getBoundingClientRect();
-  startX = e.clientX - rect.left;
-  startY = e.clientY - rect.top;
-  startTime = Date.now();
+  const coords = convertToScreenCoords(e.clientX, e.clientY, e.currentTarget);
+  const now = Date.now();
+
+  startX = coords.x;
+  startY = coords.y;
+  startTime = now;
+
+  // Initialize gesture state (mobiledeck-style)
+  // durationは累積時間（最初のポイントからの経過時間）として記録
+  gestureState = {
+    isGesturing: false,
+    startTime: now,
+    lastTimestamp: now,
+    points: [{x: coords.screenX, y: coords.screenY, duration: 0}], // 最初のポイントは0ms
+    path: [[coords.x, coords.y]],
+  };
+
   longPressTriggered = false;
   if (longPressTimer) clearTimeout(longPressTimer);
   longPressTimer = setTimeout(() => {
     longPressTriggered = true;
-    const x = clamp01(startX / rect.width);
-    const y = clamp01(startY / rect.height);
-    vscode.postMessage({ type: 'longPress', x, y, duration: LONG_PRESS_DURATION });
+    const x =
+      screenSize.width > 0
+        ? clamp01(coords.screenX / screenSize.width)
+        : clamp01(startX / canvas.getBoundingClientRect().width);
+    const y =
+      screenSize.height > 0
+        ? clamp01(coords.screenY / screenSize.height)
+        : clamp01(startY / canvas.getBoundingClientRect().height);
+    vscode.postMessage({
+      type: 'longPress',
+      x,
+      y,
+      duration: LONG_PRESS_DURATION,
+    });
     showTapFeedback(startX, startY);
   }, LONG_PRESS_DURATION);
   e.preventDefault();
 });
 
 canvas.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  const rect = canvas.getBoundingClientRect();
-  const curX = e.clientX - rect.left;
-  const curY = e.clientY - rect.top;
-  const deltaX = curX - startX;
-  const deltaY = curY - startY;
+  if (!isDragging || gestureState.points.length === 0) return;
+
+  const coords = convertToScreenCoords(e.clientX, e.clientY, e.currentTarget);
+  const now = Date.now();
+
+  // mobiledeck: 100ms以上経過したらジェスチャーとして収集開始
+  if (
+    !gestureState.isGesturing &&
+    now - gestureState.startTime > GESTURE_THRESHOLD_MS
+  ) {
+    gestureState.isGesturing = true;
+  }
+
+  // ジェスチャー中、または100ms以上経過している場合はポイントを収集
+  if (
+    gestureState.isGesturing ||
+    now - gestureState.startTime > GESTURE_THRESHOLD_MS
+  ) {
+    // durationは累積時間（最初のポイントからの経過時間）として記録
+    const duration = now - gestureState.startTime;
+    const newPoint = {x: coords.screenX, y: coords.screenY, duration};
+    gestureState.points.push(newPoint);
+    gestureState.path.push([coords.x, coords.y]);
+    gestureState.lastTimestamp = now;
+    gestureState.isGesturing = true;
+  }
+
+  // ロングプレスタイマーをキャンセル
+  const deltaX = coords.x - startX;
+  const deltaY = coords.y - startY;
   const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
   if (distance > TAP_THRESHOLD && longPressTimer) {
     clearTimeout(longPressTimer);
@@ -108,138 +187,347 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('mouseup', (e) => {
-  if (!isDragging) return;
+  if (!isDragging || gestureState.points.length === 0) return;
   isDragging = false;
+
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
   }
 
-  const rect = canvas.getBoundingClientRect();
-  const endX = e.clientX - rect.left;
-  const endY = e.clientY - rect.top;
-  const duration = Date.now() - startTime;
-
-  const deltaX = endX - startX;
-  const deltaY = endY - startY;
-  const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+  const coords = convertToScreenCoords(e.clientX, e.clientY, e.currentTarget);
+  const now = Date.now();
 
   if (longPressTriggered) {
     // already handled
-  } else if (distance < TAP_THRESHOLD) {
-    const x = clamp01(endX / rect.width);
-    const y = clamp01(endY / rect.height);
-    const now = Date.now();
-    if (now - lastTapTime < DOUBLE_TAP_INTERVAL) {
-      vscode.postMessage({ type: 'doubleTap', x, y });
-      lastTapTime = 0;
+  } else if (gestureState.isGesturing) {
+    // mobiledeck: ジェスチャーとして送信
+    // durationは累積時間（最初のポイントからの経過時間）として記録
+    const duration = now - gestureState.startTime;
+    const finalPoints = [
+      ...gestureState.points,
+      {x: coords.screenX, y: coords.screenY, duration},
+    ];
+
+    // 正規化座標に変換（mobilecliは正規化座標を受け取る）
+    const normalizedPoints = finalPoints.map((p) => ({
+      x: screenSize.width > 0 ? clamp01(p.x / screenSize.width) : p.x,
+      y: screenSize.height > 0 ? clamp01(p.y / screenSize.height) : p.y,
+      duration: p.duration,
+    }));
+
+    vscode.postMessage({type: 'gesture', points: normalizedPoints});
+    showSwipeFeedback(startX, startY, coords.x, coords.y);
+  } else {
+    // タップとして処理
+    const deltaX = coords.x - startX;
+    const deltaY = coords.y - startY;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance < TAP_THRESHOLD) {
+      const x =
+        screenSize.width > 0
+          ? clamp01(coords.screenX / screenSize.width)
+          : clamp01(coords.x / canvas.getBoundingClientRect().width);
+      const y =
+        screenSize.height > 0
+          ? clamp01(coords.screenY / screenSize.height)
+          : clamp01(coords.y / canvas.getBoundingClientRect().height);
+      const now = Date.now();
+      if (now - lastTapTime < DOUBLE_TAP_INTERVAL) {
+        vscode.postMessage({type: 'doubleTap', x, y});
+        lastTapTime = 0;
+      } else {
+        vscode.postMessage({type: 'tap', x, y});
+        lastTapTime = now;
+      }
+      showTapFeedback(coords.x, coords.y);
     } else {
-      vscode.postMessage({ type: 'tap', x, y });
-      lastTapTime = now;
+      // 距離が大きい場合はスワイプとして処理（後方互換性のため）
+      const x1 =
+        screenSize.width > 0
+          ? clamp01(gestureState.points[0].x / screenSize.width)
+          : clamp01(startX / canvas.getBoundingClientRect().width);
+      const y1 =
+        screenSize.height > 0
+          ? clamp01(gestureState.points[0].y / screenSize.height)
+          : clamp01(startY / canvas.getBoundingClientRect().height);
+      const x2 =
+        screenSize.width > 0
+          ? clamp01(coords.screenX / screenSize.width)
+          : clamp01(coords.x / canvas.getBoundingClientRect().width);
+      const y2 =
+        screenSize.height > 0
+          ? clamp01(coords.screenY / screenSize.height)
+          : clamp01(coords.y / canvas.getBoundingClientRect().height);
+      showSwipeFeedback(startX, startY, coords.x, coords.y);
+      vscode.postMessage({
+        type: 'swipe',
+        x1,
+        y1,
+        x2,
+        y2,
+        duration: now - startTime,
+      });
     }
-    showTapFeedback(endX, endY);
-  } else if (distance >= SWIPE_THRESHOLD) {
-    const x1 = clamp01(startX / rect.width);
-    const y1 = clamp01(startY / rect.height);
-    const x2 = clamp01(endX / rect.width);
-    const y2 = clamp01(endY / rect.height);
-    showSwipeFeedback(startX, startY, endX, endY);
-    vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
   }
+
+  // ジェスチャー状態をリセット
+  gestureState = {
+    isGesturing: false,
+    startTime: 0,
+    lastTimestamp: 0,
+    points: [],
+    path: [],
+  };
 });
 
 canvas.addEventListener('mouseleave', () => {
   isDragging = false;
 });
 
-// Touch events for mobile/trackpad
-canvas.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 1) {
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    startX = touch.clientX - rect.left;
-    startY = touch.clientY - rect.top;
-    startTime = Date.now();
-    isDragging = true;
-    longPressTriggered = false;
-    if (longPressTimer) clearTimeout(longPressTimer);
-    longPressTimer = setTimeout(() => {
-      longPressTriggered = true;
-      const x = clamp01(startX / rect.width);
-      const y = clamp01(startY / rect.height);
-      vscode.postMessage({ type: 'longPress', x, y, duration: LONG_PRESS_DURATION });
-      showTapFeedback(startX, startY);
-    }, LONG_PRESS_DURATION);
-  }
-  e.preventDefault();
-}, { passive: false });
+// Touch events for mobile/trackpad (mobiledeck-style)
+canvas.addEventListener(
+  'touchstart',
+  (e) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const coords = convertToScreenCoords(
+        touch.clientX,
+        touch.clientY,
+        e.currentTarget
+      );
+      const now = Date.now();
 
-canvas.addEventListener('touchend', (e) => {
-  if (!isDragging || e.changedTouches.length !== 1) return;
-  isDragging = false;
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
+      startX = coords.x;
+      startY = coords.y;
+      startTime = now;
 
-  const touch = e.changedTouches[0];
-  const rect = canvas.getBoundingClientRect();
-  const endX = touch.clientX - rect.left;
-  const endY = touch.clientY - rect.top;
-  const duration = Date.now() - startTime;
+      // Initialize gesture state (mobiledeck-style)
+      // durationは累積時間（最初のポイントからの経過時間）として記録
+      gestureState = {
+        isGesturing: false,
+        startTime: now,
+        lastTimestamp: now,
+        points: [{x: coords.screenX, y: coords.screenY, duration: 0}], // 最初のポイントは0ms
+        path: [[coords.x, coords.y]],
+      };
 
-  const deltaX = endX - startX;
-  const deltaY = endY - startY;
-  const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-  if (longPressTriggered) {
-    // handled
-  } else if (distance < TAP_THRESHOLD) {
-    const x = clamp01(endX / rect.width);
-    const y = clamp01(endY / rect.height);
-    const now = Date.now();
-    if (now - lastTapTime < DOUBLE_TAP_INTERVAL) {
-      vscode.postMessage({ type: 'doubleTap', x, y });
-      lastTapTime = 0;
-    } else {
-      vscode.postMessage({ type: 'tap', x, y });
-      lastTapTime = now;
+      isDragging = true;
+      longPressTriggered = false;
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        longPressTriggered = true;
+        const x =
+          screenSize.width > 0
+            ? clamp01(coords.screenX / screenSize.width)
+            : clamp01(startX / canvas.getBoundingClientRect().width);
+        const y =
+          screenSize.height > 0
+            ? clamp01(coords.screenY / screenSize.height)
+            : clamp01(startY / canvas.getBoundingClientRect().height);
+        vscode.postMessage({
+          type: 'longPress',
+          x,
+          y,
+          duration: LONG_PRESS_DURATION,
+        });
+        showTapFeedback(startX, startY);
+      }, LONG_PRESS_DURATION);
     }
-  } else if (distance >= SWIPE_THRESHOLD) {
-    const x1 = clamp01(startX / rect.width);
-    const y1 = clamp01(startY / rect.height);
-    const x2 = clamp01(endX / rect.width);
-    const y2 = clamp01(endY / rect.height);
-    vscode.postMessage({ type: 'swipe', x1, y1, x2, y2, duration });
-  }
-  e.preventDefault();
-}, { passive: false });
+    e.preventDefault();
+  },
+  {passive: false}
+);
+
+canvas.addEventListener(
+  'touchmove',
+  (e) => {
+    if (!isDragging || gestureState.points.length === 0) return;
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const coords = convertToScreenCoords(
+        touch.clientX,
+        touch.clientY,
+        e.currentTarget
+      );
+      const now = Date.now();
+
+      // mobiledeck: 100ms以上経過したらジェスチャーとして収集開始
+      if (
+        !gestureState.isGesturing &&
+        now - gestureState.startTime > GESTURE_THRESHOLD_MS
+      ) {
+        gestureState.isGesturing = true;
+      }
+
+      // ジェスチャー中、または100ms以上経過している場合はポイントを収集
+      if (
+        gestureState.isGesturing ||
+        now - gestureState.startTime > GESTURE_THRESHOLD_MS
+      ) {
+        // durationは累積時間（最初のポイントからの経過時間）として記録
+        const duration = now - gestureState.startTime;
+        const newPoint = {x: coords.screenX, y: coords.screenY, duration};
+        gestureState.points.push(newPoint);
+        gestureState.path.push([coords.x, coords.y]);
+        gestureState.lastTimestamp = now;
+        gestureState.isGesturing = true;
+      }
+
+      // ロングプレスタイマーをキャンセル
+      const deltaX = coords.x - startX;
+      const deltaY = coords.y - startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (distance > TAP_THRESHOLD && longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
+    e.preventDefault();
+  },
+  {passive: false}
+);
+
+canvas.addEventListener(
+  'touchend',
+  (e) => {
+    if (
+      !isDragging ||
+      e.changedTouches.length !== 1 ||
+      gestureState.points.length === 0
+    )
+      return;
+    isDragging = false;
+
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+
+    const touch = e.changedTouches[0];
+    const coords = convertToScreenCoords(
+      touch.clientX,
+      touch.clientY,
+      e.currentTarget
+    );
+    const now = Date.now();
+
+    if (longPressTriggered) {
+      // already handled
+    } else if (gestureState.isGesturing) {
+      // mobiledeck: ジェスチャーとして送信
+      // durationは累積時間（最初のポイントからの経過時間）として記録
+      const duration = now - gestureState.startTime;
+      const finalPoints = [
+        ...gestureState.points,
+        {x: coords.screenX, y: coords.screenY, duration},
+      ];
+
+      // 正規化座標に変換（mobilecliは正規化座標を受け取る）
+      const normalizedPoints = finalPoints.map((p) => ({
+        x: screenSize.width > 0 ? clamp01(p.x / screenSize.width) : p.x,
+        y: screenSize.height > 0 ? clamp01(p.y / screenSize.height) : p.y,
+        duration: p.duration,
+      }));
+
+      vscode.postMessage({type: 'gesture', points: normalizedPoints});
+      showSwipeFeedback(startX, startY, coords.x, coords.y);
+    } else {
+      // タップとして処理
+      const deltaX = coords.x - startX;
+      const deltaY = coords.y - startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      if (distance < TAP_THRESHOLD) {
+        const x =
+          screenSize.width > 0
+            ? clamp01(coords.screenX / screenSize.width)
+            : clamp01(coords.x / canvas.getBoundingClientRect().width);
+        const y =
+          screenSize.height > 0
+            ? clamp01(coords.screenY / screenSize.height)
+            : clamp01(coords.y / canvas.getBoundingClientRect().height);
+        const now = Date.now();
+        if (now - lastTapTime < DOUBLE_TAP_INTERVAL) {
+          vscode.postMessage({type: 'doubleTap', x, y});
+          lastTapTime = 0;
+        } else {
+          vscode.postMessage({type: 'tap', x, y});
+          lastTapTime = now;
+        }
+        showTapFeedback(coords.x, coords.y);
+      } else {
+        // 距離が大きい場合はスワイプとして処理（後方互換性のため）
+        const x1 =
+          screenSize.width > 0
+            ? clamp01(gestureState.points[0].x / screenSize.width)
+            : clamp01(startX / canvas.getBoundingClientRect().width);
+        const y1 =
+          screenSize.height > 0
+            ? clamp01(gestureState.points[0].y / screenSize.height)
+            : clamp01(startY / canvas.getBoundingClientRect().height);
+        const x2 =
+          screenSize.width > 0
+            ? clamp01(coords.screenX / screenSize.width)
+            : clamp01(coords.x / canvas.getBoundingClientRect().width);
+        const y2 =
+          screenSize.height > 0
+            ? clamp01(coords.screenY / screenSize.height)
+            : clamp01(coords.y / canvas.getBoundingClientRect().height);
+        showSwipeFeedback(startX, startY, coords.x, coords.y);
+        vscode.postMessage({
+          type: 'swipe',
+          x1,
+          y1,
+          x2,
+          y2,
+          duration: now - startTime,
+        });
+      }
+    }
+
+    // ジェスチャー状態をリセット
+    gestureState = {
+      isGesturing: false,
+      startTime: 0,
+      lastTimestamp: 0,
+      points: [],
+      path: [],
+    };
+
+    e.preventDefault();
+  },
+  {passive: false}
+);
 
 // Keyboard input handling
 document.addEventListener('keydown', (e) => {
   if (!canvas || canvas.style.display === 'none') return;
-  if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
+  if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key))
+    return;
 
   if (e.key === 'Backspace') {
-    vscode.postMessage({ type: 'keypress', key: 'delete', special: true });
+    vscode.postMessage({type: 'keypress', key: 'delete', special: true});
     e.preventDefault();
     return;
   }
 
   if (e.key === 'Enter') {
-    vscode.postMessage({ type: 'keypress', key: 'return', special: true });
+    vscode.postMessage({type: 'keypress', key: 'return', special: true});
     e.preventDefault();
     return;
   }
 
   if (e.key === 'Escape') {
-    vscode.postMessage({ type: 'keypress', key: 'escape', special: true });
+    vscode.postMessage({type: 'keypress', key: 'escape', special: true});
     e.preventDefault();
     return;
   }
 
   if (e.key.length === 1) {
-    vscode.postMessage({ type: 'keypress', key: e.key });
+    vscode.postMessage({type: 'keypress', key: e.key});
     e.preventDefault();
   }
 });
@@ -247,53 +535,44 @@ document.addEventListener('keydown', (e) => {
 platformSelect.addEventListener('change', () => {
   vscode.postMessage({
     type: 'platformChange',
-    platform: platformSelect.value
+    platform: platformSelect.value,
   });
 });
 
 deviceSelect.addEventListener('change', () => {
   vscode.postMessage({
     type: 'deviceChange',
-    deviceId: deviceSelect.value
+    deviceId: deviceSelect.value,
   });
 });
 
-if (captureModeSelect) {
-  captureModeSelect.addEventListener('change', () => {
-    vscode.postMessage({
-      type: 'captureModeChange',
-      mode: captureModeSelect.value
-    });
-  });
-}
-
 document.getElementById('btn-home').addEventListener('click', () => {
-  vscode.postMessage({ type: 'home' });
+  vscode.postMessage({type: 'home'});
 });
 
 document.getElementById('btn-back').addEventListener('click', () => {
-  vscode.postMessage({ type: 'back' });
+  vscode.postMessage({type: 'back'});
 });
 
 document.getElementById('btn-screenshot').addEventListener('click', () => {
-  vscode.postMessage({ type: 'saveScreenshot' });
+  vscode.postMessage({type: 'saveScreenshot'});
 });
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
-  vscode.postMessage({ type: 'refreshDevices' });
+  vscode.postMessage({type: 'refreshDevices'});
 });
 
 document.getElementById('btn-disconnect').addEventListener('click', () => {
-  vscode.postMessage({ type: 'disconnect' });
+  vscode.postMessage({type: 'disconnect'});
 });
 
 if (overlayToggle) {
   overlayToggle.addEventListener('change', () => {
-    vscode.postMessage({ type: 'toggleOverlay', enabled: overlayToggle.checked });
+    vscode.postMessage({type: 'toggleOverlay', enabled: overlayToggle.checked});
   });
 }
 
-let frameQueue = [];  // mobiledeck-style multi-frame queue
+let frameQueue = []; // mobiledeck-style multi-frame queue
 let currentBitmap = null;
 let isRendering = false;
 let lastRenderAt = 0;
@@ -305,20 +584,20 @@ let totalFramesRendered = 0;
 let totalFramesDropped = 0;
 let lastStatsUpdate = performance.now();
 
-const MAX_FRAME_QUEUE = 3;  // mobiledeck approach
+const MAX_FRAME_QUEUE = 1; // 遅延を最小化：最新フレームのみ保持
 
 // Adaptive frame rate adjustment
 let targetFps = 15;
 let currentDropRate = 0;
 let lastFpsAdjustment = performance.now();
-const FPS_ADJUSTMENT_INTERVAL = 5000;  // Adjust every 5 seconds
-const MAX_DROP_RATE = 0.15;  // 15% max acceptable drop rate
-const MIN_DROP_RATE = 0.05;  // 5% target drop rate
+const FPS_ADJUSTMENT_INTERVAL = 5000; // Adjust every 5 seconds
+const MAX_DROP_RATE = 0.15; // 15% max acceptable drop rate
+const MIN_DROP_RATE = 0.05; // 5% target drop rate
 
 // Connection health monitoring
 let lastFrameTime = performance.now();
 let connectionHealthy = true;
-const CONNECTION_TIMEOUT = 3000;  // 3 seconds without frames = unhealthy
+const CONNECTION_TIMEOUT = 3000; // 3 seconds without frames = unhealthy
 
 // WebCodecs (H.264) pipeline groundwork
 let decoder = null;
@@ -344,7 +623,7 @@ async function renderFrame(bytes) {
   if (!bytes) return;
   const started = performance.now();
   try {
-    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    const blob = new Blob([bytes], {type: 'image/jpeg'});
     const bitmap = await createImageBitmap(blob);
 
     if (currentBitmap) {
@@ -359,20 +638,22 @@ async function renderFrame(bytes) {
       canvas.height = bitmap.height;
     }
 
+    // requestAnimationFrameをキャンセルして即座に描画（遅延を最小化）
     if (animationFrameId !== null) {
       cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
     }
 
-    animationFrameId = requestAnimationFrame(() => {
-      if (currentBitmap && ctx) {
-        ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
+    // 即座に描画（遅延を最小化）
+    if (currentBitmap && ctx) {
+      ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
 
-        const renderLatency = Math.round(performance.now() - started);
-        document.getElementById('render-latency').textContent =
-          'Render ' + renderLatency + ' ms';
+      const renderLatency = Math.round(performance.now() - started);
+      const renderLatencyEl = document.getElementById('render-latency');
+      if (renderLatencyEl) {
+        renderLatencyEl.textContent = 'Render ' + renderLatency + ' ms';
       }
-      animationFrameId = null;
-    });
+    }
   } catch (err) {
     console.error('renderFrame failed', err);
   }
@@ -402,10 +683,10 @@ function maybeAdjustFps() {
 
   if (currentDropRate > MAX_DROP_RATE && targetFps > 8) {
     targetFps = Math.max(8, targetFps - 2);
-    vscode.postMessage({ type: 'adjustFps', fps: targetFps });
+    vscode.postMessage({type: 'adjustFps', fps: targetFps});
   } else if (currentDropRate < MIN_DROP_RATE && targetFps < 30) {
     targetFps = Math.min(30, targetFps + 2);
-    vscode.postMessage({ type: 'adjustFps', fps: targetFps });
+    vscode.postMessage({type: 'adjustFps', fps: targetFps});
   }
 
   lastFpsAdjustment = now;
@@ -434,12 +715,17 @@ function enqueueFrame(bytes) {
   lastFrameTime = performance.now();
   updateConnectionHealth();
 
+  // 遅延を最小化：キューをクリアして最新フレームのみ保持
   if (frameQueue.length >= MAX_FRAME_QUEUE) {
-    frameQueue.shift();
-    totalFramesDropped++;
+    // 古いフレームを全てドロップ
+    while (frameQueue.length > 0) {
+      frameQueue.shift();
+      totalFramesDropped++;
+    }
   }
 
   frameQueue.push(bytes);
+  // 即座にレンダリング（遅延を最小化）
   dequeueAndRender();
 
   const now = performance.now();
@@ -458,7 +744,7 @@ function handleH264Chunk(message) {
       askedFallback = true;
       vscode.postMessage({
         type: 'fallback-jpeg',
-        reason: 'WebCodecs unavailable or not configured'
+        reason: 'WebCodecs unavailable or not configured',
       });
     }
     return;
@@ -475,7 +761,7 @@ function handleH264Chunk(message) {
   const chunk = new EncodedVideoChunk({
     type: message.isKeyframe ? 'key' : 'delta',
     timestamp: lastChunkTime * 1000,
-    data
+    data,
   });
 
   decoder.decode(chunk);
@@ -486,7 +772,7 @@ function setupDecoder(config) {
   if (!('VideoDecoder' in window)) {
     vscode.postMessage({
       type: 'fallback-jpeg',
-      reason: 'WebCodecs not supported'
+      reason: 'WebCodecs not supported',
     });
     return;
   }
@@ -506,7 +792,10 @@ function setupDecoder(config) {
       const started = performance.now();
       const bitmap = frame;
 
-      if (canvas.width !== bitmap.codedWidth || canvas.height !== bitmap.codedHeight) {
+      if (
+        canvas.width !== bitmap.codedWidth ||
+        canvas.height !== bitmap.codedHeight
+      ) {
         canvas.width = bitmap.codedWidth;
         canvas.height = bitmap.codedHeight;
       }
@@ -517,7 +806,10 @@ function setupDecoder(config) {
 
       animationFrameId = requestAnimationFrame(() => {
         try {
-          const offscreen = new OffscreenCanvas(bitmap.codedWidth, bitmap.codedHeight);
+          const offscreen = new OffscreenCanvas(
+            bitmap.codedWidth,
+            bitmap.codedHeight
+          );
           const ctx2 = offscreen.getContext('2d');
           ctx2.drawImage(bitmap, 0, 0);
           const imageBitmapPromise = offscreen.transferToImageBitmap
@@ -545,9 +837,9 @@ function setupDecoder(config) {
       console.error('VideoDecoder error', err);
       vscode.postMessage({
         type: 'fallback-jpeg',
-        reason: err?.message || 'decoder error'
+        reason: err?.message || 'decoder error',
       });
-    }
+    },
   });
 
   decoder.configure(decoderConfig);
@@ -570,9 +862,15 @@ function setOverlayVisible(visible, text = 'Select a device to start') {
 window.addEventListener('message', (event) => {
   const message = event.data;
 
+  // Handle screen size update (mobiledeck-style)
+  if (message.type === 'screenSize' && message.width && message.height) {
+    screenSize = {width: message.width, height: message.height};
+    return;
+  }
+
   switch (message.type) {
     case 'devices':
-      deviceSelect.innerHTML = '<option value=\"\">Select Device...</option>';
+      deviceSelect.innerHTML = '<option value="">Select Device...</option>';
       message.devices.forEach((device) => {
         const option = document.createElement('option');
         option.value = device.id;
@@ -644,4 +942,4 @@ window.addEventListener('resize', () => {
   ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
 });
 
-vscode.postMessage({ type: 'init' });
+vscode.postMessage({type: 'init'});

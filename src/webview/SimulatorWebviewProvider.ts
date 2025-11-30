@@ -2,34 +2,33 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {H264Streamer} from '../capture/H264Streamer';
-import {ScreenshotCapture} from '../capture/ScreenshotCapture';
-import {StreamingCapture} from '../capture/StreamingCapture';
-import {AndroidEmulator} from '../simulator/AndroidEmulator';
-import {IOSSimulator} from '../simulator/IOSSimulator';
-import {SimulatorManager} from '../simulator/SimulatorManager';
+import {MjpegCapture} from '../capture/MjpegCapture';
 import {Device, Platform} from '../simulator/types';
+import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
+import {MobileCliClient} from '../utils/MobileCliClient';
+import {MobileCliServer} from '../utils/MobileCliServer';
 
 export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'simulatorView';
 
   private view?: vscode.WebviewView;
   private extensionUri: vscode.Uri;
-  private iosSimulator: IOSSimulator;
-  private androidEmulator: AndroidEmulator;
-  private currentManager: SimulatorManager | null = null;
   private currentCapture: CaptureStrategy | null = null;
   private h264Streamer: H264Streamer | null = null;
+  private mobileCliServer: MobileCliServer;
+  private mobileCliClient: MobileCliClient | null = null;
   private forceJpegFallback = false;
   private currentDeviceId: string | null = null;
   private currentPlatform: Platform = 'ios';
   private devices: Device[] = [];
   private currentWidth: number = 420;
+  private screenSize: {width: number; height: number} | null = null;
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     this.extensionUri = extensionUri;
-    this.iosSimulator = new IOSSimulator();
-    this.androidEmulator = new AndroidEmulator();
+    // mobilecliサーバーを初期化（必須）
+    this.mobileCliServer = new MobileCliServer(context);
   }
 
   resolveWebviewView(
@@ -80,16 +79,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.refreshDevices();
           break;
 
-        case 'getCaptureMode':
-          const currentMode = vscode.workspace
-            .getConfiguration('secondarySimulator')
-            .get<string>('captureMode', 'screenshot');
-          this.postMessage({
-            type: 'captureModeChanged',
-            mode: currentMode,
-          });
-          break;
-
         case 'platformChange':
           this.currentPlatform = message.platform as Platform;
           await this.refreshDevices();
@@ -114,6 +103,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             message.x2 as number,
             message.y2 as number,
             (message.duration as number | undefined) ?? undefined
+          );
+          break;
+        }
+
+        case 'gesture': {
+          Logger.info(
+            `Gesture received with ${
+              (
+                message.points as Array<{
+                  x: number;
+                  y: number;
+                  duration: number;
+                }>
+              ).length
+            } points`
+          );
+          await this.handleGesture(
+            message.points as Array<{x: number; y: number; duration: number}>
           );
           break;
         }
@@ -177,10 +184,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           }
           break;
 
-        case 'captureModeChange':
-          await this.handleCaptureModeChange(message.mode as string);
-          break;
-
         case 'fallback-jpeg':
           Logger.warn(
             `Webview requested JPEG fallback: ${message.reason ?? 'unknown'}`
@@ -189,7 +192,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
 
         case 'adjustFps':
-          await this.handleFpsAdjustment(message.fps as number);
+          // MJPEGストリーミングではFPS調整は不要（サーバー側で制御）
+          Logger.debug(
+            `FPS adjustment requested: ${message.fps}, but not applicable for MJPEG streaming`
+          );
           break;
 
         case 'toggleOverlay':
@@ -219,24 +225,49 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async refreshDevices(): Promise<void> {
-    const manager =
-      this.currentPlatform === 'ios' ? this.iosSimulator : this.androidEmulator;
-
-    const isAvailable = await manager.isAvailable();
-    if (!isAvailable) {
-      const platform = this.currentPlatform === 'ios' ? 'Xcode' : 'Android SDK';
-      this.sendError(`${platform} is not installed or not in PATH`);
-      this.devices = [];
-      this.postMessage({type: 'devices', devices: []});
-      return;
+    // mobilecliクライアントを初期化（まだ初期化されていない場合）
+    if (!this.mobileCliClient) {
+      try {
+        if (!this.mobileCliServer.isServerRunning()) {
+          await this.mobileCliServer.launchServer();
+        }
+        const serverPort = this.mobileCliServer.getServerPort();
+        const jsonRpcClient = new JsonRpcClient(
+          `http://localhost:${serverPort}`
+        );
+        this.mobileCliClient = new MobileCliClient(jsonRpcClient);
+      } catch (error) {
+        Logger.error('Failed to initialize mobilecli client', error as Error);
+        this.sendError(
+          `Failed to initialize mobilecli: ${(error as Error).message}`
+        );
+        this.devices = [];
+        this.postMessage({type: 'devices', devices: []});
+        return;
+      }
     }
 
-    this.devices = await manager.listDevices();
-    this.postMessage({type: 'devices', devices: this.devices});
-    this.postMessage({
-      type: 'status',
-      text: `${this.devices.length} devices found`,
-    });
+    try {
+      const response = await this.mobileCliClient.listDevices(true);
+      // DeviceDescriptorをDeviceに変換
+      this.devices = response.devices.map((d) => ({
+        id: d.id,
+        name: d.name,
+        platform: d.platform,
+        state: d.state === 'online' ? 'Booted' : 'Shutdown',
+        runtime: d.version || '',
+      }));
+      this.postMessage({type: 'devices', devices: this.devices});
+      this.postMessage({
+        type: 'status',
+        text: `${this.devices.length} devices found`,
+      });
+    } catch (error) {
+      Logger.error('Failed to list devices via mobilecli', error as Error);
+      this.sendError(`Failed to list devices: ${(error as Error).message}`);
+      this.devices = [];
+      this.postMessage({type: 'devices', devices: []});
+    }
   }
 
   async selectDevice(deviceId: string): Promise<void> {
@@ -270,25 +301,42 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.stopCapture();
 
     this.currentDeviceId = deviceId;
-    this.currentManager =
-      device.platform === 'ios' ? this.iosSimulator : this.androidEmulator;
 
-    // キャプチャモードを設定から取得
-    const captureMode = vscode.workspace
-      .getConfiguration('secondarySimulator')
-      .get<string>('captureMode', 'screenshot');
+    // Get device info and send screen size to webview (mobiledeck-style)
+    if (this.mobileCliClient) {
+      try {
+        const deviceInfo = await this.mobileCliClient.getDeviceInfo(deviceId);
+        if (deviceInfo?.device?.screenSize) {
+          this.screenSize = {
+            width: deviceInfo.device.screenSize.width,
+            height: deviceInfo.device.screenSize.height,
+          };
+          this.postMessage({
+            type: 'screenSize',
+            width: this.screenSize.width,
+            height: this.screenSize.height,
+          });
+        }
+      } catch (error) {
+        Logger.warn(
+          `Failed to get device info for screen size: ${
+            (error as Error).message
+          }`
+        );
+      }
+    }
 
+    // H.264ストリーミング（実験的）のチェック
     const useH264 =
-      captureMode === 'streaming' &&
       vscode.workspace
         .getConfiguration('secondarySimulator')
-        .get<boolean>('experimentalH264', false) &&
-      !this.forceJpegFallback;
+        .get<boolean>('experimentalH264', false) && !this.forceJpegFallback;
 
     if (useH264) {
       await this.startH264Streaming(device);
     } else {
-      await this.createCaptureInstance(captureMode);
+      // MJPEGストリーミングを使用
+      await this.createCaptureInstance('mjpeg');
       if (!this.currentCapture) {
         throw new Error('Failed to create capture instance');
       }
@@ -306,6 +354,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           latency: stats.latency,
         });
       });
+
+      try {
+        await this.currentCapture.start();
+        this.postMessage({type: 'status', text: 'Capturing (MJPEG)'});
+        Logger.info(`Started MJPEG streaming for device: ${device.name}`);
+      } catch (error) {
+        Logger.error('Failed to start capture', error as Error);
+        this.sendError((error as Error).message || 'Failed to start capture');
+      }
     }
 
     if (useH264) {
@@ -314,30 +371,34 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         text: 'Capturing (H.264 experimental)',
       });
       Logger.info(`Started H.264 streaming for device: ${device.name}`);
-    } else if (this.currentCapture) {
-      try {
-        await this.currentCapture.start();
-        this.postMessage({type: 'status', text: 'Capturing'});
-        Logger.info(
-          `Started capturing device: ${device.name} (mode: ${captureMode})`
-        );
-      } catch (error) {
-        Logger.error('Failed to start capture', error as Error);
-        this.sendError((error as Error).message || 'Failed to start capture');
-      }
     }
   }
 
-  private async createCaptureInstance(mode: string): Promise<void> {
-    if (mode === 'streaming') {
-      this.currentCapture = new StreamingCapture(
-        this.currentManager!,
-        this.currentWidth
+  private async createCaptureInstance(_mode: string): Promise<void> {
+    try {
+      // mobilecliサーバーを起動
+      if (!this.mobileCliServer.isServerRunning()) {
+        await this.mobileCliServer.launchServer();
+      }
+      const serverPort = this.mobileCliServer.getServerPort();
+
+      // JSON-RPCクライアントとMobileCliClientを初期化（まだ初期化されていない場合）
+      if (!this.mobileCliClient) {
+        const jsonRpcClient = new JsonRpcClient(
+          `http://localhost:${serverPort}`
+        );
+        this.mobileCliClient = new MobileCliClient(jsonRpcClient);
+      }
+
+      // MJPEGストリーミングを使用
+      this.currentCapture = new MjpegCapture(serverPort);
+      Logger.info('Using MJPEG streaming capture with mobilecli');
+    } catch (error) {
+      Logger.error(
+        `Failed to start mobilecli server: ${(error as Error).message}`
       );
-    } else {
-      this.currentCapture = new ScreenshotCapture(
-        this.currentManager!,
-        this.currentWidth
+      throw new Error(
+        `Failed to start mobilecli server. Please ensure mobilecli is installed and available.`
       );
     }
   }
@@ -353,34 +414,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.h264Streamer.start();
   }
 
-  private async handleCaptureModeChange(mode: string): Promise<void> {
-    if (!this.currentDeviceId) {
-      this.sendError('No device selected');
-      return;
-    }
-
-    const device = this.devices.find((d) => d.id === this.currentDeviceId);
-    if (!device) {
-      this.sendError('Device not found');
-      return;
-    }
-
-    // 設定を更新
-    const config = vscode.workspace.getConfiguration('secondarySimulator');
-    await config.update('captureMode', mode, vscode.ConfigurationTarget.Global);
-
-    Logger.info(`Switching capture mode to: ${mode}`);
-
-    this.forceJpegFallback = false;
-    // 新しいモードでキャプチャを再開
-    await this.startCaptureForDevice(this.currentDeviceId, device);
-
-    this.postMessage({
-      type: 'captureModeChanged',
-      mode,
-    });
-  }
-
   private clamp01(value: number): number {
     if (Number.isNaN(value)) {
       return 0.5;
@@ -389,7 +422,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleTap(x: number, y: number): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot tap: no device selected');
       return;
     }
@@ -403,9 +436,43 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const clampedY = this.clamp01(y);
 
     try {
-      await this.currentManager.tap(this.currentDeviceId, clampedX, clampedY);
+      // mobilecliクライアントを初期化（まだ初期化されていない場合）
+      if (!this.mobileCliClient) {
+        Logger.debug('Initializing mobilecli client for tap operation');
+        if (!this.mobileCliServer.isServerRunning()) {
+          await this.mobileCliServer.launchServer();
+        }
+        const serverPort = this.mobileCliServer.getServerPort();
+        const jsonRpcClient = new JsonRpcClient(
+          `http://localhost:${serverPort}`
+        );
+        this.mobileCliClient = new MobileCliClient(jsonRpcClient);
+      }
+
+      // 正規化座標をピクセル座標に変換（mobilecliサーバーは整数座標を期待）
+      let pixelX: number;
+      let pixelY: number;
+      if (this.screenSize) {
+        pixelX = Math.round(clampedX * this.screenSize.width);
+        pixelY = Math.round(clampedY * this.screenSize.height);
+      } else {
+        // 画面サイズが取得できていない場合、エラーをスロー
+        throw new Error(
+          'Screen size not available. Please wait for device initialization.'
+        );
+      }
+
+      Logger.debug(
+        `Sending tap: deviceId=${this.currentDeviceId}, normalized(${clampedX}, ${clampedY}) -> pixel(${pixelX}, ${pixelY})`
+      );
+      await this.mobileCliClient.tap(this.currentDeviceId, pixelX, pixelY);
+      Logger.debug('Tap sent successfully');
     } catch (error) {
-      Logger.error('Failed to send tap', error as Error);
+      Logger.error(
+        `Failed to send tap: deviceId=${this.currentDeviceId}, x=${clampedX}, y=${clampedY}`,
+        error as Error
+      );
+      throw error;
     }
   }
 
@@ -416,7 +483,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     y2: number,
     durationMs?: number
   ): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot swipe: no device selected');
       return;
     }
@@ -437,22 +504,143 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const clampedY1 = this.clamp01(y1);
     const clampedX2 = this.clamp01(x2);
     const clampedY2 = this.clamp01(y2);
+    // durationを短縮：最小50ms、最大500ms（遅延を最小化）
     const safeDuration =
       typeof durationMs === 'number' && Number.isFinite(durationMs)
-        ? Math.max(50, Math.min(durationMs, 3000))
+        ? Math.max(50, Math.min(durationMs, 500))
         : undefined;
 
     try {
-      await this.currentManager.swipe(
-        this.currentDeviceId,
-        clampedX1,
-        clampedY1,
-        clampedX2,
-        clampedY2,
-        safeDuration
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      if (!this.screenSize) {
+        throw new Error(
+          'Screen size not available. Please wait for device initialization.'
+        );
+      }
+
+      // 正規化座標をピクセル座標に変換
+      const pixelX1 = Math.round(clampedX1 * this.screenSize.width);
+      const pixelY1 = Math.round(clampedY1 * this.screenSize.height);
+      const pixelX2 = Math.round(clampedX2 * this.screenSize.width);
+      const pixelY2 = Math.round(clampedY2 * this.screenSize.height);
+
+      const actions = [
+        {type: 'pointerMove', duration: 0, x: pixelX1, y: pixelY1},
+        {type: 'pointerDown', button: 0},
+        {
+          type: 'pointerMove',
+          duration: safeDuration || 100, // デフォルトを300msから100msに短縮
+          x: pixelX2,
+          y: pixelY2,
+        },
+        {type: 'pointerUp', button: 0},
+      ];
+      Logger.debug(
+        `Sending swipe: deviceId=${
+          this.currentDeviceId
+        }, (${pixelX1}, ${pixelY1}) -> (${pixelX2}, ${pixelY2}), duration=${
+          safeDuration || 100
+        }ms`
       );
+      await this.mobileCliClient.gesture(this.currentDeviceId, actions);
+      Logger.debug('Swipe sent successfully');
     } catch (error) {
       Logger.error('Failed to send swipe', error as Error);
+      throw error;
+    }
+  }
+
+  private async handleGesture(
+    points: Array<{x: number; y: number; duration: number}>
+  ): Promise<void> {
+    if (!this.currentDeviceId) {
+      Logger.warn('Cannot send gesture: no device selected');
+      return;
+    }
+
+    if (!points || points.length === 0) {
+      Logger.warn('Gesture ignored: no points provided');
+      return;
+    }
+
+    try {
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      if (!this.screenSize) {
+        throw new Error(
+          'Screen size not available. Please wait for device initialization.'
+        );
+      }
+
+      // mobiledeck方式: 複数のポイントをactionsに変換
+      const actions: Array<{
+        type: string;
+        duration?: number;
+        x?: number;
+        y?: number;
+        button?: number;
+      }> = [];
+
+      if (points.length > 0) {
+        // 正規化座標をピクセル座標に変換
+        const clampedPoints = points.map((p) => ({
+          x: Math.round(this.clamp01(p.x) * this.screenSize!.width),
+          y: Math.round(this.clamp01(p.y) * this.screenSize!.height),
+          duration: p.duration,
+        }));
+
+        // 最初のポイント - 開始位置に移動
+        actions.push({
+          type: 'pointerMove',
+          duration: 0,
+          x: clampedPoints[0].x,
+          y: clampedPoints[0].y,
+        });
+
+        // ポインターを下げる
+        actions.push({
+          type: 'pointerDown',
+          button: 0,
+        });
+
+        // 中間ポイントを通過
+        // mobiledeck方式: durationは前のポイントからの経過時間を使用
+        for (let i = 1; i < clampedPoints.length; i++) {
+          // durationの計算：前のポイントからの経過時間
+          // 最後のポイントは100ms、それ以外は実際の経過時間（最小1ms）
+          const duration =
+            i < clampedPoints.length - 1
+              ? Math.max(
+                  clampedPoints[i].duration - clampedPoints[i - 1].duration,
+                  1 // 最小1ms（0msはmobilecliサーバーが処理できない可能性があるため）
+                )
+              : 100; // 最後のポイントは100ms（mobiledeck方式）
+          actions.push({
+            type: 'pointerMove',
+            duration: duration,
+            x: clampedPoints[i].x,
+            y: clampedPoints[i].y,
+          });
+        }
+
+        // ポインターを上げる
+        actions.push({
+          type: 'pointerUp',
+          button: 0,
+        });
+      }
+
+      Logger.debug(
+        `Sending gesture: deviceId=${this.currentDeviceId}, points=${points.length}, actions=${actions.length}`
+      );
+      await this.mobileCliClient.gesture(this.currentDeviceId, actions);
+      Logger.debug('Gesture sent successfully');
+    } catch (error) {
+      Logger.error('Failed to send gesture', error as Error);
+      throw error;
     }
   }
 
@@ -461,13 +649,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     y: number,
     durationMs?: number
   ): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot long-press: no device selected');
       return;
     }
 
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      Logger.warn(`Long press ignored due to invalid coordinates: x=${x}, y=${y}`);
+      Logger.warn(
+        `Long press ignored due to invalid coordinates: x=${x}, y=${y}`
+      );
       return;
     }
 
@@ -485,27 +675,44 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const y2 = this.clamp01(clampedY + epsilon);
 
     try {
-      await this.currentManager.swipe(
-        this.currentDeviceId,
-        clampedX,
-        clampedY,
-        x2,
-        y2,
-        duration
-      );
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      if (!this.screenSize) {
+        throw new Error(
+          'Screen size not available. Please wait for device initialization.'
+        );
+      }
+
+      // 正規化座標をピクセル座標に変換
+      const pixelX = Math.round(clampedX * this.screenSize.width);
+      const pixelY = Math.round(clampedY * this.screenSize.height);
+      const pixelX2 = Math.round(x2 * this.screenSize.width);
+      const pixelY2 = Math.round(y2 * this.screenSize.height);
+
+      const actions = [
+        {type: 'pointerMove', duration: 0, x: pixelX, y: pixelY},
+        {type: 'pointerDown', button: 0},
+        {type: 'pointerMove', duration, x: pixelX2, y: pixelY2},
+        {type: 'pointerUp', button: 0},
+      ];
+      await this.mobileCliClient.gesture(this.currentDeviceId, actions);
     } catch (error) {
       Logger.error('Failed to send long press', error as Error);
+      throw error;
     }
   }
 
   private async handleDoubleTap(x: number, y: number): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot double-tap: no device selected');
       return;
     }
 
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      Logger.warn(`Double tap ignored due to invalid coordinates: x=${x}, y=${y}`);
+      Logger.warn(
+        `Double tap ignored due to invalid coordinates: x=${x}, y=${y}`
+      );
       return;
     }
 
@@ -513,65 +720,96 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const clampedY = this.clamp01(y);
 
     try {
-      await this.currentManager.tap(this.currentDeviceId, clampedX, clampedY);
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      if (!this.screenSize) {
+        throw new Error(
+          'Screen size not available. Please wait for device initialization.'
+        );
+      }
+
+      // 正規化座標をピクセル座標に変換
+      const pixelX = Math.round(clampedX * this.screenSize.width);
+      const pixelY = Math.round(clampedY * this.screenSize.height);
+
+      await this.mobileCliClient.tap(this.currentDeviceId, pixelX, pixelY);
       await new Promise((resolve) => setTimeout(resolve, 80));
-      await this.currentManager.tap(this.currentDeviceId, clampedX, clampedY);
+      await this.mobileCliClient.tap(this.currentDeviceId, pixelX, pixelY);
     } catch (error) {
       Logger.error('Failed to send double tap', error as Error);
+      throw error;
     }
   }
 
   private async handleKeypress(key: string, special?: boolean): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot send key: no device selected');
       return;
     }
 
     try {
-      await this.currentManager.sendKey(this.currentDeviceId, key, special);
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      await this.mobileCliClient.inputText(this.currentDeviceId, key);
     } catch (error) {
       Logger.error('Failed to send key', error as Error);
+      throw error;
     }
   }
 
   private async pressHome(): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot press home: no device selected');
       return;
     }
 
     try {
       Logger.debug(`Pressing home on device: ${this.currentDeviceId}`);
-      await this.currentManager.pressHome(this.currentDeviceId);
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      await this.mobileCliClient.pressButton(this.currentDeviceId, 'HOME');
       Logger.debug('Home pressed successfully');
     } catch (error) {
       Logger.error('Failed to press home', error as Error);
+      throw error;
     }
   }
 
   private async pressBack(): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       Logger.warn('Cannot press back: no device selected');
       return;
     }
 
     try {
-      await this.currentManager.pressBack(this.currentDeviceId);
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      await this.mobileCliClient.pressButton(this.currentDeviceId, 'BACK');
     } catch (error) {
       Logger.error('Failed to press back', error as Error);
+      throw error;
     }
   }
 
   private async saveScreenshot(): Promise<void> {
-    if (!this.currentManager || !this.currentDeviceId) {
+    if (!this.currentDeviceId) {
       vscode.window.showWarningMessage('No device selected');
       return;
     }
 
     try {
-      const screenshot = await this.currentManager.takeScreenshot(
+      if (!this.mobileCliClient) {
+        throw new Error('mobilecli client is not initialized');
+      }
+      const response = await this.mobileCliClient.takeScreenshot(
         this.currentDeviceId
       );
+      // base64デコード
+      const screenshot = Buffer.from(response.data, 'base64');
 
       const uri = await vscode.window.showSaveDialog({
         defaultUri: vscode.Uri.file(`screenshot-${Date.now()}.png`),
@@ -614,23 +852,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     await this.startCaptureForDevice(this.currentDeviceId, device);
   }
 
-  private async handleFpsAdjustment(fps: number): Promise<void> {
-    if (!this.currentCapture) return;
-
-    Logger.info(`Adjusting FPS to ${fps} based on adaptive algorithm`);
-
-    // Update the streaming FPS configuration
-    const config = vscode.workspace.getConfiguration('secondarySimulator');
-    await config.update('streamingFps', fps, vscode.ConfigurationTarget.Global);
-
-    // Restart capture with new FPS if in streaming mode
-    const captureMode = config.get<string>('captureMode', 'screenshot');
-    if (captureMode === 'streaming' && this.currentDeviceId) {
-      const device = this.devices.find((d) => d.id === this.currentDeviceId);
-      if (device) {
-        await this.startCaptureForDevice(this.currentDeviceId, device);
-      }
-    }
+  private async handleFpsAdjustment(_fps: number): Promise<void> {
+    // MJPEGストリーミングではFPS調整は不要
+    // FPSはmobilecliサーバー側で制御されるため、クライアント側での調整は不要
+    Logger.debug('FPS adjustment is not applicable for MJPEG streaming');
   }
 
   private async handleOverlayToggle(enabled: boolean): Promise<void> {
@@ -646,7 +871,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private disconnect(): void {
     this.stopCapture();
     this.currentDeviceId = null;
-    this.currentManager = null;
     this.postMessage({type: 'disconnected'});
     this.postMessage({type: 'status', text: 'Disconnected'});
     Logger.info('Device disconnected');
@@ -703,7 +927,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   dispose(): void {
     this.stopCapture();
-    this.iosSimulator.dispose();
-    this.androidEmulator.dispose();
+    this.mobileCliServer.stopServer();
   }
 }
