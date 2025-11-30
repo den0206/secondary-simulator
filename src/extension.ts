@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import {SimulatorWebviewProvider} from './webview/SimulatorWebviewProvider';
 import {Logger} from './utils/Logger';
 import {TempCleaner} from './utils/TempCleaner';
+import {SimulatorWebviewProvider} from './webview/SimulatorWebviewProvider';
 
 let provider: SimulatorWebviewProvider | null = null;
 let cleanupTimer: NodeJS.Timeout | null = null;
@@ -17,15 +17,15 @@ export function activate(context: vscode.ExtensionContext): void {
     TempCleaner.cleanOnce();
   }, CLEAN_INTERVAL_MS);
 
-  provider = new SimulatorWebviewProvider(context.extensionUri);
+  provider = new SimulatorWebviewProvider(context.extensionUri, context);
 
   const webviewProvider = vscode.window.registerWebviewViewProvider(
     SimulatorWebviewProvider.viewType,
     provider,
     {
       webviewOptions: {
-        retainContextWhenHidden: true
-      }
+        retainContextWhenHidden: true,
+      },
     }
   );
 
@@ -58,7 +58,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (provider) {
         await provider.refreshDevices();
       }
-    })
+    }),
   ];
 
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
@@ -70,24 +70,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
-  context.subscriptions.push(
-    webviewProvider,
-    ...commands,
-    configListener,
-    {
-      dispose: () => {
-        if (provider) {
-          provider.dispose();
-          provider = null;
-        }
-        if (cleanupTimer) {
-          clearInterval(cleanupTimer);
-          cleanupTimer = null;
-        }
-        Logger.dispose();
+  context.subscriptions.push(webviewProvider, ...commands, configListener, {
+    dispose: () => {
+      if (provider) {
+        provider.dispose();
+        provider = null;
       }
-    }
-  );
+      if (cleanupTimer) {
+        clearInterval(cleanupTimer);
+        cleanupTimer = null;
+      }
+      Logger.dispose();
+    },
+  });
 }
 
 export function deactivate(): void {

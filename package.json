@@ -73,54 +73,10 @@
     "configuration": {
       "title": "Secondary Simulator",
       "properties": {
-        "secondarySimulator.refreshInterval": {
-          "type": "number",
-          "default": 500,
-          "minimum": 100,
-          "maximum": 5000,
-          "description": "Screenshot refresh interval in milliseconds"
-        },
-        "secondarySimulator.imageQuality": {
-          "type": "number",
-          "default": 70,
-          "minimum": 10,
-          "maximum": 100,
-          "description": "JPEG compression quality (10-100)"
-        },
         "secondarySimulator.maxWidth": {
           "type": "number",
           "default": 420,
-          "description": "Maximum display width in pixels"
-        },
-        "secondarySimulator.adaptiveRefresh": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically adjust refresh rate based on screen activity"
-        },
-        "secondarySimulator.captureMode": {
-          "type": "string",
-          "enum": [
-            "screenshot",
-            "streaming"
-          ],
-          "enumDescriptions": [
-            "Screenshot mode: Lower resource usage, configurable refresh rate",
-            "Streaming mode: Higher frame rate, lower latency (requires more resources)"
-          ],
-          "default": "screenshot",
-          "description": "Capture mode: screenshot or streaming"
-        },
-        "secondarySimulator.streamingFps": {
-          "type": "number",
-          "default": 15,
-          "minimum": 5,
-          "maximum": 30,
-          "description": "Target frame rate for streaming mode (frames per second)"
-        },
-        "secondarySimulator.streamingLowLatency": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable low latency mode for streaming (may drop frames if system is busy)"
+          "description": "Maximum display width in pixels (for MJPEG streaming)"
         },
         "secondarySimulator.experimentalH264": {
           "type": "boolean",
@@ -152,6 +108,16 @@
           "minimum": 200,
           "maximum": 2000,
           "description": "ロングタップ判定までの時間（ミリ秒）。"
+        },
+        "secondarySimulator.useMjpegStreaming": {
+          "type": "boolean",
+          "default": false,
+          "description": "MJPEGストリーミングを使用する（mobilecliが必要）。実機デバイスもサポートされます。"
+        },
+        "secondarySimulator.useMobileCli": {
+          "type": "boolean",
+          "default": false,
+          "description": "mobilecliを使用してデバイス操作を統一する（実機デバイスもサポート）。useMjpegStreamingが有効な場合、自動的に有効になります。"
         }
       }
     },
@@ -198,6 +164,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@mobilenext/mobilecli": "^0.0.42",
     "sharp": "^0.34.5"
   }
 }
