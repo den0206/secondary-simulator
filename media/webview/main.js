@@ -2,9 +2,7 @@ const vscode = acquireVsCodeApi();
 const canvas = document.getElementById('simulator-canvas');
 const ctx = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
-const platformSelect = document.getElementById('platform');
 const deviceSelect = document.getElementById('device');
-const overlayToggle = document.getElementById('toggle-overlay');
 
 // Touch/Mouse event handling for tap and swipe (mobiledeck-style)
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -21,16 +19,52 @@ let gestureState = {
 let isDragging = false;
 let startX = 0;
 let startY = 0;
+let startClientX = 0; // ビューポート座標（フィードバック表示用）
+let startClientY = 0; // ビューポート座標（フィードバック表示用）
 let startTime = 0;
 let lastTapTime = 0;
 let longPressTimer = null;
 let longPressTriggered = false;
 let SWIPE_THRESHOLD = 30; // minimum pixels for swipe
 let TAP_THRESHOLD = 10; // maximum pixels for tap
-let SHOW_GESTURE_OVERLAY = true;
 let LONG_PRESS_DURATION = 600;
 const DOUBLE_TAP_INTERVAL = 300;
 const GESTURE_THRESHOLD_MS = 100; // mobiledeck: 100ms以内はタップ、それ以上はジェスチャー
+
+// Operation indicator
+let operationIndicatorTimer = null;
+const OPERATION_INDICATOR_DURATION = 2000; // 2秒間表示
+
+function showOperationIndicator(operationType) {
+  const indicator = document.getElementById('operation-indicator');
+  if (!indicator) return;
+
+  // 既存のタイマーをクリア
+  if (operationIndicatorTimer) {
+    clearTimeout(operationIndicatorTimer);
+    operationIndicatorTimer = null;
+  }
+
+  // 操作の種類に応じたテキストを設定
+  const operationTexts = {
+    tap: 'Tap',
+    doubleTap: 'Double Tap',
+    swipe: 'Swipe',
+    gesture: 'Gesture',
+    longPress: 'Long Press',
+    home: 'Home',
+    back: 'Back',
+  };
+
+  indicator.textContent = operationTexts[operationType] || operationType;
+  indicator.style.display = 'block';
+
+  // 一定時間後に非表示
+  operationIndicatorTimer = setTimeout(() => {
+    indicator.style.display = 'none';
+    operationIndicatorTimer = null;
+  }, OPERATION_INDICATOR_DURATION);
+}
 
 // Screen size for coordinate conversion (will be set from extension)
 let screenSize = {width: 0, height: 0};
@@ -54,57 +88,6 @@ function convertToScreenCoords(clientX, clientY, element) {
   }
 }
 
-// Visual feedback functions (mobiledeck-inspired)
-function showTapFeedback(x, y) {
-  if (!SHOW_GESTURE_OVERLAY) return;
-  const feedback = document.getElementById('gesture-feedback');
-  if (!feedback) return;
-
-  const ripple = document.createElement('div');
-  ripple.style.position = 'absolute';
-  ripple.style.left = x - 20 + 'px';
-  ripple.style.top = y - 20 + 'px';
-  ripple.style.width = '40px';
-  ripple.style.height = '40px';
-  ripple.style.borderRadius = '50%';
-  ripple.style.background = 'rgba(33, 150, 243, 0.5)';
-  ripple.style.animation = 'ripple 0.6s ease-out';
-  ripple.style.pointerEvents = 'none';
-
-  feedback.appendChild(ripple);
-
-  setTimeout(() => {
-    ripple.remove();
-  }, 600);
-}
-
-function showSwipeFeedback(x1, y1, x2, y2) {
-  if (!SHOW_GESTURE_OVERLAY) return;
-  const feedback = document.getElementById('gesture-feedback');
-  if (!feedback) return;
-
-  const line = document.createElement('div');
-  const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-  const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-
-  line.style.position = 'absolute';
-  line.style.left = x1 + 'px';
-  line.style.top = y1 + 'px';
-  line.style.width = length + 'px';
-  line.style.height = '3px';
-  line.style.background = 'rgba(76, 175, 80, 0.7)';
-  line.style.transformOrigin = '0 0';
-  line.style.transform = 'rotate(' + angle + 'deg)';
-  line.style.animation = 'fadeOut 0.5s ease-out';
-  line.style.pointerEvents = 'none';
-
-  feedback.appendChild(line);
-
-  setTimeout(() => {
-    line.remove();
-  }, 500);
-}
-
 canvas.addEventListener('mousedown', (e) => {
   isDragging = true;
   const coords = convertToScreenCoords(e.clientX, e.clientY, e.currentTarget);
@@ -112,6 +95,8 @@ canvas.addEventListener('mousedown', (e) => {
 
   startX = coords.x;
   startY = coords.y;
+  startClientX = e.clientX; // ビューポート座標を保存（フィードバック表示用）
+  startClientY = e.clientY; // ビューポート座標を保存（フィードバック表示用）
   startTime = now;
 
   // Initialize gesture state (mobiledeck-style)
@@ -142,7 +127,7 @@ canvas.addEventListener('mousedown', (e) => {
       y,
       duration: LONG_PRESS_DURATION,
     });
-    showTapFeedback(startX, startY);
+    showOperationIndicator('longPress');
   }, LONG_PRESS_DURATION);
   e.preventDefault();
 });
@@ -217,7 +202,7 @@ canvas.addEventListener('mouseup', (e) => {
     }));
 
     vscode.postMessage({type: 'gesture', points: normalizedPoints});
-    showSwipeFeedback(startX, startY, coords.x, coords.y);
+    showOperationIndicator('gesture');
   } else {
     // タップとして処理
     const deltaX = coords.x - startX;
@@ -236,12 +221,13 @@ canvas.addEventListener('mouseup', (e) => {
       const now = Date.now();
       if (now - lastTapTime < DOUBLE_TAP_INTERVAL) {
         vscode.postMessage({type: 'doubleTap', x, y});
+        showOperationIndicator('doubleTap');
         lastTapTime = 0;
       } else {
         vscode.postMessage({type: 'tap', x, y});
+        showOperationIndicator('tap');
         lastTapTime = now;
       }
-      showTapFeedback(coords.x, coords.y);
     } else {
       // 距離が大きい場合はスワイプとして処理（後方互換性のため）
       const x1 =
@@ -260,7 +246,6 @@ canvas.addEventListener('mouseup', (e) => {
         screenSize.height > 0
           ? clamp01(coords.screenY / screenSize.height)
           : clamp01(coords.y / canvas.getBoundingClientRect().height);
-      showSwipeFeedback(startX, startY, coords.x, coords.y);
       vscode.postMessage({
         type: 'swipe',
         x1,
@@ -269,6 +254,7 @@ canvas.addEventListener('mouseup', (e) => {
         y2,
         duration: now - startTime,
       });
+      showOperationIndicator('swipe');
     }
   }
 
@@ -301,6 +287,8 @@ canvas.addEventListener(
 
       startX = coords.x;
       startY = coords.y;
+      startClientX = touch.clientX; // ビューポート座標を保存（フィードバック表示用）
+      startClientY = touch.clientY; // ビューポート座標を保存（フィードバック表示用）
       startTime = now;
 
       // Initialize gesture state (mobiledeck-style)
@@ -332,7 +320,7 @@ canvas.addEventListener(
           y,
           duration: LONG_PRESS_DURATION,
         });
-        showTapFeedback(startX, startY);
+        // ロングプレス時のフィードバックは、実際のイベント発生時に表示されるため、ここでは表示しない
       }, LONG_PRESS_DURATION);
     }
     e.preventDefault();
@@ -433,7 +421,7 @@ canvas.addEventListener(
       }));
 
       vscode.postMessage({type: 'gesture', points: normalizedPoints});
-      showSwipeFeedback(startX, startY, coords.x, coords.y);
+      showOperationIndicator('gesture');
     } else {
       // タップとして処理
       const deltaX = coords.x - startX;
@@ -452,12 +440,13 @@ canvas.addEventListener(
         const now = Date.now();
         if (now - lastTapTime < DOUBLE_TAP_INTERVAL) {
           vscode.postMessage({type: 'doubleTap', x, y});
+          showOperationIndicator('doubleTap');
           lastTapTime = 0;
         } else {
           vscode.postMessage({type: 'tap', x, y});
+          showOperationIndicator('tap');
           lastTapTime = now;
         }
-        showTapFeedback(coords.x, coords.y);
       } else {
         // 距離が大きい場合はスワイプとして処理（後方互換性のため）
         const x1 =
@@ -476,7 +465,6 @@ canvas.addEventListener(
           screenSize.height > 0
             ? clamp01(coords.screenY / screenSize.height)
             : clamp01(coords.y / canvas.getBoundingClientRect().height);
-        showSwipeFeedback(startX, startY, coords.x, coords.y);
         vscode.postMessage({
           type: 'swipe',
           x1,
@@ -485,6 +473,7 @@ canvas.addEventListener(
           y2,
           duration: now - startTime,
         });
+        showOperationIndicator('swipe');
       }
     }
 
@@ -532,13 +521,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-platformSelect.addEventListener('change', () => {
-  vscode.postMessage({
-    type: 'platformChange',
-    platform: platformSelect.value,
-  });
-});
-
 deviceSelect.addEventListener('change', () => {
   vscode.postMessage({
     type: 'deviceChange',
@@ -548,29 +530,17 @@ deviceSelect.addEventListener('change', () => {
 
 document.getElementById('btn-home').addEventListener('click', () => {
   vscode.postMessage({type: 'home'});
+  showOperationIndicator('home');
 });
 
 document.getElementById('btn-back').addEventListener('click', () => {
   vscode.postMessage({type: 'back'});
-});
-
-document.getElementById('btn-screenshot').addEventListener('click', () => {
-  vscode.postMessage({type: 'saveScreenshot'});
-});
-
-document.getElementById('btn-refresh').addEventListener('click', () => {
-  vscode.postMessage({type: 'refreshDevices'});
+  showOperationIndicator('back');
 });
 
 document.getElementById('btn-disconnect').addEventListener('click', () => {
   vscode.postMessage({type: 'disconnect'});
 });
-
-if (overlayToggle) {
-  overlayToggle.addEventListener('change', () => {
-    vscode.postMessage({type: 'toggleOverlay', enabled: overlayToggle.checked});
-  });
-}
 
 let frameQueue = []; // mobiledeck-style multi-frame queue
 let currentBitmap = null;
@@ -582,22 +552,8 @@ let animationFrameId = null;
 let totalFramesReceived = 0;
 let totalFramesRendered = 0;
 let totalFramesDropped = 0;
-let lastStatsUpdate = performance.now();
 
 const MAX_FRAME_QUEUE = 1; // 遅延を最小化：最新フレームのみ保持
-
-// Adaptive frame rate adjustment
-let targetFps = 15;
-let currentDropRate = 0;
-let lastFpsAdjustment = performance.now();
-const FPS_ADJUSTMENT_INTERVAL = 5000; // Adjust every 5 seconds
-const MAX_DROP_RATE = 0.15; // 15% max acceptable drop rate
-const MIN_DROP_RATE = 0.05; // 5% target drop rate
-
-// Connection health monitoring
-let lastFrameTime = performance.now();
-let connectionHealthy = true;
-const CONNECTION_TIMEOUT = 3000; // 3 seconds without frames = unhealthy
 
 // WebCodecs (H.264) pipeline groundwork
 let decoder = null;
@@ -647,49 +603,10 @@ async function renderFrame(bytes) {
     // 即座に描画（遅延を最小化）
     if (currentBitmap && ctx) {
       ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
-
-      const renderLatency = Math.round(performance.now() - started);
-      const renderLatencyEl = document.getElementById('render-latency');
-      if (renderLatencyEl) {
-        renderLatencyEl.textContent = 'Render ' + renderLatency + ' ms';
-      }
     }
   } catch (err) {
     console.error('renderFrame failed', err);
   }
-}
-
-function updateConnectionHealth() {
-  const now = performance.now();
-  const elapsed = now - lastFrameTime;
-  const healthy = elapsed < CONNECTION_TIMEOUT;
-  if (healthy !== connectionHealthy) {
-    connectionHealthy = healthy;
-    const healthEl = document.getElementById('health');
-    if (healthEl) {
-      healthEl.style.display = 'inline';
-      healthEl.style.color = healthy ? '#4caf50' : '#f44336';
-      healthEl.title = healthy ? 'Connection healthy' : 'No frames received';
-    }
-  }
-}
-
-function maybeAdjustFps() {
-  const now = performance.now();
-  if (now - lastFpsAdjustment < FPS_ADJUSTMENT_INTERVAL) return;
-
-  const total = totalFramesReceived || 1;
-  currentDropRate = (totalFramesReceived - totalFramesRendered) / total;
-
-  if (currentDropRate > MAX_DROP_RATE && targetFps > 8) {
-    targetFps = Math.max(8, targetFps - 2);
-    vscode.postMessage({type: 'adjustFps', fps: targetFps});
-  } else if (currentDropRate < MIN_DROP_RATE && targetFps < 30) {
-    targetFps = Math.min(30, targetFps + 2);
-    vscode.postMessage({type: 'adjustFps', fps: targetFps});
-  }
-
-  lastFpsAdjustment = now;
 }
 
 function dequeueAndRender() {
@@ -712,8 +629,6 @@ function dequeueAndRender() {
 function enqueueFrame(bytes) {
   if (!bytes) return;
   totalFramesReceived++;
-  lastFrameTime = performance.now();
-  updateConnectionHealth();
 
   // 遅延を最小化：キューをクリアして最新フレームのみ保持
   if (frameQueue.length >= MAX_FRAME_QUEUE) {
@@ -727,15 +642,6 @@ function enqueueFrame(bytes) {
   frameQueue.push(bytes);
   // 即座にレンダリング（遅延を最小化）
   dequeueAndRender();
-
-  const now = performance.now();
-  if (now - lastStatsUpdate > 1000) {
-    document.getElementById('fps').textContent = `${targetFps} FPS`;
-    document.getElementById('queue').textContent = `Q:${frameQueue.length}`;
-    lastStatsUpdate = now;
-  }
-
-  maybeAdjustFps();
 }
 
 function handleH264Chunk(message) {
@@ -823,9 +729,6 @@ function setupDecoder(config) {
             }
             currentBitmap = imgBitmap;
             ctx.drawImage(imgBitmap, 0, 0, canvas.width, canvas.height);
-            const renderLatency = Math.round(performance.now() - started);
-            document.getElementById('render-latency').textContent =
-              'Render ' + renderLatency + ' ms';
           });
         } finally {
           animationFrameId = null;
@@ -843,13 +746,6 @@ function setupDecoder(config) {
   });
 
   decoder.configure(decoderConfig);
-}
-
-function updateStatus(text) {
-  const statusEl = document.getElementById('status');
-  if (statusEl) {
-    statusEl.textContent = text;
-  }
 }
 
 function setOverlayVisible(visible, text = 'Select a device to start') {
@@ -886,12 +782,6 @@ window.addEventListener('message', (event) => {
       if (typeof message.swipeThreshold === 'number') {
         SWIPE_THRESHOLD = message.swipeThreshold;
       }
-      if (typeof message.showGestureOverlay === 'boolean') {
-        SHOW_GESTURE_OVERLAY = message.showGestureOverlay;
-        if (overlayToggle) {
-          overlayToggle.checked = SHOW_GESTURE_OVERLAY;
-        }
-      }
       if (typeof message.longPressDuration === 'number') {
         LONG_PRESS_DURATION = message.longPressDuration;
       }
@@ -902,29 +792,13 @@ window.addEventListener('message', (event) => {
       setOverlayVisible(false);
       break;
 
-    case 'stats':
-      document.getElementById('fps').textContent = `${message.fps} FPS`;
-      document.getElementById('latency').textContent = `${message.latency} ms`;
-      break;
-
-    case 'status':
-      updateStatus(message.text);
-      break;
-
     case 'error':
-      updateStatus('Error');
       setOverlayVisible(true, message.text);
       break;
 
     case 'disconnected':
       frameQueue = [];
       setOverlayVisible(true, 'Disconnected');
-      break;
-
-    case 'captureModeChanged':
-      if (captureModeSelect) {
-        captureModeSelect.value = message.mode;
-      }
       break;
 
     case 'h264-config':

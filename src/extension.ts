@@ -42,10 +42,6 @@ export function activate(context: vscode.ExtensionContext): void {
       Logger.info('Stop capture command executed');
     }),
 
-    vscode.commands.registerCommand('simulator.takeScreenshot', () => {
-      Logger.info('Take screenshot command executed');
-    }),
-
     vscode.commands.registerCommand('simulator.home', () => {
       Logger.info('Home command executed');
     }),
