@@ -21,6 +21,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private currentDeviceId: string | null = null;
   private devices: Device[] = [];
   private screenSize: {width: number; height: number} | null = null;
+  private messageDisposable?: vscode.Disposable;
+  private disposeDisposable?: vscode.Disposable;
+  private visibilityDisposable?: vscode.Disposable;
 
   constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     this.extensionUri = extensionUri;
@@ -42,7 +45,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
-    webviewView.webview.onDidReceiveMessage(
+    // イベントリスナーを保持して、dispose時にクリーンアップできるようにする
+    this.messageDisposable = webviewView.webview.onDidReceiveMessage(
       this.handleMessage.bind(this),
       undefined,
       []
@@ -51,11 +55,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 初期設定をWebviewへ送信
     this.sendConfig();
 
-    webviewView.onDidDispose(() => {
+    this.disposeDisposable = webviewView.onDidDispose(() => {
       this.stopCapture();
     });
 
-    webviewView.onDidChangeVisibility(() => {
+    this.visibilityDisposable = webviewView.onDidChangeVisibility(() => {
       if (!webviewView.visible) {
         this.stopCapture();
       }
@@ -814,7 +818,20 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   dispose(): void {
+    // イベントリスナーのクリーンアップ（メモリリーク防止）
+    this.messageDisposable?.dispose();
+    this.disposeDisposable?.dispose();
+    this.visibilityDisposable?.dispose();
+    this.messageDisposable = undefined;
+    this.disposeDisposable = undefined;
+    this.visibilityDisposable = undefined;
+
     this.stopCapture();
     this.mobileCliServer.stopServer();
+    this.view = undefined;
+    this.currentDeviceId = null;
+    this.devices = [];
+    this.screenSize = null;
+    this.mobileCliClient = null;
   }
 }

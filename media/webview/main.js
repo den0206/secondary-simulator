@@ -755,6 +755,45 @@ function setOverlayVisible(visible, text = 'Select a device to start') {
   canvas.style.display = visible ? 'none' : 'block';
 }
 
+// 完全なクリーンアップ関数（メモリリーク防止）
+function cleanup() {
+  // ImageBitmapのクリーンアップ
+  if (currentBitmap) {
+    currentBitmap.close?.();
+    currentBitmap = null;
+  }
+
+  // VideoDecoderのクリーンアップ
+  if (decoder) {
+    decoder.close();
+    decoder = null;
+  }
+  decoderConfig = null;
+
+  // タイマーのクリーンアップ
+  if (operationIndicatorTimer) {
+    clearTimeout(operationIndicatorTimer);
+    operationIndicatorTimer = null;
+  }
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  // フレームキューのクリーンアップ（参照をクリアしてGCに任せる）
+  frameQueue = [];
+
+  // animationFrameIdのクリーンアップ
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
+  // デコードキューのリセット
+  decodedQueue = 0;
+  isRendering = false;
+}
+
 window.addEventListener('message', (event) => {
   const message = event.data;
 
@@ -793,11 +832,12 @@ window.addEventListener('message', (event) => {
       break;
 
     case 'error':
+      cleanup();
       setOverlayVisible(true, message.text);
       break;
 
     case 'disconnected':
-      frameQueue = [];
+      cleanup();
       setOverlayVisible(true, 'Disconnected');
       break;
 
@@ -814,6 +854,11 @@ window.addEventListener('message', (event) => {
 window.addEventListener('resize', () => {
   if (!canvas || !currentBitmap) return;
   ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
+});
+
+// ページアンロード時のクリーンアップ（メモリリーク防止）
+window.addEventListener('beforeunload', () => {
+  cleanup();
 });
 
 vscode.postMessage({type: 'init'});

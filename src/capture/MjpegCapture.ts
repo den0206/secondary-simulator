@@ -16,6 +16,8 @@ export class MjpegCapture implements CaptureStrategy {
   private lastFpsUpdate: number = 0;
   private currentFps: number = 0;
   private startTime: number = 0;
+  private buffer: Uint8Array | null = null;
+  private imageData: Uint8Array | null = null;
 
   constructor(serverPort: number) {
     this.serverPort = serverPort;
@@ -128,15 +130,19 @@ export class MjpegCapture implements CaptureStrategy {
       this.streamReader.cancel();
       this.streamReader = null;
     }
+
+    // バッファのクリア（メモリリーク防止）
+    this.buffer = null;
+    this.imageData = null;
   }
 
   private async processMjpegStream(
     reader: ReadableStreamDefaultReader<Uint8Array>
   ): Promise<void> {
     const boundary = '--BoundaryString';
-    let buffer = new Uint8Array();
+    this.buffer = new Uint8Array();
     let inImage = false;
-    let imageData = new Uint8Array();
+    this.imageData = new Uint8Array();
     let contentLength = 0;
     let contentType = '';
     let bytesRead = 0;
@@ -153,16 +159,22 @@ export class MjpegCapture implements CaptureStrategy {
         }
 
         // バッファにデータを追加
-        const newBuffer = new Uint8Array(buffer.length + value.length);
-        newBuffer.set(buffer);
-        newBuffer.set(value, buffer.length);
-        buffer = newBuffer;
+        const newBuffer: Uint8Array = new Uint8Array(
+          (this.buffer?.length || 0) + value.length
+        );
+        if (this.buffer) {
+          newBuffer.set(this.buffer);
+        }
+        newBuffer.set(value, this.buffer?.length || 0);
+        this.buffer = newBuffer;
 
         let processedData = false;
         while (true) {
           if (!inImage) {
             // バウンダリを探す
-            const bufferString = new TextDecoder().decode(buffer);
+            const bufferString = new TextDecoder().decode(
+              this.buffer || new Uint8Array()
+            );
             const boundaryIndex = bufferString.indexOf(boundary);
             if (boundaryIndex === -1) {
               break;
@@ -196,9 +208,11 @@ export class MjpegCapture implements CaptureStrategy {
 
             // ヘッダー部分をバッファから削除
             const headerEndBytes = headerEndIndex + 4;
-            buffer = buffer.slice(headerEndBytes);
+            if (this.buffer) {
+              this.buffer = this.buffer.slice(headerEndBytes);
+            }
             inImage = true;
-            imageData = new Uint8Array();
+            this.imageData = new Uint8Array();
             bytesRead = 0;
             processedData = true;
           }
@@ -206,36 +220,50 @@ export class MjpegCapture implements CaptureStrategy {
           if (inImage) {
             // 画像データを読み取る
             const remainingBytes = contentLength - bytesRead;
-            const bytesToRead = Math.min(remainingBytes, buffer.length);
+            const bytesToRead = Math.min(
+              remainingBytes,
+              this.buffer?.length || 0
+            );
 
             if (bytesToRead === 0) {
               break;
             }
 
-            const newImageData = new Uint8Array(imageData.length + bytesToRead);
-            newImageData.set(imageData);
-            newImageData.set(buffer.slice(0, bytesToRead), imageData.length);
-            imageData = newImageData;
+            const newImageData: Uint8Array = new Uint8Array(
+              (this.imageData?.length || 0) + bytesToRead
+            );
+            if (this.imageData) {
+              newImageData.set(this.imageData);
+            }
+            if (this.buffer) {
+              newImageData.set(
+                this.buffer.slice(0, bytesToRead),
+                this.imageData?.length || 0
+              );
+            }
+            this.imageData = newImageData;
 
             bytesRead += bytesToRead;
-            buffer = buffer.slice(bytesToRead);
+            if (this.buffer) {
+              this.buffer = this.buffer.slice(bytesToRead);
+            }
             processedData = true;
 
             if (bytesRead >= contentLength) {
               // フレームが完成
-              if (contentType === 'image/jpeg') {
+              if (contentType === 'image/jpeg' && this.imageData) {
                 // フレームを即座に処理（遅延を最小化）
-                this.displayMjpegImage(imageData);
-              } else {
+                this.displayMjpegImage(this.imageData);
+              } else if (this.imageData) {
                 // 非JPEGフレーム（JSON-RPC通知など）
-                const bodyText = new TextDecoder().decode(imageData);
+                const bodyText = new TextDecoder().decode(this.imageData);
                 Logger.debug(
                   `Non-JPEG frame: ${contentType}, body: ${bodyText}`
                 );
               }
 
               inImage = false;
-              imageData = new Uint8Array();
+              this.imageData = new Uint8Array();
               bytesRead = 0;
             }
           }
