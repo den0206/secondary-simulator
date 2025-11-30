@@ -6,6 +6,10 @@ import {CaptureStrategy, FrameCallback} from './CaptureStrategy';
  * mobilecliのMJPEGストリームを使用
  */
 export class MjpegCapture implements CaptureStrategy {
+  private static readonly MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB
+  private static readonly MAX_IMAGE_DATA_SIZE = 10 * 1024 * 1024; // 10MB
+  private static readonly BOUNDARY_TIMEOUT_MS = 5000; // 5秒
+
   private deviceId: string | null = null;
   private frameCallback: FrameCallback | null = null;
   private isCapturing: boolean = false;
@@ -18,6 +22,7 @@ export class MjpegCapture implements CaptureStrategy {
   private startTime: number = 0;
   private buffer: Uint8Array | null = null;
   private imageData: Uint8Array | null = null;
+  private lastBoundaryFoundTime: number = 0;
 
   constructor(serverPort: number) {
     this.serverPort = serverPort;
@@ -56,18 +61,11 @@ export class MjpegCapture implements CaptureStrategy {
     Logger.info('MJPEG capture stopped');
   }
 
-  setMaxWidth(_width: number): void {
-    // MJPEGストリーミングでは、サーバー側でリサイズされる
-  }
-
   updateConfig(): void {
     // MJPEGストリーミングでは設定変更は再起動が必要
-    if (this.isCapturing) {
-      const wasCapturing = this.isCapturing;
+    if (this.isCapturing && this.deviceId) {
       this.stop();
-      if (wasCapturing && this.deviceId) {
-        this.start();
-      }
+      this.start();
     }
   }
 
@@ -146,6 +144,7 @@ export class MjpegCapture implements CaptureStrategy {
     let contentLength = 0;
     let contentType = '';
     let bytesRead = 0;
+    this.lastBoundaryFoundTime = Date.now();
 
     Logger.info('Starting MJPEG stream processing');
 
@@ -158,14 +157,39 @@ export class MjpegCapture implements CaptureStrategy {
           break;
         }
 
+        // バッファサイズチェック（メモリ保護）
+        const currentBufferSize = this.buffer?.length || 0;
+        if (currentBufferSize + value.length > MjpegCapture.MAX_BUFFER_SIZE) {
+          Logger.warn(
+            `Buffer size exceeded limit (${
+              currentBufferSize + value.length
+            } bytes). Resetting stream.`
+          );
+          this.resetStream(reader);
+          break;
+        }
+
+        // バウンダリ検出のタイムアウトチェック
+        const timeSinceLastBoundary = Date.now() - this.lastBoundaryFoundTime;
+        if (
+          !inImage &&
+          timeSinceLastBoundary > MjpegCapture.BOUNDARY_TIMEOUT_MS
+        ) {
+          Logger.warn(
+            `Boundary not found for ${timeSinceLastBoundary}ms. Resetting stream.`
+          );
+          this.resetStream(reader);
+          break;
+        }
+
         // バッファにデータを追加
         const newBuffer: Uint8Array = new Uint8Array(
-          (this.buffer?.length || 0) + value.length
+          currentBufferSize + value.length
         );
         if (this.buffer) {
           newBuffer.set(this.buffer);
         }
-        newBuffer.set(value, this.buffer?.length || 0);
+        newBuffer.set(value, currentBufferSize);
         this.buffer = newBuffer;
 
         let processedData = false;
@@ -179,6 +203,9 @@ export class MjpegCapture implements CaptureStrategy {
             if (boundaryIndex === -1) {
               break;
             }
+
+            // バウンダリが見つかった時刻を更新
+            this.lastBoundaryFoundTime = Date.now();
 
             // ヘッダーの終わりを探す
             const headerEndIndex = bufferString.indexOf(
@@ -199,6 +226,17 @@ export class MjpegCapture implements CaptureStrategy {
             );
             if (contentLengthMatch) {
               contentLength = parseInt(contentLengthMatch[1], 10);
+              // Content-Lengthの妥当性チェック
+              if (
+                contentLength <= 0 ||
+                contentLength > MjpegCapture.MAX_IMAGE_DATA_SIZE
+              ) {
+                Logger.warn(
+                  `Invalid Content-Length: ${contentLength}. Resetting stream.`
+                );
+                this.resetStream(reader);
+                break;
+              }
             }
 
             const contentTypeMatch = headers.match(
@@ -229,8 +267,23 @@ export class MjpegCapture implements CaptureStrategy {
               break;
             }
 
+            // 画像データサイズチェック（メモリ保護）
+            const currentImageDataSize = this.imageData?.length || 0;
+            if (
+              currentImageDataSize + bytesToRead >
+              MjpegCapture.MAX_IMAGE_DATA_SIZE
+            ) {
+              Logger.warn(
+                `Image data size exceeded limit (${
+                  currentImageDataSize + bytesToRead
+                } bytes). Resetting stream.`
+              );
+              this.resetStream(reader);
+              break;
+            }
+
             const newImageData: Uint8Array = new Uint8Array(
-              (this.imageData?.length || 0) + bytesToRead
+              currentImageDataSize + bytesToRead
             );
             if (this.imageData) {
               newImageData.set(this.imageData);
@@ -315,5 +368,20 @@ export class MjpegCapture implements CaptureStrategy {
 
   private get isActive(): boolean {
     return this.isCapturing;
+  }
+
+  /**
+   * ストリームをリセット（異常な状況でのメモリ保護）
+   */
+  private resetStream(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+    Logger.warn('Resetting MJPEG stream due to memory protection');
+    this.buffer = null;
+    this.imageData = null;
+    this.lastBoundaryFoundTime = Date.now();
+    // リーダーをキャンセルして再起動を促す
+    reader.cancel().catch((err) => {
+      Logger.debug(`Error canceling reader during reset: ${err}`);
+    });
+    this.isCapturing = false;
   }
 }

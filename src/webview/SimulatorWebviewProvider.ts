@@ -163,13 +163,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           Logger.info('Disconnect requested');
           this.disconnect();
           break;
-
-        case 'adjustFps':
-          // MJPEGストリーミングではFPS調整は不要（サーバー側で制御）
-          Logger.debug(
-            `FPS adjustment requested: ${message.fps}, but not applicable for MJPEG streaming`
-          );
-          break;
       }
     } catch (error) {
       Logger.error('Failed to handle message', error as Error);
@@ -301,7 +294,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       await this.startH264Streaming(device);
     } else {
       // MJPEGストリーミングを使用
-      await this.createCaptureInstance('mjpeg');
+      await this.createCaptureInstance();
       if (!this.currentCapture) {
         throw new Error('Failed to create capture instance');
       }
@@ -329,7 +322,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async createCaptureInstance(_mode: string): Promise<void> {
+  private async createCaptureInstance(): Promise<void> {
     try {
       // mobilecliサーバーを起動
       if (!this.mobileCliServer.isServerRunning()) {
@@ -714,7 +707,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async pressHome(): Promise<void> {
+  async pressHome(): Promise<void> {
     if (!this.currentDeviceId) {
       Logger.warn('Cannot press home: no device selected');
       return;
@@ -733,7 +726,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async pressBack(): Promise<void> {
+  async pressBack(): Promise<void> {
     if (!this.currentDeviceId) {
       Logger.warn('Cannot press back: no device selected');
       return;

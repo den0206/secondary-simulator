@@ -16,7 +16,6 @@ export class H264Streamer {
   private sps: Buffer | null = null;
   private pps: Buffer | null = null;
   private configured = false;
-  private sentIdr = false;
 
   constructor(
     platform: Platform,
@@ -99,10 +98,6 @@ export class H264Streamer {
         data: new Uint8Array(nal),
         isKeyframe: nalType === 5, // IDR
       });
-
-      if (nalType === 5) {
-        this.sentIdr = true;
-      }
     }
   }
 

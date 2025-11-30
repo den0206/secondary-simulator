@@ -29,12 +29,7 @@ export interface CaptureStrategy {
   stop(): void;
 
   /**
-   * 最大表示幅を設定
-   */
-  setMaxWidth(width: number): void;
-
-  /**
-   * 設定を更新
+   * 設定を更新（必要に応じて再起動）
    */
   updateConfig(): void;
 

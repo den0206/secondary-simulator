@@ -34,12 +34,16 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('simulatorView.focus');
     }),
 
-    vscode.commands.registerCommand('simulator.home', () => {
-      Logger.info('Home command executed');
+    vscode.commands.registerCommand('simulator.home', async () => {
+      if (provider) {
+        await provider.pressHome();
+      }
     }),
 
-    vscode.commands.registerCommand('simulator.back', () => {
-      Logger.info('Back command executed');
+    vscode.commands.registerCommand('simulator.back', async () => {
+      if (provider) {
+        await provider.pressBack();
+      }
     }),
 
     vscode.commands.registerCommand('simulator.refresh', async () => {
