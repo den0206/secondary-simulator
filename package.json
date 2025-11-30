@@ -46,18 +46,6 @@
         "title": "Simulator: Select Device"
       },
       {
-        "command": "simulator.startCapture",
-        "title": "Simulator: Start Capture"
-      },
-      {
-        "command": "simulator.stopCapture",
-        "title": "Simulator: Stop Capture"
-      },
-      {
-        "command": "simulator.takeScreenshot",
-        "title": "Simulator: Save Screenshot"
-      },
-      {
         "command": "simulator.home",
         "title": "Simulator: Press Home"
       },
@@ -73,11 +61,6 @@
     "configuration": {
       "title": "Secondary Simulator",
       "properties": {
-        "secondarySimulator.maxWidth": {
-          "type": "number",
-          "default": 420,
-          "description": "Maximum display width in pixels (for MJPEG streaming)"
-        },
         "secondarySimulator.experimentalH264": {
           "type": "boolean",
           "default": false,
@@ -97,37 +80,16 @@
           "maximum": 200,
           "description": "スワイプ判定に使用する移動距離の閾値（ピクセル）。"
         },
-        "secondarySimulator.showGestureOverlay": {
-          "type": "boolean",
-          "default": true,
-          "description": "タップ／スワイプ時に視覚フィードバックを表示する。"
-        },
         "secondarySimulator.longPressDuration": {
           "type": "number",
           "default": 600,
           "minimum": 200,
           "maximum": 2000,
           "description": "ロングタップ判定までの時間（ミリ秒）。"
-        },
-        "secondarySimulator.useMjpegStreaming": {
-          "type": "boolean",
-          "default": false,
-          "description": "MJPEGストリーミングを使用する（mobilecliが必要）。実機デバイスもサポートされます。"
-        },
-        "secondarySimulator.useMobileCli": {
-          "type": "boolean",
-          "default": false,
-          "description": "mobilecliを使用してデバイス操作を統一する（実機デバイスもサポート）。useMjpegStreamingが有効な場合、自動的に有効になります。"
         }
       }
     },
     "keybindings": [
-      {
-        "command": "simulator.takeScreenshot",
-        "key": "ctrl+shift+s",
-        "mac": "cmd+shift+s",
-        "when": "view == simulatorView"
-      },
       {
         "command": "simulator.refresh",
         "key": "ctrl+shift+r",
@@ -164,7 +126,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mobilenext/mobilecli": "^0.0.42",
-    "sharp": "^0.34.5"
+    "@mobilenext/mobilecli": "^0.0.42"
   }
 }

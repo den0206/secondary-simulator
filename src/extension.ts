@@ -34,14 +34,6 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('simulatorView.focus');
     }),
 
-    vscode.commands.registerCommand('simulator.startCapture', () => {
-      Logger.info('Start capture command executed');
-    }),
-
-    vscode.commands.registerCommand('simulator.stopCapture', () => {
-      Logger.info('Stop capture command executed');
-    }),
-
     vscode.commands.registerCommand('simulator.home', () => {
       Logger.info('Home command executed');
     }),
