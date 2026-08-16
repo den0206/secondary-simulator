@@ -62,6 +62,22 @@ export class MobileCliClient {
     );
   }
 
+  /**
+   * 画面を 1 枚取る。応答の形は版によって違うので、そのまま返して
+   * decodeScreenshotResult に解釈させる。
+   */
+  async screenshot(
+    deviceId: string,
+    format: 'png' | 'jpeg' = 'png',
+    timeoutMs = 15000
+  ): Promise<unknown> {
+    return this.jsonRpcClient.sendJsonRpcRequest<unknown>(
+      'device.screenshot',
+      {deviceId, format},
+      timeoutMs
+    );
+  }
+
   // 入力操作
   async tap(deviceId: string, x: number, y: number): Promise<void> {
     return this.jsonRpcClient.sendJsonRpcRequest('device.io.tap', {
