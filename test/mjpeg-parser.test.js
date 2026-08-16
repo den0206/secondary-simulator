@@ -206,5 +206,18 @@ console.log('\n9) 大きなストリームでも線形時間で処理できる')
   check(`6MB を 1 秒以内に処理する（実測 ${elapsed}ms）`, elapsed < 1000);
 }
 
+console.log('\n10) 再接続のバックオフ');
+{
+  require('./helpers/vscode-stub').install();
+  const {MjpegCapture} = require('../out/capture/MjpegCapture');
+  const delays = [0, 1, 2, 3, 4, 5, 20].map((n) => MjpegCapture.reconnectDelayFor(n));
+  check('初回は 500ms', delays[0] === 500, String(delays[0]));
+  check('倍々で伸びる', delays[1] === 1000 && delays[2] === 2000 && delays[3] === 4000,
+    JSON.stringify(delays));
+  check('10 秒で頭打ち', delays[5] === 10000 && delays[6] === 10000, JSON.stringify(delays));
+  check('単調非減少', delays.every((d, i) => i === 0 || d >= delays[i - 1]),
+    JSON.stringify(delays));
+}
+
 assert.strictEqual(failures, 0, `${failures} 件のテストが失敗`);
 console.log('\n全て成功');
