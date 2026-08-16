@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### 修正
+
+- MJPEG の multipart 解析がバイト位置と文字位置を取り違えていた問題を修正（フレーム破損・取りこぼし）
+- パートごとに `Content-Length` をリセットせず、直前の値を使い回していた問題を修正
+- キーバインドの `when` が `view ==` で一致せず、Cmd+Shift+R / H / B が発火していなかった問題を修正
+- 既存 mobilecli サーバを再利用したとき、接続の度にポート走査を繰り返していた問題を修正
+- MJPEG 直結プロキシの `dispose` で接続とポートが解放されていなかった問題を修正
+- 直結ストリームへトークンを要求し、同じマシンの他プロセスから画面を覗けないようにした
+- 再接続を指数バックオフにし、失敗が続いても出力チャンネルが膨らまないようにした
+- 繋がったままフレームが止まる場合を検出して張り直すようにした
+
+### 追加
+
+- `Secondary Simulator: Save Screenshot` — 接続中デバイスの画面を保存する
+- `Secondary Simulator: Show Logs` — 出力チャンネルを開く
+- `Secondary Simulator: Select Device` を QuickPick 化（従来はビューへフォーカスするだけだった）
+- スクリーンショット / 再取得 / ログをビュータイトルのアイコンに追加
+- `docs/project-review.md` — 全体精査の記録と未対応の提案
+
+### 変更
+
+- フレームを base64 の文字列で webview へ渡すようにした（形式が環境依存だったため）
+- 未使用の入力 API（`tap` / `swipe` / `gesture` ほか）と `ScreenInfo` 型を削除
+- `.d.ts` の生成を止めた（VSIX に同梱されていた）
+
+### 初回リリースまでの内容
+
 - iOS Simulator への HID 直接注入（`native/simhid-server`）と WDA へのフォールバック
 - MJPEG 直結ストリーム表示（`secondarySimulator.directStream`）と帯域設定
 - Pointer Events の生配信によるドラッグ/ピンチ追従
