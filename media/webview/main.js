@@ -10,6 +10,7 @@ const container = document.getElementById('simulator-container');
 const touchOverlay = document.getElementById('touch-overlay');
 const octx = touchOverlay.getContext('2d');
 const deviceSelect = document.getElementById('device');
+const resourcesEl = document.getElementById('resources');
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -353,6 +354,12 @@ window.addEventListener('message', (event) => {
       img.style.display = 'none';
       enqueueFrame(normalizeToUint8Array(message.data));
       setOverlayVisible(false);
+      break;
+
+    case 'resources':
+      resourcesEl.textContent =
+        `拡張ホスト ${message.rssMb}MB (heap ${message.heapUsedMb}MB)` +
+        ` ・ 子プロセス ${message.childrenMb}MB ・ ストレージ ${message.storageMb}MB`;
       break;
 
     case 'status':

@@ -11,6 +11,7 @@ import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
 import {MobileCliServer} from '../utils/MobileCliServer';
+import {collectResourceStats} from '../utils/ResourceStats';
 
 export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'simulatorView';
@@ -29,6 +30,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private messageDisposable?: vscode.Disposable;
   private disposeDisposable?: vscode.Disposable;
   private visibilityDisposable?: vscode.Disposable;
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly STATS_INTERVAL_MS = 30_000;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -41,6 +44,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ): Promise<void> {
+    // ビューが作り直される（別コンテナへ移動など）と再度呼ばれる。前回のリスナーを外す。
+    this.disposeListeners();
     this.view = webviewView;
 
     // 直結ストリーム有効時は、CSP と portMapping に含めるためプロキシを先に起動する
@@ -78,10 +83,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.disposeDisposable = webviewView.onDidDispose(() => {
       this.stopCapture();
+      this.stopStatsTimer();
     });
 
     this.visibilityDisposable = webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
+        this.startStatsTimer();
         // 再表示時にキャプチャを再開する（以前は止めたままだった）
         if (this.currentDeviceId) {
           const device = this.devices.find((d) => d.id === this.currentDeviceId);
@@ -93,17 +100,53 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         }
       } else {
         this.stopCapture();
+        this.stopStatsTimer();
       }
     });
 
+    this.startStatsTimer();
     this.refreshDevices();
+  }
+
+  // ---- リソース監視（30秒ごと）------------------------------------------------
+
+  private startStatsTimer(): void {
+    if (this.statsTimer) return;
+    void this.reportStats();
+    this.statsTimer = setInterval(
+      () => void this.reportStats(),
+      SimulatorWebviewProvider.STATS_INTERVAL_MS
+    );
+  }
+
+  private stopStatsTimer(): void {
+    if (!this.statsTimer) return;
+    clearInterval(this.statsTimer);
+    this.statsTimer = null;
+  }
+
+  private async reportStats(): Promise<void> {
+    if (!this.view) return;
+    const pids = [
+      this.mobileCliServer.getPid(),
+      this.inputController?.sidecarPid,
+    ].filter((p): p is number => typeof p === 'number');
+    try {
+      const stats = await collectResourceStats(this.extensionUri.fsPath, pids);
+      this.postMessage({type: 'resources', ...stats});
+    } catch (error) {
+      Logger.warn(`リソース統計の取得に失敗: ${(error as Error).message}`);
+    }
   }
 
   private async handleMessage(message: {
     type: string;
     [key: string]: unknown;
   }): Promise<void> {
-    Logger.debug(`Received message: ${message.type}`);
+    // touch* はドラッグ中 60Hz で届く。ログに流すと出力チャンネルが際限なく膨らむ。
+    if (!message.type.startsWith('touch')) {
+      Logger.debug(`Received message: ${message.type}`);
+    }
 
     try {
       switch (message.type) {
@@ -540,15 +583,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  dispose(): void {
-    // イベントリスナーのクリーンアップ（メモリリーク防止）
+  /** イベントリスナーのクリーンアップ（メモリリーク防止） */
+  private disposeListeners(): void {
     this.messageDisposable?.dispose();
     this.disposeDisposable?.dispose();
     this.visibilityDisposable?.dispose();
     this.messageDisposable = undefined;
     this.disposeDisposable = undefined;
     this.visibilityDisposable = undefined;
+  }
 
+  dispose(): void {
+    this.disposeListeners();
+    this.stopStatsTimer();
     this.stopCapture();
     this.mjpegProxy?.dispose();
     this.mjpegProxy = null;
