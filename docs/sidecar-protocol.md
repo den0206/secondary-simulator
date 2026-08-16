@@ -120,10 +120,9 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 ## 4. 座標系
 
 - webview・拡張ホスト・サイドカーの**全経路で正規化座標 `[0.0, 1.0]` を使う**
-- simhid（= HID 注入）は正規化座標をそのまま受けるため、
-  **現行 mobilecli 経路で必要だったピクセル変換（`SimulatorWebviewProvider.handleTap` の `screenSize` 依存）が不要になる**
-- これは副産物として「`screenSize` 取得を待たずにタップできる」ことを意味する
-  （現行コードは `screenSize` 未取得だと例外を投げる。HID 経路ではこの制約が消える）
+- simhid（= HID 注入）は正規化座標をそのまま受けるため、ピクセル変換は不要
+- WDA 経路だけが例外で、`WdaBackend` が `touchUp` 時に `getScreenSize()` でピクセルへ直す
+  （`screenSize` 未取得だとここで例外になる。HID 経路にはこの制約はない）
 - 画面回転は将来対応。当面は縦向き前提で正規化する
 
 ---
@@ -218,7 +217,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `searching` | 未接続で起動中デバイスを探している |
 | `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |
 | `autoConnect` | 設定値。Auto ボタンと揃える |
-| `streamUrl` / `frame` | 直結 MJPEG / canvas フレーム |
+| `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ canvas フレーム（`data` は base64 文字列） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
 | `resources` | RSS / heap / 子プロセス / ストレージ（約 30 秒ごと） |
 | `disconnected` / `status` | 切断と互換モード表示 |
