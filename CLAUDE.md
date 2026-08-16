@@ -42,6 +42,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
 - **utils**: `MobileCliServer` が mobilecli をサーバとして起動し、
   `MobileCliClient` が JSON-RPC 2.0（`JsonRpcClient`）で叩く。
+  `ResourceStats` が拡張ホストの RSS/heap・子プロセスの RSS・拡張ディレクトリの
+  サイズを集め、provider が 30 秒ごとに webview のフッターへ流す。
 
 詳細設計は `docs/sidecar-protocol.md`（サイドカープロトコル）と
 `docs/ios-hid-injection.md`（HID 仕様）、`docs/sync-research.md`（同期改善の調査）。
@@ -54,6 +56,24 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - 入力経路を増やすときは `InputBackend` を実装する。webview から個別経路を生やさない。
 - `native/simhid-server` は macOS 専用。ビルドは `scripts/build-native.sh` が
   非 macOS を自動スキップするので、拡張は WDA だけでも動く状態を保つ。
+
+## ストレージ / メモリ管理
+
+**この拡張はストレージとメモリを常に把握できる状態に保つ。** 増える一方の入れ物を
+作らない、が原則。
+
+- **永続ストレージは使わない**。`globalState` / `workspaceState` / 独自のファイル
+  書き込みを増やさない。設定は `vscode.workspace.getConfiguration` だけで足りる。
+  どうしても必要なら理由をここに書き、`ResourceStats` のサイズキャッシュも外す。
+- **無制限に伸びるバッファ・キュー・Map を作らない**。上限と破棄条件をセットで書く
+  （`MjpegCapture` の 10MB 上限、webview の `MAX_FRAME_QUEUE = 1`、軌跡 40 点）。
+- **高頻度パスでログを出さない**。`touch*` は 60Hz で届く。OutputChannel は全文を
+  メモリに持つので、1 イベント 1 行で確実に膨らむ。
+- **確保したものは必ず捨てる**。`Disposable` はフィールドに保持して `dispose()` で
+  外す（`resolveWebviewView` は再呼び出しされるので冒頭で前回分を捨てる）。
+  子プロセス（mobilecli / simhid-server）・タイマー・`ImageBitmap` も同じ。
+- **計測できる状態を保つ**。子プロセスを増やしたら pid を公開し、
+  `SimulatorWebviewProvider.reportStats()` の集計対象に加える。
 
 ## 開発フロー
 
