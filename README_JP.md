@@ -72,15 +72,17 @@ VSCodeの設定で以下のオプションを調整できます：
 ## 📖 使用方法
 
 1. VSCodeを開き、拡張機能をアクティブ化
-2. サイドバーに「Simulator」ビューが表示されます
-3. ドロップダウンメニューからデバイスを選択
+2. サイドバーに **Secondary Simulator** アクティビティバーが出る（ビュー名は Device Preview）
+3. ドロップダウンメニューからデバイスを選択（↻ で一覧を再取得）
 4. デバイス画面がリアルタイムで表示されます
 5. マウス/タッチでデバイスと対話：
    - **クリック/タップ**: シングルタップ
    - **ダブルクリック**: ダブルタップ
    - **クリック&ドラッグ**: スワイプ・ドラッグ（追従）
    - **長押し**: 押下したまま静止でロングプレス
-   - **Home/Backボタン**: プレビュー下のコントロールボタンを使用
+   - **Home**: プレビュー下のボタン
+   - **Back**: Android のみ（iOS では無効）
+   - **Trail**: リップルとドラッグ軌跡の表示切替
 
 ## 🏗️ プロジェクト構造
 
@@ -107,7 +109,8 @@ secondary-simulator/
 │       ├── Logger.ts                  # ログ管理
 │       ├── MobileCliClient.ts         # mobilecliクライアント
 │       ├── MobileCliServer.ts         # mobilecliサーバー管理
-│       └── JsonRpcClient.ts           # JSON-RPC 2.0クライアント
+│       ├── JsonRpcClient.ts           # JSON-RPC 2.0クライアント
+│       └── ResourceStats.ts           # RSS / heap / 子プロセス / ストレージ
 ├── native/
 │   └── simhid-server.m                # HID 注入サイドカー（macOS/iOS Simulator）
 ├── media/

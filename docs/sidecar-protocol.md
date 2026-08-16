@@ -94,7 +94,7 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 
 **設計方針: サイドカーは「薄い」。** down/move/up の粒度でそのまま HID に流し、
 ジェスチャの意味解釈（タップ/スワイプ/ロングプレスの判定）は行わない。
-判定は既存どおり webview 側が持つ（`media/webview/main.js` の gestureState）。
+判定は**デバイス側**の責務（webview は生の Pointer Events を `touchDown/Move/Up` に変換するだけ）。
 サイドカーの責務は「HID 注入」と「レートリミッタの吸収」に限定する。
 
 ### 3.3 レスポンス（サイドカー → 拡張ホスト）
@@ -196,18 +196,29 @@ interface InputBackend {
 
 ### 既存メッセージとの対応
 
-webview → 拡張ホストのメッセージ（`SimulatorWebviewProvider.handleMessage`）は**変えない**。
-コントローラ内で InputBackend に振り分ける。
+webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受け、
+コントローラ内で `InputBackend` に振り分ける。入力は生ポインタ（`touch*`）が現行の主経路。
 
-| 既存メッセージ | HidBackend での扱い |
+| webview → ホスト | 扱い |
 |---|---|
-| `tap {x,y}` | `touchDown`→`touchUp`（または `tap`） |
-| `swipe / gesture {points}` | `touchDown` → `touchMove`×n → `touchUp` |
-| `longPress {x,y,duration}` | `touchDown` → duration 待ち → `touchUp` |
-| `doubleTap {x,y}` | tap ×2 |
-| `keypress {key, special}` | ASCII は `text`/`key`（矢印・Backspace 等は usage code に変換）、非 ASCII は WdaBackend.inputText へ委譲（§10.3） |
+| `touchDown` / `touchMove` / `touchUp` | 1本指。座標は正規化。HID は同名コマンド、WDA は tap/gesture に再構成 |
+| `touch2Down` / `touch2Move` / `touch2Up` | 2本指（ピンチ等） |
+| `keypress {key, special}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3） |
 | `home` | `button "home"` |
-| `back` | iOS: no-op（ログのみ）。Android は WdaBackend が担当（§10.2） |
+| `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
+| `deviceChange {deviceId}` | 空文字ならキャプチャ停止。一覧から消えた選択もこれを送る |
+| `refresh` / `init` | デバイス一覧の再取得 |
+| `disconnect` | キャプチャ停止 |
+
+| ホスト → webview | 意味 |
+|---|---|
+| `devices` | 一覧。`platform` で Back の有効/無効を決める |
+| `streamUrl` / `frame` | 直結 MJPEG / canvas フレーム |
+| `pauseStream` | 非表示時に `<img>` の GET を閉じる |
+| `resources` | RSS / heap / 子プロセス / ストレージ（約 30 秒ごと） |
+| `disconnected` / `status` | 切断と互換モード表示 |
+
+旧メッセージ（`tap` / `swipe` / `longPress`）は webview から送らない。WDA 側の tap/gesture は Controller が `touch*` から作る。
 
 ---
 
@@ -249,7 +260,7 @@ webview → 拡張ホストのメッセージ（`SimulatorWebviewProvider.handle
 ### 10.2 Back の扱い → **iOS では no-op（ログのみ）で確定**
 iOS に Back ボタンは存在しない。home にマップすると誤操作になるため写像しない。
 Android は `WdaBackend` が `device.io.button` で担当する。
-UI 面では、iOS Simulator 選択時に Back ボタンを無効表示にするのが望ましい（表示フェーズで対応）。
+UI 面では、iOS 選択時に Back ボタンを無効表示する（webview の `syncBackButton`）。
 
 ### 10.3 非 ASCII 入力 → **二段フォールバックで確定**
 `text` コマンドは ASCII を HID で送る。非 ASCII（日本語/IME 等）を含む文字は

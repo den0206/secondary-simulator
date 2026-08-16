@@ -3,6 +3,10 @@
 調査日: 2026-08-16 / 実測環境: macOS 26 (Darwin 25.6.0), Xcode 26.6, iPhone 17 Simulator (iOS 26.5),
 mobilecli 0.0.42, VS Code 1.131.0 / Cursor 3.16.17
 
+現行の `@mobilenext/mobilecli` は 0.1.x。JSON-RPC 名は `devices` → `devices.list`、
+`io_tap` → `device.io.tap`、`screencapture` → `device.screencapture`（セッション URL を返す）など。
+以下の実測値と curl は調査時点（0.0.42）の名前のまま残す。
+
 ---
 
 ## 0. 結論（先に要点）
@@ -288,11 +292,11 @@ Server: WDA MJPEG Server
 # サーバ起動
 ./node_modules/@mobilenext/mobilecli/bin/mobilecli-darwin-arm64 server start --cors --listen localhost:12099
 
-# デバイス一覧 / 起動
+# デバイス一覧 / 起動（調査時点。現行は `"method":"devices.list"`）
 curl -s -X POST localhost:12099/rpc -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"devices","params":{"includeOffline":true}}'
 
-# 入力遅延の計測
+# 入力遅延の計測（調査時点のメソッド名。現行は `device.io.tap`）
 for i in 1 2 3 4 5; do
   curl -s -o /dev/null -w "%{time_total}\n" -X POST localhost:12099/rpc \
     -H 'Content-Type: application/json' \

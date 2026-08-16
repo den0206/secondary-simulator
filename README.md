@@ -70,15 +70,17 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 ## 📖 Usage
 
 1. Open VS Code and activate the extension
-2. The "Simulator" view appears in the sidebar
-3. Pick a device from the dropdown
+2. The **Secondary Simulator** activity bar appears in the sidebar (view name: Device Preview)
+3. Pick a device from the dropdown (↻ refreshes the list)
 4. The device screen is mirrored in real time
 5. Interact with the mouse or touchpad:
    - **Click / tap**: single tap
    - **Double click**: double tap
    - **Click & drag**: swipe and drag (follows your pointer)
    - **Press and hold**: long press
-   - **Home / Back buttons**: use the controls below the preview
+   - **Home**: control below the preview
+   - **Back**: Android only (disabled on iOS)
+   - **Trail**: toggle ripple and drag trail overlay
 
 ## 🏗️ Project structure
 
@@ -105,7 +107,8 @@ secondary-simulator/
 │       ├── Logger.ts                  # Logging
 │       ├── MobileCliClient.ts         # mobilecli client
 │       ├── MobileCliServer.ts         # mobilecli server management
-│       └── JsonRpcClient.ts           # JSON-RPC 2.0 client
+│       ├── JsonRpcClient.ts           # JSON-RPC 2.0 client
+│       └── ResourceStats.ts           # RSS / heap / child process / storage
 ├── native/
 │   └── simhid-server.m                # HID injection sidecar (macOS / iOS Simulator)
 ├── media/
