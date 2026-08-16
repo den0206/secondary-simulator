@@ -1,0 +1,272 @@
+# HID サイドカー — プロトコル設計
+
+策定日: 2026-08-16 / 対象: iOS Simulator 入力経路の HID 直接注入化（Phase 3）
+前提知識: [ios-hid-injection.md](./ios-hid-injection.md)（実証済みの HID 注入仕様）
+
+この文書は**設計の合意用**。実装はこの内容が固まってから着手する。
+
+---
+
+## 1. 目的とスコープ
+
+`spikes/simhid.m` の一発実行ツールを、**常駐プロセス（サイドカー）**に育て、
+VS Code / Cursor 拡張の入力経路を mobilecli/WDA（約 600ms）から HID 直接注入（約 0.04ms）へ置き換える。
+
+### スコープに含む
+- サイドカーの常駐化とプロトコル（拡張ホスト ⇄ サイドカー）
+- 拡張ホスト側の `InputBackend` 抽象（HID 経路と WDA 経路を差し替え可能に）
+- webview から拡張ホストへ渡す既存メッセージとの対応
+- ドラッグのレートリミッタ・ライフサイクル・再接続・エラー通知
+
+### スコープに含まない（別フェーズ）
+- 表示経路（MJPEG/H.264）の変更 — [sync-research.md](./sync-research.md) の Phase 2
+- Android 経路（scrcpy）
+- サイドカーバイナリの署名・公証・VSIX 同梱
+
+---
+
+## 2. 全体構成
+
+```
+┌─────────── Webview ───────────┐
+│ pointer/keyboード イベント     │
+└───────────┬───────────────────┘
+            │ postMessage（既存の仕組みをそのまま使う）
+┌───────────▼───────────────────┐
+│ Extension Host (TypeScript)    │
+│   SimulatorInputController     │
+│     ├ InputBackend 抽象         │
+│     │   ├ HidBackend  ← 新規    │
+│     │   └ WdaBackend  ← 既存の mobilecli 経路（フォールバック）
+│     └ サイドカーの spawn / 監視  │
+└───────────┬───────────────────┘
+            │ stdin/stdout に JSON Lines（1行=1メッセージ）
+┌───────────▼───────────────────┐
+│ simhid-server (ObjC, 常駐)     │
+│   SimulatorKit / IndigoHID 注入 │
+└────────────────────────────────┘
+```
+
+### なぜ stdin/stdout（JSON Lines）か
+
+入力経路の候補は 2 つあった。
+
+| 案 | 経路 | 長所 | 短所 |
+|---|---|---|---|
+| **A（採用）** | webview → 拡張ホスト → サイドカー(stdin) | 実装が単純・順序保証・ポート管理不要 | postMessage 1ホップ（数ms） |
+| B | webview → WebSocket → サイドカー(WSサーバ) | webview 直結で最速 | サイドカーに WS サーバ・ポート探索が必要 |
+
+入力遅延の目標は **< 80ms**。HID 注入が 0.04ms、postMessage は実測でも数 ms なので、
+**A 案でも目標を1桁以上下回る。** ドラッグは 60Hz（16ms間隔）で送るので数 ms の 1 ホップは埋もれる。
+B 案の複雑さに見合う利得がないため **A 案を採用**する。表示経路（大量のフレーム）とは事情が違う点に注意
+— フレームは拡張ホストを通したくないが、入力イベントは頻度が低く順序が重要なので拡張ホスト経由が向く。
+
+> 将来 B が必要になったら `InputBackend` の下にトランスポートを差し替える形で追加できる（§7）。
+
+---
+
+## 3. サイドカーのプロトコル
+
+### 3.1 トランスポート
+- 拡張ホストが `child_process.spawn` でサイドカーを1つ起動し、プロセスを保持する
+- **拡張ホスト → サイドカー**: stdin に JSON Lines（UTF-8、`\n` 区切り、1行1コマンド）
+- **サイドカー → 拡張ホスト**: stdout に JSON Lines（レスポンスと通知）
+- stderr はログ専用（人間可読）。プロトコルには使わない
+- 1プロセスで複数デバイスを扱えるよう、全コマンドに `device`（UDID）を含める
+
+### 3.2 コマンド（拡張ホスト → サイドカー）
+
+すべて `{ "id": <number>, "cmd": <string>, "device": <udid>, ... }`。
+`id` はレスポンスの相関用（fire-and-forget したいものは省略可）。
+
+| cmd | フィールド | 意味 |
+|---|---|---|
+| `touchDown` | `x, y` | 押下。座標は正規化（§4） |
+| `touchMove` | `x, y` | ドラッグ中の移動。**サイドカーが16ms間引きする**（§5） |
+| `touchUp` | `x, y` | 解放 |
+| `tap` | `x, y` | down→up を1コマンドで（利便用） |
+| `touch2Down`/`touch2Move`/`touch2Up` | `x, y, x2, y2` | 2本指（ピンチ等） |
+| `button` | `name`（`home`/`lock`） | ハードウェアボタン |
+| `keyDown`/`keyUp` | `usage`（USB HID usage code） | 単一キー |
+| `modifier` | `bit`（16..20）, `down`（bool） | 修飾キー |
+| `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解） |
+| `ping` | — | 生存確認 |
+
+**設計方針: サイドカーは「薄い」。** down/move/up の粒度でそのまま HID に流し、
+ジェスチャの意味解釈（タップ/スワイプ/ロングプレスの判定）は行わない。
+判定は既存どおり webview 側が持つ（`media/webview/main.js` の gestureState）。
+サイドカーの責務は「HID 注入」と「レートリミッタの吸収」に限定する。
+
+### 3.3 レスポンス（サイドカー → 拡張ホスト）
+
+`{ "id": <number>, "ok": <bool>, "error": <string?>, "latencyMs": <number?> }`
+
+- `id` を持つコマンドにのみ返す
+- `latencyMs` は注入にかかった時間（デバッグ用、任意）
+
+### 3.4 通知（サイドカー → 拡張ホスト、id なし）
+
+`{ "event": <string>, ... }`
+
+| event | フィールド | 意味 |
+|---|---|---|
+| `ready` | `pid` | 起動完了。シンボル解決に成功した |
+| `fatal` | `reason` | シンボル解決失敗・SimulatorKit 読み込み失敗など復帰不能 |
+| `portLost` | `device` | HID ポート断を検知（自動でクライアント再生成を試みる） |
+| `recovered` | `device` | 再生成に成功した |
+
+---
+
+## 4. 座標系
+
+- webview・拡張ホスト・サイドカーの**全経路で正規化座標 `[0.0, 1.0]` を使う**
+- simhid（= HID 注入）は正規化座標をそのまま受けるため、
+  **現行 mobilecli 経路で必要だったピクセル変換（`SimulatorWebviewProvider.handleTap` の `screenSize` 依存）が不要になる**
+- これは副産物として「`screenSize` 取得を待たずにタップできる」ことを意味する
+  （現行コードは `screenSize` 未取得だと例外を投げる。HID 経路ではこの制約が消える）
+- 画面回転は将来対応。当面は縦向き前提で正規化する
+
+---
+
+## 5. ドラッグのレートリミッタ（重要）
+
+`IndigoHIDMessageForMouseNSEvent` は **drag を前回から約16ms 以内に送ると NULL を返す**
+（[ios-hid-injection.md §4](./ios-hid-injection.md) 参照）。
+
+**この吸収はサイドカーの責務とする。**
+- webview は生の `pointermove` を好きな頻度で送ってよい（`touchMove`）
+- サイドカーは device ごとに「最後に drag を注入した時刻」を持ち、
+  **16ms 未満なら最新座標だけ保持して間引く**（coalescing）
+- 間引いた最新座標は、次の 16ms 境界かタイマで必ず1回は流す（指を止めても最終位置が届くように）
+- `touchUp` は必ず即座に流す（レートリミッタ対象外）
+
+これにより拡張ホスト・webview はレートリミッタを意識しなくてよい。
+
+---
+
+## 6. ライフサイクルと再接続
+
+### 6.1 起動
+1. 拡張ホストがデバイス選択時にサイドカーを spawn（未起動なら）
+2. サイドカーは起動時にシンボル解決・SimDevice 取得を行い、`ready` を通知
+3. 失敗したら `fatal` を通知 → 拡張ホストは **WDA 経路（`WdaBackend`）へ自動降格**
+
+### 6.2 HID ポート断からの復帰
+- [ios-hid-injection.md §3](./ios-hid-injection.md) の通り、**`resetHIDSession` は使わない**（むしろ壊す）
+- サイドカーは送信エラーを検知したら `portLost` を通知し、
+  **クライアントを作り直して**再試行、成功で `recovered`
+- 一定回数失敗したら `fatal` → 拡張ホストが WDA へ降格
+
+### 6.3 プロセス死活
+- 拡張ホストは `ping`/`pong`（無応答 N 秒で異常とみなす）とプロセス `exit` 監視を持つ
+- サイドカーが落ちたら1回だけ再 spawn、それも失敗したら WDA へ降格
+- webview 非表示・デバイス切替・拡張 dispose でサイドカーを停止（既存の `stopCapture` 相当のフックに乗せる）
+
+### 6.4 画面消灯の扱い
+- 画面が黒くてもポート断とは限らない（自動スリープ）。
+  **黒画面だけでは異常判定しない。** 異常判定は送信エラーの有無で行う（§6.2）
+
+---
+
+## 7. 拡張ホスト側の抽象
+
+既存 `SimulatorWebviewProvider` が直接 `MobileCliClient` を呼んでいる箇所を、
+`InputBackend` インターフェース越しに変える。
+
+```ts
+interface InputBackend {
+  readonly kind: 'hid' | 'wda';
+  touchDown(x: number, y: number): Promise<void>;
+  touchMove(x: number, y: number): Promise<void>;
+  touchUp(x: number, y: number): Promise<void>;
+  touch2(...): Promise<void>;          // 2本指
+  button(name: 'home' | 'lock'): Promise<void>;
+  key(usage: number, down: boolean): Promise<void>;
+  modifier(bit: number, down: boolean): Promise<void>;
+  text(value: string): Promise<void>;
+  dispose(): void;
+}
+```
+
+- **HidBackend**: 上記コマンドを JSON Lines で サイドカーに書き込む。座標変換なし
+- **WdaBackend**: 既存の `MobileCliClient`（tap/gesture/inputText/pressButton）をこのIFに適合させる薄いラッパ。
+  座標は現行どおりピクセル変換する
+- `SimulatorInputController` が起動時にバックエンドを選ぶ:
+  iOS Simulator かつ HID 注入が使える → HidBackend、それ以外（実機・Android・降格時）→ WdaBackend
+
+### 既存メッセージとの対応
+
+webview → 拡張ホストのメッセージ（`SimulatorWebviewProvider.handleMessage`）は**変えない**。
+コントローラ内で InputBackend に振り分ける。
+
+| 既存メッセージ | HidBackend での扱い |
+|---|---|
+| `tap {x,y}` | `touchDown`→`touchUp`（または `tap`） |
+| `swipe / gesture {points}` | `touchDown` → `touchMove`×n → `touchUp` |
+| `longPress {x,y,duration}` | `touchDown` → duration 待ち → `touchUp` |
+| `doubleTap {x,y}` | tap ×2 |
+| `keypress {key, special}` | ASCII は `text`/`key`（矢印・Backspace 等は usage code に変換）、非 ASCII は WdaBackend.inputText へ委譲（§10.3） |
+| `home` | `button "home"` |
+| `back` | iOS: no-op（ログのみ）。Android は WdaBackend が担当（§10.2） |
+
+---
+
+## 8. 未対応入力と代替（合意が要る点）
+
+[ios-hid-injection.md §7](./ios-hid-injection.md) の通り、以下は HID で動かせなかった。代替で運用する。
+
+| 入力 | HID | 代替（確定） |
+|---|---|---|
+| スクロールホイール | ✗ | **ドラッグ**で代替（`touchMove` の連続） |
+| ホームインジケータのスワイプ | ✗ | **`button "home"`** で代替 |
+| Back ボタン | iOS に無し | iOS は no-op、Android は WdaBackend が担当（§10.2） |
+| 音量・Siri 等 | ✗ | 未対応（必要なら WdaBackend の `io_button` に委譲） |
+| 日本語/IME 入力 | ASCII のみ | **WdaBackend.inputText（`io_text`）へ委譲**（§10.3） |
+
+`keypress` の非 ASCII（IME 経由の日本語など）は HID で扱えないため、
+**「ASCII は HID、それ以外は WdaBackend.inputText」の二段構えで確定**（§10.3）。
+コントローラが文字列を ASCII 連続部分と非 ASCII 部分に分割して振り分ける。
+
+---
+
+## 9. ビルド・配布（設計メモ、実装は別フェーズ）
+
+- サイドカーは universal binary（arm64 + x86_64）1本にする
+- 開発中は `spikes/` からビルドして拡張の既知パスに置く。配布時は VSIX 同梱＋署名/公証
+- Xcode パスは実行時に `xcode-select -p` で解決（[ios-hid-injection.md §1](./ios-hid-injection.md)）
+
+---
+
+## 10. 決定事項
+
+当初の未確定 5 点は以下に確定した。以降の実装はこれに従う。
+
+### 10.1 トランスポート → **stdin/stdout（A案）で確定**
+入力イベントは頻度が低く順序が重要なので拡張ホスト経由が向く。HID 注入 0.04ms + postMessage 数ms でも
+目標 < 80ms を1桁下回る。WS サーバ・ポート管理の複雑さに見合う利得がない。
+将来 B 案が必要になっても `InputBackend` の下でトランスポートだけ差し替えられる（§7）。
+
+### 10.2 Back の扱い → **iOS では no-op（ログのみ）で確定**
+iOS に Back ボタンは存在しない。home にマップすると誤操作になるため写像しない。
+Android は `WdaBackend` が `io_button` で担当する。
+UI 面では、iOS Simulator 選択時に Back ボタンを無効表示にするのが望ましい（表示フェーズで対応）。
+
+### 10.3 非 ASCII 入力 → **二段フォールバックで確定**
+`text` コマンドは ASCII を HID で送る。非 ASCII（日本語/IME 等）を含む文字は
+**`WdaBackend.inputText`（mobilecli の `io_text`）へ委譲する**。
+iOS Simulator ではデバイス一覧取得等で mobilecli を常に併用しているため、この委譲は常に可能。
+コントローラが文字列を「ASCII 連続部分＝HID / 非 ASCII 部分＝WDA」に分割して送る。
+
+### 10.4 プロセス粒度 → **全デバイス1プロセスで確定**
+サイドカーは1つだけ spawn し、デバイス（UDID）ごとに HID クライアントを遅延生成してキャッシュする。
+`SimServiceContext` 取得などの起動コストを1回で済ませられ、複数デバイス同時プレビューにも対応できる。
+全コマンドが `device` を含む前提（§3.1）はこのため。
+
+### 10.5 降格の可視化 → **控えめに可視化する（確定）**
+HID→WDA へ降格したら、既存の `postMessage({type:'status', text})` の仕組みで
+webview に控えめに表示（例: 「互換モード（WDA）」）し、`Logger` に理由を残す。
+常時バナーは出さない。降格は稀かつ「なぜ遅いか」を開発者が知りたい情報なので、状態表示に留める。
+
+---
+
+これらは確定済み。実装はこの設計に沿って進める。
