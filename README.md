@@ -50,10 +50,11 @@ vsce package
 
 VSCodeの設定で以下のオプションを調整できます：
 
-- **`secondarySimulator.tapThreshold`**: タップ検出のピクセル距離閾値（デフォルト: 10px）
-- **`secondarySimulator.swipeThreshold`**: スワイプジェスチャーの最小距離（デフォルト: 30px）
-- **`secondarySimulator.longPressDuration`**: ロングプレス認識までの時間（デフォルト: 600ms）
-- **`secondarySimulator.experimentalH264`**: 実験的なH.264ストリーミングを有効化（デフォルト: false）
+- **`secondarySimulator.directStream`**: 表示を webview 直結 MJPEG（`<img>`）にする（デフォルト: false・実験的）
+- **`secondarySimulator.streamScale`**: iOS の MJPEG 縮小率（デフォルト: 1.0＝原寸）
+- **`secondarySimulator.streamQuality`**: iOS の MJPEG JPEG 品質 1-100（デフォルト: 80）
+
+タップ/スワイプ/ロングプレスの判定はデバイス側が行うため、閾値の設定項目はありません。
 
 ## 📖 使用方法
 
@@ -80,14 +81,22 @@ secondary-simulator/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理
 │   ├── capture/
 │   │   ├── CaptureStrategy.ts         # キャプチャインターフェース
-│   │   ├── MjpegCapture.ts            # MJPEGストリーミング実装
-│   │   └── H264Streamer.ts            # H.264ストリーミング（実験的）
+│   │   ├── MjpegCapture.ts            # MJPEGストリーミング実装（canvas 経路）
+│   │   ├── MjpegProxy.ts              # MJPEG 直結プロキシ（webview <img> 経路）
+│   │   └── WdaSettings.ts             # WDA の MJPEG 帯域設定（iOS）
+│   ├── input/
+│   │   ├── InputBackend.ts            # 入力バックエンドの抽象
+│   │   ├── SimhidSidecar.ts           # simhid-server プロセス管理（JSON Lines）
+│   │   ├── HidSidecarBackend.ts       # HID 直接注入バックエンド
+│   │   ├── WdaBackend.ts              # WDA/mobilecli フォールバック
+│   │   └── SimulatorInputController.ts # バックエンド選択と降格
 │   └── utils/
 │       ├── Logger.ts                  # ログ管理
 │       ├── MobileCliClient.ts         # mobilecliクライアント
 │       ├── MobileCliServer.ts         # mobilecliサーバー管理
-│       ├── JsonRpcClient.ts           # JSON-RPC 2.0クライアント
-│       └── TempCleaner.ts             # 一時ファイルクリーンアップ
+│       └── JsonRpcClient.ts           # JSON-RPC 2.0クライアント
+├── native/
+│   └── simhid-server.m                # HID 注入サイドカー（macOS/iOS Simulator）
 ├── media/
 │   └── webview/                       # WebviewのHTML/CSS/JS
 ├── out/                               # コンパイル済みファイル
