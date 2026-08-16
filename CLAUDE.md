@@ -40,6 +40,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   （mobilecli 経由）へ降格する。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
+  未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
+  デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。
 - **utils**: `MobileCliServer` が mobilecli をサーバとして起動し、
   `MobileCliClient` が JSON-RPC 2.0（`JsonRpcClient`）で叩く。
   `ResourceStats` が拡張ホストの RSS/heap・子プロセスの RSS・拡張ディレクトリの
