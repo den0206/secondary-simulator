@@ -287,11 +287,25 @@ let currentBitmap = null;
 let isRendering = false;
 const MAX_FRAME_QUEUE = 1; // 最新フレームのみ保持
 
+// 拡張ホストは base64 文字列で送る（postMessage のシリアライズで膨らませないため）。
+// 配列で届く経路は古い拡張ホストとの組み合わせ用に残す。
 function normalizeToUint8Array(data) {
-  if (data instanceof Uint8Array) return data;
+  if (typeof data === 'string') return base64ToBytes(data);
+  // instanceof ではなく isView で見る（別 realm の TypedArray も受ける）
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
   if (data?.data && Array.isArray(data.data)) return new Uint8Array(data.data);
   if (Array.isArray(data)) return new Uint8Array(data);
   return null;
+}
+
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 async function renderFrame(bytes) {
