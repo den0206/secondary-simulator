@@ -10,11 +10,6 @@ export class JsonRpcClient {
     params: any,
     timeoutMs?: number
   ): Promise<T> {
-    const controller = new AbortController();
-    const timeoutId = timeoutMs
-      ? setTimeout(() => controller.abort(), timeoutMs)
-      : null;
-
     const requestBody = {
       jsonrpc: '2.0',
       method,
@@ -29,12 +24,8 @@ export class JsonRpcClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
-        signal: controller.signal,
+        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       });
-
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
@@ -53,10 +44,7 @@ export class JsonRpcClient {
 
       return result.result as T;
     } catch (error: any) {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      if (error.name === 'AbortError') {
+      if (error.name === 'TimeoutError') {
         throw new Error(`Request timeout after ${timeoutMs}ms for method: ${method}`);
       }
       // エラーメッセージにメソッド名とパラメータを追加

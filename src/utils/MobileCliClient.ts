@@ -1,5 +1,4 @@
 import {JsonRpcClient} from './JsonRpcClient';
-import {Logger} from './Logger';
 
 /**
  * mobilecliのデバイス操作API
@@ -63,32 +62,9 @@ export class MobileCliClient {
     );
   }
 
-  async bootDevice(deviceId: string): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest('device_boot', {deviceId});
-  }
-
-  async rebootDevice(deviceId: string): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest('device_reboot', {deviceId});
-  }
-
-  async shutdownDevice(deviceId: string): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest('device_shutdown', {deviceId});
-  }
-
   // 入力操作
   async tap(deviceId: string, x: number, y: number): Promise<void> {
-    const params = {x, y, deviceId};
-    Logger.debug(`[MobileCliClient] tap: deviceId=${deviceId}, x=${x}, y=${y}`);
-    try {
-      await this.jsonRpcClient.sendJsonRpcRequest('io_tap', params);
-      Logger.debug(`[MobileCliClient] tap succeeded`);
-    } catch (error) {
-      Logger.error(
-        `[MobileCliClient] tap failed: deviceId=${deviceId}, x=${x}, y=${y}`,
-        error as Error
-      );
-      throw error;
-    }
+    return this.jsonRpcClient.sendJsonRpcRequest('io_tap', {x, y, deviceId});
   }
 
   async gesture(
@@ -101,22 +77,10 @@ export class MobileCliClient {
       button?: number;
     }>
   ): Promise<void> {
-    Logger.debug(
-      `[MobileCliClient] gesture: deviceId=${deviceId}, actions count=${actions.length}`
-    );
-    try {
-      await this.jsonRpcClient.sendJsonRpcRequest('io_gesture', {
-        deviceId,
-        actions,
-      });
-      Logger.debug(`[MobileCliClient] gesture succeeded`);
-    } catch (error) {
-      Logger.error(
-        `[MobileCliClient] gesture failed: deviceId=${deviceId}`,
-        error as Error
-      );
-      throw error;
-    }
+    return this.jsonRpcClient.sendJsonRpcRequest('io_gesture', {
+      deviceId,
+      actions,
+    });
   }
 
   async inputText(
