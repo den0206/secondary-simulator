@@ -26,6 +26,14 @@ export class SimhidSidecar {
   private static readonly REQUEST_TIMEOUT_MS = 3000;
   private static readonly READY_TIMEOUT_MS = 5000;
   private static readonly MAX_RESTARTS = 1;
+  /**
+   * 改行が来ないまま溜め込む stdout の上限。1 行 1 メッセージの JSON Lines なので、
+   * これを超える行はプロトコル違反。上限が無いと、サイドカーが改行なしで
+   * 書き続けた場合に文字列が際限なく伸びる。
+   */
+  private static readonly MAX_STDOUT_BUFFER = 1024 * 1024; // 1MB
+  /** stdin 書き込みが詰まったときに保留を打ち切る猶予。 */
+  private static readonly KILL_GRACE_MS = 1000;
 
   private proc: ChildProcess | null = null;
   private stdoutBuf = '';
@@ -109,6 +117,14 @@ export class SimhidSidecar {
     onFatalEarly: (reason: string) => void
   ): void {
     this.stdoutBuf += chunk.toString('utf8');
+    if (this.stdoutBuf.length > SimhidSidecar.MAX_STDOUT_BUFFER) {
+      // 1 行が上限を超えた = 改行が来ていない。溜め続けても復帰しないので捨てる。
+      Logger.warn(
+        `[simhid] 1 行が ${SimhidSidecar.MAX_STDOUT_BUFFER} バイトを超えたため破棄`
+      );
+      this.stdoutBuf = '';
+      return;
+    }
     let nl: number;
     while ((nl = this.stdoutBuf.indexOf('\n')) >= 0) {
       const line = this.stdoutBuf.slice(0, nl);
@@ -229,7 +245,19 @@ export class SimhidSidecar {
       p.reject(new Error('disposed'));
     }
     this.pending.clear();
-    this.proc?.kill();
+    this.stdoutBuf = '';
+    const proc = this.proc;
     this.proc = null;
+    if (!proc) return;
+    // SIGTERM を無視する状態で固まっていると孤児として残る。猶予後に SIGKILL する。
+    proc.kill('SIGTERM');
+    const killTimer = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) {
+        Logger.warn('simhid-server が SIGTERM で終了しないため SIGKILL する');
+        proc.kill('SIGKILL');
+      }
+    }, SimhidSidecar.KILL_GRACE_MS);
+    // このタイマーで拡張ホストの終了を遅らせない
+    killTimer.unref?.();
   }
 }

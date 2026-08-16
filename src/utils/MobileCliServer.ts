@@ -5,6 +5,7 @@ export class MobileCliServer {
   private static DEFAULT_SERVER_PORT = 12000;
   private static SERVER_STARTUP_TIMEOUT_MS = 10000; // 10 seconds
   private static SERVER_HEALTH_CHECK_INTERVAL_MS = 200; // 200ms between checks
+  private static KILL_GRACE_MS = 2000; // SIGTERM から SIGKILL までの猶予
 
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
@@ -266,11 +267,22 @@ export class MobileCliServer {
 
   public stopServer(): void {
     this.serverReady = false;
-    if (this.mobilecliServerProcess) {
-      this.mobilecliServerProcess.kill();
-      this.mobilecliServerProcess = null;
-      Logger.info('mobilecli server stopped');
-    }
+    const proc = this.mobilecliServerProcess;
+    this.mobilecliServerProcess = null;
+    if (!proc) return;
+
+    // SIGTERM を無視されると孤児として残り、ポートと数十 MB を占有し続ける。
+    // 猶予を置いて SIGKILL する。
+    proc.kill('SIGTERM');
+    const killTimer = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) {
+        Logger.warn('mobilecli server が SIGTERM で終了しないため SIGKILL する');
+        proc.kill('SIGKILL');
+      }
+    }, MobileCliServer.KILL_GRACE_MS);
+    // このタイマーで拡張ホストの終了を遅らせない
+    killTimer.unref?.();
+    Logger.info('mobilecli server stopped');
   }
 
   public getServerPort(): number {
