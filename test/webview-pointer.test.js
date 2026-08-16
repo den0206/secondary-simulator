@@ -7,6 +7,7 @@ const vm = require('vm');
 const SRC = path.join(__dirname, '..', 'media', 'webview', 'main.js');
 
 const sent = [];
+let lastBlobBytes = null; // renderFrame が Blob へ渡した最後のバイト列
 let webviewState; // vscode.getState/setState の保存先
 const listeners = {}; // "elementId:event" -> handler
 
@@ -79,8 +80,17 @@ const sandbox = {
   requestAnimationFrame: (fn) => { fn(); return 1; },
   cancelAnimationFrame: () => {},
   setTimeout, clearTimeout, performance,
-  Blob: class {}, createImageBitmap: async () => ({width: 1, height: 1, close() {}}),
+  atob: (b64) => Buffer.from(b64, 'base64').toString('latin1'),
+  // renderFrame が Blob に渡したバイト列を覗けるようにしておく
+  Blob: class {
+    constructor(parts) {
+      this.parts = parts;
+      lastBlobBytes = parts && parts[0] ? parts[0] : null;
+    }
+  },
+  createImageBitmap: async () => ({width: 1, height: 1, close() {}}),
 };
+
 sandbox.globalThis = sandbox;
 
 vm.createContext(sandbox);
@@ -269,5 +279,44 @@ check('OFF でも入力は送る',
   sent.filter((m) => m.type.startsWith('touch')).length === 3,
   JSON.stringify(sent.map((m) => m.type)));
 
-console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
-process.exit(failures === 0 ? 0 : 1);
+// renderFrame は非同期なので、フレーム毎に 1 tick 空けてキューを流し切る。
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+async function frameTests() {
+  console.log('\n14) フレームの受け取り（base64）');
+
+  // 拡張ホストは Buffer.toString('base64') で送る。UTF-8 として不正なバイトを含む
+  // JPEG でも、復号後に 1 バイトも変わってはいけない。
+  const original = Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x7f, 0x80, 0xc3, 0xff, 0xd9]);
+  lastBlobBytes = null;
+  listeners['window:message']({
+    data: {type: 'frame', encoding: 'base64', data: original.toString('base64')},
+  });
+  await tick();
+  // VM サンドボックス側の Uint8Array なので instanceof は使えない
+  check('base64 文字列をバイト列へ復号する', ArrayBuffer.isView(lastBlobBytes),
+    String(lastBlobBytes && lastBlobBytes.constructor.name));
+  check('復号後のバイト列が完全に一致する',
+    lastBlobBytes && Buffer.from(lastBlobBytes).equals(original),
+    lastBlobBytes && Buffer.from(lastBlobBytes).toString('hex'));
+
+  // 旧形式（配列 / Buffer 風オブジェクト）も落とさない
+  lastBlobBytes = null;
+  listeners['window:message']({data: {type: 'frame', data: {type: 'Buffer', data: [1, 2, 3]}}});
+  await tick();
+  check('Buffer 風オブジェクトも受け取れる',
+    lastBlobBytes && Buffer.from(lastBlobBytes).equals(Buffer.from([1, 2, 3])),
+    lastBlobBytes && Buffer.from(lastBlobBytes).toString('hex'));
+
+  lastBlobBytes = null;
+  listeners['window:message']({data: {type: 'frame', data: new Uint8Array([9, 8])}});
+  await tick();
+  check('Uint8Array も受け取れる',
+    lastBlobBytes && Buffer.from(lastBlobBytes).equals(Buffer.from([9, 8])),
+    lastBlobBytes && Buffer.from(lastBlobBytes).toString('hex'));
+}
+
+frameTests().then(() => {
+  console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
+  process.exit(failures === 0 ? 0 : 1);
+});

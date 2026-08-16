@@ -1,3 +1,4 @@
+import {randomBytes, timingSafeEqual} from 'node:crypto';
 import * as http from 'node:http';
 import {Logger} from '../utils/Logger';
 
@@ -10,17 +11,37 @@ import {Logger} from '../utils/Logger';
  * Chromium が multipart をネイティブ復号する（JS 側の手動パースが不要）。
  *
  * 画像の <img> 表示に CORS は不要（canvas 読み出しをしないため）。
+ *
+ * 127.0.0.1 で listen するので外部からは届かないが、同じマシンの任意のプロセス・
+ * 任意のブラウザタブからは届く。UDID を当てるだけで画面が覗けてしまうため、
+ * 起動毎に生成するトークンを URL に載せ、一致しないリクエストは 404 で落とす。
  */
 export class MjpegProxy {
   static readonly MAX_PORT_TRIES = 20;
 
   private server: http.Server | null = null;
   private port = 0;
+  /** プロセス起動毎に変わる。webview へ渡す URL 以外からは中継させない。 */
+  private readonly token = randomBytes(24).toString('hex');
 
   constructor(private readonly mobileCliPort: number) {}
 
   getPort(): number {
     return this.port;
+  }
+
+  /** webview へ渡すストリーム URL。トークンはここでしか漏れない。 */
+  streamUrl(deviceId: string): string {
+    return `http://localhost:${this.port}/stream?device=${encodeURIComponent(
+      deviceId
+    )}&t=${this.token}`;
+  }
+
+  private isTokenValid(given: string | null): boolean {
+    if (!given) return false;
+    const a = Buffer.from(given);
+    const b = Buffer.from(this.token);
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   isRunning(): boolean {
@@ -66,6 +87,12 @@ export class MjpegProxy {
     res: http.ServerResponse
   ): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    // 経路とトークンが揃わないものは、存在自体を伏せて 404 で落とす
+    if (url.pathname !== '/stream' || !this.isTokenValid(url.searchParams.get('t'))) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
     const deviceId = url.searchParams.get('device');
     if (!deviceId) {
       res.writeHead(400);
@@ -139,6 +166,8 @@ export class MjpegProxy {
   }
 
   dispose(): void {
+    // MJPEG は終わらないストリームなので、close() だけでは接続が残りポートも解放されない
+    this.server?.closeAllConnections();
     this.server?.close();
     this.server = null;
     this.port = 0;

@@ -58,7 +58,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     let portMapping: vscode.WebviewPortMapping[] | undefined;
     if (this.isDirectStreamEnabled()) {
       try {
-        const proxyPort = await this.ensureProxy();
+        const proxyPort = (await this.ensureProxy()).getPort();
         portMapping = [{webviewPort: proxyPort, extensionHostPort: proxyPort}];
       } catch (e) {
         Logger.warn(
@@ -290,9 +290,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       .get<boolean>('directStream', false);
   }
 
-  // MJPEG 直結プロキシを起動して使用ポートを返す（未起動なら起動）
-  private async ensureProxy(): Promise<number> {
-    if (this.mjpegProxy?.isRunning()) return this.mjpegProxy.getPort();
+  // MJPEG 直結プロキシを起動して返す（未起動なら起動）
+  private async ensureProxy(): Promise<MjpegProxy> {
+    if (this.mjpegProxy?.isRunning()) return this.mjpegProxy;
     await this.mobileCliServer.launchServer();
     this.mjpegProxy = new MjpegProxy(this.mobileCliServer.getServerPort());
     const port = await this.mjpegProxy.start(
@@ -304,7 +304,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         portMapping: [{webviewPort: port, extensionHostPort: port}],
       };
     }
-    return port;
+    return this.mjpegProxy;
   }
 
   async refreshDevices(): Promise<void> {
@@ -456,10 +456,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 直結ストリーム（Phase 2）: フレームは webview の <img> が直接受ける
     if (this.isDirectStreamEnabled()) {
       try {
-        const proxyPort = await this.ensureProxy();
-        const url = `http://localhost:${proxyPort}/stream?device=${encodeURIComponent(
-          deviceId
-        )}`;
+        const proxy = await this.ensureProxy();
+        const url = proxy.streamUrl(deviceId);
         this.postMessage({type: 'streamUrl', url});
         Logger.info(`Started direct MJPEG stream for device: ${device.name}`);
 
