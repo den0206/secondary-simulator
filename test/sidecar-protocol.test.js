@@ -5,22 +5,7 @@ const os = require('os');
 const path = require('path');
 
 // vscode をスタブ（Logger が依存）
-const Module = require('module');
-const origLoad = Module._load;
-Module._load = function (request, ...args) {
-  if (request === 'vscode') {
-    return {
-      window: {
-        createOutputChannel: () => ({
-          appendLine: () => {},
-          show() {},
-          dispose() {},
-        }),
-      },
-    };
-  }
-  return origLoad.call(this, request, ...args);
-};
+require('./helpers/vscode-stub').install();
 
 const ROOT = path.join(__dirname, '..');
 const {SimhidSidecar} = require(path.join(ROOT, 'out/input/SimhidSidecar'));
