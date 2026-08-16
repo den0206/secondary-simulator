@@ -488,7 +488,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.currentCapture.setDevice(deviceId);
     this.currentCapture.onFrame((frame) => {
-      this.postMessage({type: 'frame', data: frame});
+      // base64 の文字列で渡す。Uint8Array のまま postMessage すると、シリアライザ次第で
+      // `{"0":255,"1":216,...}` や `{type:'Buffer',data:[...]}` に化けて数倍に膨らむ
+      // （webview 側が 3 通りの形を推測していたのはこのため）。
+      this.postMessage({
+        type: 'frame',
+        encoding: 'base64',
+        data: Buffer.from(frame.buffer, frame.byteOffset, frame.byteLength).toString('base64'),
+      });
     });
 
     try {
