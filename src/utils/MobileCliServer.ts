@@ -139,26 +139,25 @@ export class MobileCliServer {
       throw new Error('mobilecli not found');
     }
 
-    const isRunning = await this.checkServerHealth(
-      MobileCliServer.DEFAULT_SERVER_PORT
-    );
-    if (isRunning) {
-      Logger.info(
-        `mobilecli server is already running on default port ${MobileCliServer.DEFAULT_SERVER_PORT}`
-      );
-      this.serverPort = MobileCliServer.DEFAULT_SERVER_PORT;
-      return;
-    }
-
     if (this.mobilecliServerProcess) {
       Logger.info('mobilecli server process already exists');
       return;
     }
 
-    // 利用可能なポートを探す
-    const minPort = MobileCliServer.DEFAULT_SERVER_PORT + 1;
-    const maxPort = MobileCliServer.DEFAULT_SERVER_PORT + 100;
-    this.serverPort = await this.findAvailablePort(minPort, maxPort);
+    // 既存の稼働中サーバを範囲全体から探して再利用する（default ポートだけでなく、
+    // 過去に別ポートで起動したものも拾えるようにする）。
+    const rangeStart = MobileCliServer.DEFAULT_SERVER_PORT;
+    const rangeEnd = MobileCliServer.DEFAULT_SERVER_PORT + 100;
+    for (let port = rangeStart; port <= rangeEnd; port++) {
+      if (await this.checkServerHealth(port)) {
+        Logger.info(`Reusing running mobilecli server on port ${port}`);
+        this.serverPort = port;
+        return;
+      }
+    }
+
+    // 稼働中が無ければ空きポートで起動する
+    this.serverPort = await this.findAvailablePort(rangeStart, rangeEnd);
     Logger.info(`Launching mobilecli server on port ${this.serverPort}...`);
 
     const args =
