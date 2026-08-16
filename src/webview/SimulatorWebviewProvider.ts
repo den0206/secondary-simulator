@@ -1,7 +1,7 @@
+import {randomUUID} from 'node:crypto';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
-import {H264Streamer} from '../capture/H264Streamer';
 import {MjpegCapture} from '../capture/MjpegCapture';
 import {MjpegProxy} from '../capture/MjpegProxy';
 import {WdaSettings} from '../capture/WdaSettings';
@@ -18,7 +18,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private extensionUri: vscode.Uri;
   private currentCapture: CaptureStrategy | null = null;
-  private h264Streamer: H264Streamer | null = null;
   private mobileCliServer: MobileCliServer;
   private mobileCliClient: MobileCliClient | null = null;
   private mjpegProxy: MjpegProxy | null = null;
@@ -31,10 +30,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private disposeDisposable?: vscode.Disposable;
   private visibilityDisposable?: vscode.Disposable;
 
-  constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
+  constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
     // mobilecliサーバーを初期化（必須）
-    this.mobileCliServer = new MobileCliServer(context);
+    this.mobileCliServer = new MobileCliServer();
   }
 
   async resolveWebviewView(
@@ -76,9 +75,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       undefined,
       []
     );
-
-    // 初期設定をWebviewへ送信
-    this.sendConfig();
 
     this.disposeDisposable = webviewView.onDidDispose(() => {
       this.stopCapture();
@@ -185,20 +181,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       };
     }
     return port;
-  }
-
-  private sendConfig(): void {
-    if (!this.view) return;
-    const config = vscode.workspace.getConfiguration('secondarySimulator');
-    const tapThreshold = config.get<number>('tapThreshold', 10);
-    const swipeThreshold = config.get<number>('swipeThreshold', 30);
-    const longPressDuration = config.get<number>('longPressDuration', 600);
-    this.postMessage({
-      type: 'config',
-      tapThreshold,
-      swipeThreshold,
-      longPressDuration,
-    });
   }
 
   async refreshDevices(): Promise<void> {
@@ -362,40 +344,23 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    // H.264ストリーミング（実験的）のチェック
-    const useH264 = vscode.workspace
-      .getConfiguration('secondarySimulator')
-      .get<boolean>('experimentalH264', false);
-
-    if (useH264) {
-      await this.startH264Streaming(device);
-    } else {
-      // MJPEGストリーミングを使用
-      await this.createCaptureInstance();
-      if (!this.currentCapture) {
-        throw new Error('Failed to create capture instance');
-      }
-
-      this.currentCapture.setDevice(deviceId);
-
-      this.currentCapture.onFrame((frame, stats) => {
-        this.postMessage({
-          type: 'frame',
-          data: frame,
-        });
-      });
-
-      try {
-        await this.currentCapture.start();
-        Logger.info(`Started MJPEG streaming for device: ${device.name}`);
-      } catch (error) {
-        Logger.error('Failed to start capture', error as Error);
-        this.sendError((error as Error).message || 'Failed to start capture');
-      }
+    // MJPEGストリーミング（canvas 経路）
+    await this.createCaptureInstance();
+    if (!this.currentCapture) {
+      throw new Error('Failed to create capture instance');
     }
 
-    if (useH264) {
-      Logger.info(`Started H.264 streaming for device: ${device.name}`);
+    this.currentCapture.setDevice(deviceId);
+    this.currentCapture.onFrame((frame) => {
+      this.postMessage({type: 'frame', data: frame});
+    });
+
+    try {
+      await this.currentCapture.start();
+      Logger.info(`Started MJPEG streaming for device: ${device.name}`);
+    } catch (error) {
+      Logger.error('Failed to start capture', error as Error);
+      this.sendError((error as Error).message || 'Failed to start capture');
     }
   }
 
@@ -426,17 +391,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         `Failed to start mobilecli server. Please ensure mobilecli is installed and available.`
       );
     }
-  }
-
-  private async startH264Streaming(device: Device): Promise<void> {
-    if (this.h264Streamer) {
-      this.h264Streamer.dispose();
-      this.h264Streamer = null;
-    }
-    this.h264Streamer = new H264Streamer(device.platform, device.id, (msg) =>
-      this.postMessage(msg)
-    );
-    this.h264Streamer.start();
   }
 
   private clamp01(value: number): number {
@@ -508,10 +462,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.currentCapture.dispose();
       this.currentCapture = null;
     }
-    if (this.h264Streamer) {
-      this.h264Streamer.dispose();
-      this.h264Streamer = null;
-    }
     if (this.inputController) {
       this.inputController.dispose();
       this.inputController = null;
@@ -581,20 +531,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private getNonce(): string {
-    let text = '';
-    const possible =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
+    return randomUUID().replace(/-/g, '');
   }
 
   onConfigurationChanged(): void {
     if (this.currentCapture) {
       this.currentCapture.updateConfig();
     }
-    this.sendConfig();
   }
 
   dispose(): void {

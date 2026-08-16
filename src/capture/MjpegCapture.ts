@@ -16,10 +16,6 @@ export class MjpegCapture implements CaptureStrategy {
   private serverPort: number;
   private streamController: AbortController | null = null;
   private streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private frameCount: number = 0;
-  private lastFpsUpdate: number = 0;
-  private currentFps: number = 0;
-  private startTime: number = 0;
   private buffer: Uint8Array | null = null;
   private imageData: Uint8Array | null = null;
   private lastBoundaryFoundTime: number = 0;
@@ -55,10 +51,6 @@ export class MjpegCapture implements CaptureStrategy {
     this.streamGen++;
     const gen = this.streamGen;
     this.isCapturing = true;
-    this.frameCount = 0;
-    this.lastFpsUpdate = Date.now();
-    this.currentFps = 0;
-    this.startTime = Date.now();
 
     Logger.info(`Starting MJPEG stream for device: ${this.deviceId}`);
     await this.startMjpegStream(gen);
@@ -379,34 +371,9 @@ export class MjpegCapture implements CaptureStrategy {
     }
   }
 
+  // MJPEG から受け取った JPEG をそのままコールバックへ渡す（再エンコードしない）
   private displayMjpegImage(imageData: Uint8Array): void {
-    try {
-      // MJPEGストリームから受け取ったJPEGデータをそのまま使用
-      // sharpでの再エンコードは不要（遅延の原因となるため削除）
-
-      // FPS計算
-      this.frameCount++;
-      const now = Date.now();
-      const elapsed = now - this.lastFpsUpdate;
-
-      if (elapsed >= 1000) {
-        this.currentFps = Math.round((this.frameCount * 1000) / elapsed);
-        this.frameCount = 0;
-        this.lastFpsUpdate = now;
-      }
-
-      const latency = now - this.startTime;
-
-      // フレームをコールバックに送信（JPEGデータをそのまま使用）
-      if (this.frameCallback) {
-        this.frameCallback(imageData, {
-          fps: this.currentFps,
-          latency,
-        });
-      }
-    } catch (error) {
-      Logger.error('Error displaying MJPEG image', error as Error);
-    }
+    this.frameCallback?.(imageData);
   }
 
   private get isActive(): boolean {

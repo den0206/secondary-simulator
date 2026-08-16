@@ -116,27 +116,7 @@ body {
   transform: scale(0.95);
 }
 
-.operation-indicator {
-  text-align: center;
-  margin-top: 8px;
-  padding: 6px 16px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  max-width: 420px;
-  margin-left: auto;
-  margin-right: auto;
-  display: none;
-}
-
 @keyframes ripple {
   0% { transform: scale(0); opacity: 1; }
   100% { transform: scale(2); opacity: 0; }
-}
-
-@keyframes fadeOut {
-  0% { opacity: 1; }
-  100% { opacity: 0; }
 }

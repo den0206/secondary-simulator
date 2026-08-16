@@ -1,5 +1,4 @@
 import {ChildProcess, execFileSync, spawn} from 'node:child_process';
-import * as vscode from 'vscode';
 import {Logger} from './Logger';
 
 export class MobileCliServer {
@@ -11,7 +10,7 @@ export class MobileCliServer {
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
   private mobilecliServerProcess: ChildProcess | null = null;
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  constructor() {
     this.mobilecliPath = this.findMobilecliPath();
   }
 
@@ -59,24 +58,7 @@ export class MobileCliServer {
         // node_modulesから見つからない場合は次を試す
       }
 
-      // 2. 拡張機能のassetsディレクトリにmobilecliバイナリがある場合
-      const basePath = vscode.Uri.joinPath(
-        this.context.extensionUri,
-        'assets',
-        'mobilecli'
-      ).fsPath;
-      const mobilecliPath =
-        process.platform === 'win32' ? `${basePath}.exe` : basePath;
-
-      try {
-        execFileSync(mobilecliPath, ['--version']);
-        Logger.info(`Found mobilecli at: ${mobilecliPath}`);
-        return mobilecliPath;
-      } catch {
-        // バイナリが見つからない場合はnpxを使用
-      }
-
-      // 3. npx経由で実行（フォールバック）
+      // 2. npx経由で実行（フォールバック）
       Logger.info('Using npx to run mobilecli');
       return 'npx';
     } catch (error) {

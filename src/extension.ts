@@ -1,23 +1,14 @@
 import * as vscode from 'vscode';
 import {Logger} from './utils/Logger';
-import {TempCleaner} from './utils/TempCleaner';
 import {SimulatorWebviewProvider} from './webview/SimulatorWebviewProvider';
 
 let provider: SimulatorWebviewProvider | null = null;
-let cleanupTimer: NodeJS.Timeout | null = null;
-const CLEAN_INTERVAL_MS = 15 * 60 * 1000; // 15分間隔
 
 export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
   Logger.info('Secondary Simulator extension activated');
 
-  // 旧版の一時ファイルが残っている可能性に備えクリーンアップ
-  TempCleaner.cleanOnce();
-  cleanupTimer = setInterval(() => {
-    TempCleaner.cleanOnce();
-  }, CLEAN_INTERVAL_MS);
-
-  provider = new SimulatorWebviewProvider(context.extensionUri, context);
+  provider = new SimulatorWebviewProvider(context.extensionUri);
 
   const webviewProvider = vscode.window.registerWebviewViewProvider(
     SimulatorWebviewProvider.viewType,
@@ -68,10 +59,6 @@ export function activate(context: vscode.ExtensionContext): void {
         provider.dispose();
         provider = null;
       }
-      if (cleanupTimer) {
-        clearInterval(cleanupTimer);
-        cleanupTimer = null;
-      }
       Logger.dispose();
     },
   });
@@ -82,11 +69,6 @@ export function deactivate(): void {
     provider.dispose();
     provider = null;
   }
-  if (cleanupTimer) {
-    clearInterval(cleanupTimer);
-    cleanupTimer = null;
-  }
-  TempCleaner.cleanOnce();
   Logger.info('Secondary Simulator extension deactivated');
   Logger.dispose();
 }
