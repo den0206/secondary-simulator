@@ -72,6 +72,11 @@
     "configuration": {
       "title": "Secondary Simulator",
       "properties": {
+        "secondarySimulator.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "起動中のデバイスへ自動で接続する。未接続のあいだは5秒ごとに探し、新しく起動したシミュレータにも繋ぐ。サイドバーの Auto ボタンと連動し、Disconnect を押すと OFF になる。"
+        },
         "secondarySimulator.directStream": {
           "type": "boolean",
           "default": false,
@@ -121,7 +126,7 @@
     "build:native": "sh scripts/build-native.sh",
     "build": "npm run compile && npm run build:native",
     "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
-    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js",
+    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },

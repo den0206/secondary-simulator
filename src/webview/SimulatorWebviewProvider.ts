@@ -6,6 +6,7 @@ import {MjpegCapture} from '../capture/MjpegCapture';
 import {MjpegProxy} from '../capture/MjpegProxy';
 import {WdaSettings} from '../capture/WdaSettings';
 import {SimulatorInputController} from '../input/SimulatorInputController';
+import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {Device, DeviceType} from '../simulator/types';
 import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
@@ -32,6 +33,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private visibilityDisposable?: vscode.Disposable;
   private statsTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly STATS_INTERVAL_MS = 30_000;
+  // 未接続のあいだだけ回すデバイス探索。接続したら止める。
+  private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly AUTO_CONNECT_INTERVAL_MS = 5_000;
+  /** 直近に webview へ送ったデバイス一覧の署名。同じなら送らない（5秒ごとの再描画を避ける） */
+  private lastDevicesSignature = '';
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -84,6 +90,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.disposeDisposable = webviewView.onDidDispose(() => {
       this.stopCapture();
       this.stopStatsTimer();
+      this.stopAutoConnectTimer();
     });
 
     this.visibilityDisposable = webviewView.onDidChangeVisibility(() => {
@@ -97,14 +104,20 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
               (e) => Logger.error('Failed to resume capture', e as Error)
             );
           }
+        } else if (this.isAutoConnectEnabled()) {
+          // タイマー開始を待たず、再表示の直後に探す
+          void this.refreshDevices();
         }
       } else {
         this.stopCapture();
         this.stopStatsTimer();
       }
+      this.syncAutoConnectTimer();
     });
 
     this.startStatsTimer();
+    // HTML を作り直したので、一覧が同じでも webview へ送り直す
+    this.lastDevicesSignature = '';
     this.refreshDevices();
   }
 
@@ -123,6 +136,61 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (!this.statsTimer) return;
     clearInterval(this.statsTimer);
     this.statsTimer = null;
+  }
+
+  // ---- 自動接続（未接続のあいだだけ 5 秒ごとに探す）----------------------------
+
+  private isAutoConnectEnabled(): boolean {
+    return vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .get<boolean>('autoConnect', true);
+  }
+
+  private postAutoConnectState(): void {
+    this.postMessage({
+      type: 'autoConnect',
+      enabled: this.isAutoConnectEnabled(),
+    });
+  }
+
+  /** 起動中のデバイスがあれば繋ぐ。Auto が OFF なら繋がない。 */
+  private async autoConnect(): Promise<void> {
+    const device = pickAutoConnectDevice(this.devices, {
+      enabled: this.isAutoConnectEnabled(),
+      currentDeviceId: this.currentDeviceId,
+    });
+    if (!device) return;
+    Logger.info(`自動接続: ${device.name}`);
+    this.postMessage({type: 'selectedDevice', deviceId: device.id});
+    await this.startCaptureForDevice(device.id, device);
+  }
+
+  /** 未接続かつ表示中のときだけタイマーを回す。条件が崩れたら止める。 */
+  private syncAutoConnectTimer(): void {
+    const wanted =
+      this.view?.visible === true &&
+      !this.currentDeviceId &&
+      this.isAutoConnectEnabled();
+    if (wanted === !!this.autoConnectTimer) return;
+    if (wanted) {
+      this.autoConnectTimer = setInterval(
+        () => void this.refreshDevices(),
+        SimulatorWebviewProvider.AUTO_CONNECT_INTERVAL_MS
+      );
+      this.postMessage({type: 'searching', active: true});
+    } else {
+      this.stopAutoConnectTimer();
+      // 繋がって止まったときは「Connecting…」を消さない。探すのをやめた場合だけ戻す。
+      if (!this.currentDeviceId) {
+        this.postMessage({type: 'searching', active: false});
+      }
+    }
+  }
+
+  private stopAutoConnectTimer(): void {
+    if (!this.autoConnectTimer) return;
+    clearInterval(this.autoConnectTimer);
+    this.autoConnectTimer = null;
   }
 
   private async reportStats(): Promise<void> {
@@ -152,7 +220,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       switch (message.type) {
         case 'init':
         case 'refresh':
+          this.postAutoConnectState();
           await this.refreshDevices();
+          break;
+
+        case 'setAutoConnect':
+          // 設定へ書き戻す。onDidChangeConfiguration 経由でタイマーと UI が揃う。
+          await vscode.workspace
+            .getConfiguration('secondarySimulator')
+            .update(
+              'autoConnect',
+              message.enabled as boolean,
+              vscode.ConfigurationTarget.Global
+            );
           break;
 
         case 'deviceChange':
@@ -195,7 +275,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
         case 'disconnect':
           Logger.info('Disconnect requested');
-          this.disconnect();
+          await this.disconnect();
           break;
       }
     } catch (error) {
@@ -246,6 +326,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         );
         this.devices = [];
         this.postMessage({type: 'devices', devices: []});
+        this.syncAutoConnectTimer();
         return;
       }
     }
@@ -261,23 +342,33 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         runtime: d.version || '',
         type: d.type as DeviceType,
       }));
-      this.postMessage({type: 'devices', devices: this.devices});
-      this.postMessage({
-        type: 'status',
-        text: `${this.devices.length} devices found`,
-      });
+      // 5秒ごとのポーリングで毎回送ると webview の <select> が作り直される。差分だけ送る。
+      const signature = this.devices.map((d) => `${d.id}:${d.state}`).join(',');
+      if (signature !== this.lastDevicesSignature) {
+        this.lastDevicesSignature = signature;
+        this.postMessage({type: 'devices', devices: this.devices});
+        this.postMessage({
+          type: 'status',
+          text: `${this.devices.length} devices found`,
+        });
+      }
+      await this.autoConnect();
     } catch (error) {
       Logger.error('Failed to list devices via mobilecli', error as Error);
       this.sendError(`Failed to list devices: ${(error as Error).message}`);
       this.devices = [];
+      this.lastDevicesSignature = '';
       this.postMessage({type: 'devices', devices: []});
     }
+    this.syncAutoConnectTimer();
   }
 
   async selectDevice(deviceId: string): Promise<void> {
     if (!deviceId) {
+      // 選択中のデバイスが一覧から消えたとき。明示的な切断ではないので自動接続は残す。
       this.stopCapture();
       this.currentDeviceId = null;
+      this.syncAutoConnectTimer();
       return;
     }
 
@@ -295,6 +386,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     await this.startCaptureForDevice(deviceId, device);
+    this.syncAutoConnectTimer();
   }
 
   private async startCaptureForDevice(
@@ -303,6 +395,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     this.stopCapture();
 
+    // WDA 起動待ちで最初のフレームまで数秒かかる。待たせている理由を出す。
+    this.postMessage({type: 'connecting', name: device.name});
     this.currentDeviceId = deviceId;
 
     // Get device info and send screen size to webview (mobiledeck-style)
@@ -523,11 +617,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     ).fsPath;
   }
 
-  private disconnect(): void {
+  private async disconnect(): Promise<void> {
     this.stopCapture();
     this.currentDeviceId = null;
     this.postMessage({type: 'disconnected'});
     Logger.info('Device disconnected');
+    // 押した直後に繋ぎ直さないよう自動接続を切る。表示（Auto スイッチ）も OFF に揃う。
+    await vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .update('autoConnect', false, vscode.ConfigurationTarget.Global);
+    this.syncAutoConnectTimer();
   }
 
   private postMessage(message: unknown): void {
@@ -582,6 +681,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (this.currentCapture) {
       this.currentCapture.updateConfig();
     }
+    // autoConnect の切り替えを即座に反映する（ON に戻したらその場で探しに行く）
+    this.postAutoConnectState();
+    this.syncAutoConnectTimer();
+    if (this.isAutoConnectEnabled() && !this.currentDeviceId) {
+      void this.autoConnect();
+    }
   }
 
   /** イベントリスナーのクリーンアップ（メモリリーク防止） */
@@ -597,6 +702,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   dispose(): void {
     this.disposeListeners();
     this.stopStatsTimer();
+    this.stopAutoConnectTimer();
     this.stopCapture();
     this.mjpegProxy?.dispose();
     this.mjpegProxy = null;
