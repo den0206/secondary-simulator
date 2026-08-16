@@ -1,14 +1,29 @@
 .vscode/**
 .vscode-test/**
+.github/**
+.cursor/**
+.claude/**
+docs/**
+spikes/**
+scripts/**
+test/**
+vsix/**
 src/**
+native/*.m
 .gitignore
-.yarnrc
-vsc-extension-quickstart.md
+.vscodeignore
 **/tsconfig.json
 **/.eslintrc.json
 **/*.map
 **/*.ts
 node_modules/**
-!node_modules/sharp/**
+# mobilecli は実行時に必要。darwin 版だけ同梱する（他プラットフォーム分で +38MB になるため）。
+# 同梱に失敗しても MobileCliServer が npx 実行にフォールバックする。
+!node_modules/@mobilenext/mobilecli/package.json
+!node_modules/@mobilenext/mobilecli/index.js
+!node_modules/@mobilenext/mobilecli/bin/mobilecli-darwin-*
 *.md
 !README.md
+!README_JP.md
+!CHANGELOG.md
+!LICENSE.md
