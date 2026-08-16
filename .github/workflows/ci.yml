@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ネイティブサイドカー(clang / Objective-C)と VSIX の梱包に macOS が要るため
+  # マトリクスは張らずに macOS 1本だけ回す。Linux/Windows では build:native が
+  # 自動スキップされ、そもそも iOS Simulator も動かない。
+  build-and-test:
+    name: TypeCheck, Test & Package
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build (TypeScript + simhid-server)
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Verify build artifacts
+        run: |
+          test -f out/extension.js || { echo "::error::out/extension.js がありません"; exit 1; }
+          test -x native/simhid-server || { echo "::error::native/simhid-server がありません"; exit 1; }
+          # 配布 VSIX は 1 つで Intel/Apple Silicon 両方を賄うので universal を必須にする
+          lipo -info native/simhid-server | grep -q 'x86_64 arm64' \
+            || { echo "::error::simhid-server が universal binary ではありません"; exit 1; }
+
+      - name: Package VSIX
+        run: npm run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-package
+          path: vsix/*.vsix
+          retention-days: 7
+
+  # Release の "Sync version to main" が落ちると package.json が古いまま残る。
+  # ここが赤くなることで気づける。
+  version-check:
+    name: Version not behind latest release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Ver_* タグの取得に必要
+
+      - name: Compare package.json version with latest release tag
+        run: |
+          # +N は再ビルド番号で package.json には入らないため比較前に落とす
+          LATEST="$(git tag -l 'Ver_*' | sed 's/^Ver_//; s/+.*//' | sort -V | tail -1)"
+          CURRENT="$(node -p "require('./package.json').version")"
+
+          if [ -z "$LATEST" ]; then
+            echo "リリースタグがまだありません (current: $CURRENT)"
+            exit 0
+          fi
+
+          # sort -V で新しい方が後ろに来る。同値なら CURRENT が返るので合格。
+          if [ "$(printf '%s\n%s\n' "$LATEST" "$CURRENT" | sort -V | tail -1)" != "$CURRENT" ]; then
+            echo "::error::package.json の version ($CURRENT) が最新リリース Ver_$LATEST より古いままです。Release の main 同期が失敗した可能性があります"
+            exit 1
+          fi
+          echo "OK: package.json $CURRENT >= 最新リリース $LATEST"
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Secret scan (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+        continue-on-error: true

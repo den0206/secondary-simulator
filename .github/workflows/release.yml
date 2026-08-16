@@ -1,0 +1,173 @@
+name: Release
+
+# release/Ver_X.Y.Z ブランチへ push すると VSIX を作って GitHub Release と
+# Open VSX に出す。ci.yml は release/** では走らないので、公開前のゲートはここだけ。
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Package & Publish
+    # simhid-server (Objective-C) の universal build に macOS が要る
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 既存の Ver_* タグと突き合わせて採番するため全履歴・全タグが要る
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Verify tests
+        run: npm run typecheck && npm test
+
+      # 公開済みリリースは不変にするため、同じ Ver_X.Y.Z が既にあれば X.Y.Z は保ったまま
+      # +N を付けて採番する(例: Ver_0.1.0 があれば Ver_0.1.0+1)。
+      # package.json の version は数値3成分のみが正当なので marketing(X.Y.Z)だけを入れる。
+      - name: Resolve version from branch
+        id: meta
+        if: startsWith(github.ref_name, 'release/Ver_')
+        run: |
+          REQUESTED="${GITHUB_REF_NAME##*/Ver_}"
+          if ! printf '%s' "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::branch '$GITHUB_REF_NAME' が release/Ver_X.Y.Z 形式ではありません"
+            exit 1
+          fi
+
+          EXISTING="$(git ls-remote --tags origin | sed -n 's#.*refs/tags/\(Ver_[0-9][0-9A-Za-z.+-]*\)$#\1#p' | sort -u)"
+
+          # ブランチ名のタイプミスで古いバージョンを公開してしまうのを防ぐ。
+          # Open VSX は公開の取り消しが効かないため、ここで止める。
+          # 同値は Ver_X.Y.Z の +N 再ビルドなので許可する。
+          HIGHEST="$(printf '%s\n' "$EXISTING" | sed 's/^Ver_//; s/+.*//' | sort -V | tail -1)"
+          if [ -n "$HIGHEST" ] && [ "$(printf '%s\n%s\n' "$HIGHEST" "$REQUESTED" | sort -V | tail -1)" != "$REQUESTED" ]; then
+            echo "::error::Ver_$REQUESTED は既存の最新 Ver_$HIGHEST より古いバージョンです。ブランチ名を確認してください"
+            exit 1
+          fi
+
+          if printf '%s\n' "$EXISTING" | grep -Fxq "Ver_$REQUESTED"; then
+            N=1
+            while printf '%s\n' "$EXISTING" | grep -Fxq "Ver_$REQUESTED+$N"; do
+              N=$((N + 1))
+            done
+            VERSION="$REQUESTED+$N"
+            echo "::notice::Ver_$REQUESTED は既に存在するため Ver_$VERSION に採番しました"
+          else
+            VERSION="$REQUESTED"
+          fi
+
+          {
+            echo "version=$VERSION"                        # 0.1.0+1(タグ・資産名)
+            echo "marketing=$REQUESTED"                    # 0.1.0(package.json)
+            echo "tag=Ver_$VERSION"
+            echo "asset=secondary-simulator-$VERSION.vsix"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply version
+        if: steps.meta.outputs.marketing
+        run: npm version "${{ steps.meta.outputs.marketing }}" --no-git-tag-version --allow-same-version
+
+      - name: Build (TypeScript + simhid-server)
+        run: npm run build
+
+      - name: Verify universal binary
+        run: lipo -info native/simhid-server | grep -q 'x86_64 arm64'
+
+      # .vscodeignore が node_modules を mobilecli(darwin)以外すべて除外するので
+      # devDependencies の prune は不要。
+      - name: Package VSIX
+        run: npm run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: secondary-simulator-${{ github.run_number }}
+          path: vsix/*.vsix
+          if-no-files-found: error
+          retention-days: 30
+
+      # リリースノート: 手書き docs/release-notes/X.Y.Z.md があればそれを使い、
+      # 無ければ gh の --generate-notes に任せる(+N 再ビルドも同じ X.Y.Z を共有)。
+      - name: Create GitHub Release
+        if: steps.meta.outputs.tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          MARKETING: ${{ steps.meta.outputs.marketing }}
+          ASSET: ${{ steps.meta.outputs.asset }}
+        run: |
+          cp vsix/secondary-simulator.vsix "$ASSET"
+
+          NOTES_FILE="docs/release-notes/${MARKETING}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            NOTES_ARGS=(--notes-file "$NOTES_FILE")
+          else
+            NOTES_ARGS=(--generate-notes)
+          fi
+
+          # 採番済み($TAG は空き)なので上書きはしない。公開済みリリースは不変。
+          gh release create "$TAG" "$ASSET" \
+            --target "$GITHUB_SHA" \
+            --title "Secondary Simulator ${VERSION}" \
+            "${NOTES_ARGS[@]}"
+
+      # Open VSX (Cursor / VSCodium の拡張機能検索) へ公開する。
+      # +N 再ビルドは VSIX 内の version が X.Y.Z のままで Open VSX が重複として弾くため、
+      # 初回の Ver_X.Y.Z (version == marketing) だけを公開対象にする。
+      # 名前空間 (package.json の publisher) は初回のみ手動で作る:
+      #   npx ovsx create-namespace yuuki-sakai -p <token>
+      - name: Publish to Open VSX
+        if: steps.meta.outputs.tag && steps.meta.outputs.version == steps.meta.outputs.marketing
+        env:
+          # ovsx は OVSX_PAT を自動で読む。-p で argv に渡すと未設定時に対話プロンプトへ
+          # 落ちて CI がハングするため env で渡す(空文字なら即失敗する)。
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::warning::OVSX_TOKEN が未設定のため Open VSX への公開をスキップしました"
+            exit 0
+          fi
+          npx --yes ovsx publish vsix/secondary-simulator.vsix --skip-duplicate
+
+      # 版上げを main へ直接コミットする。release ブランチにコミットすると main の
+      # version が古いまま取り残され、手動マージ待ちの運用が生まれるため。
+      # 作業ツリーは持ち運ばず main の最新から version 変更をやり直す
+      # (持ち運ぶとリリース中に main へ入った別の編集を巻き戻す危険がある)。
+      - name: Sync version to main
+        if: steps.meta.outputs.tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+
+          # この自動化が main に運ぶのは version だけ。release ブランチ上で直接コードを
+          # 直した場合は取りこぼすので、気づけるように警告を出す。
+          UNMERGED="$(git log --oneline "origin/main..$GITHUB_SHA")"
+          if [ -n "$UNMERGED" ]; then
+            echo "::warning::release ブランチに main 未取り込みのコミットがあります。手動で main に取り込んでください:"
+            echo "$UNMERGED"
+          fi
+
+          # -f で作業ツリーの変更を捨てる (下で main の内容から作り直すため)
+          git switch -f -C main origin/main
+          npm version "${{ steps.meta.outputs.marketing }}" --no-git-tag-version --allow-same-version
+
+          git add package.json package-lock.json
+          git diff --cached --quiet && exit 0
+          # [skip ci] がこの push による CI 再実行を防ぐ
+          git commit -m "chore: ${{ steps.meta.outputs.tag }} の版を反映 [skip ci]"
+          if ! git push origin main; then
+            echo "::error::main への push に失敗しました。main がブランチ保護されている場合は github-actions をバイパスに追加してください"
+            exit 1
+          fi
