@@ -84,6 +84,10 @@ export class SimulatorInputController {
     return this.primary.kind;
   }
 
+  get sidecarPid(): number | undefined {
+    return this.sidecar?.pid;
+  }
+
   // ---- 生ポインタ（Phase 1: webview の pointerdown/move/up をそのまま流す）----
   // これにより HID 経路ではドラッグに画面が追従する（タップ/スワイプ判定は端末が行う）。
 

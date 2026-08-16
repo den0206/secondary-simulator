@@ -44,6 +44,10 @@ export class SimhidSidecar {
     return this.fatalReason !== null;
   }
 
+  get pid(): number | undefined {
+    return this.proc?.pid;
+  }
+
   /** プロセスを起動し ready を待つ。失敗時は例外。 */
   async start(): Promise<void> {
     if (!fs.existsSync(this.binaryPath)) {
