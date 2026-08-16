@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
 import {HidSidecarBackend} from './HidSidecarBackend';
-import {HidModifier, HidUsage, InputBackend} from './InputBackend';
+import {HidUsage, InputBackend} from './InputBackend';
 import {SimhidSidecar} from './SimhidSidecar';
 import {WdaBackend} from './WdaBackend';
 
@@ -24,8 +24,8 @@ export interface ControllerOptions {
  *
  * - デバイス種別に応じて HID 注入 / WDA フォールバックを選ぶ
  * - HID が復帰不能になったら WDA へ降格する
- * - 既存 webview メッセージ（tap/swipe/gesture/longPress/doubleTap/keypress/home/back）を
- *   バックエンドの down/move/up 等へ変換する
+ * - webview から届く生ポインタ（touchDown/Move/Up・2本指）をバックエンドへ素通しする
+ * - keypress/home/back をバックエンドの key/button 等へ変換する
  *
  * 設計は docs/sidecar-protocol.md。
  */
@@ -110,59 +110,6 @@ export class SimulatorInputController {
     return this.primary.touch2Up(x, y, x2, y2);
   }
 
-  // ---- 高レベル操作（キーバインドコマンドや後方互換で使う）----
-
-  async tap(x: number, y: number): Promise<void> {
-    await this.primary.touchDown(x, y);
-    await sleep(30);
-    await this.primary.touchUp(x, y);
-  }
-
-  async doubleTap(x: number, y: number): Promise<void> {
-    await this.tap(x, y);
-    await sleep(80);
-    await this.tap(x, y);
-  }
-
-  async longPress(x: number, y: number, durationMs = 600): Promise<void> {
-    await this.primary.touchDown(x, y);
-    await sleep(durationMs);
-    await this.primary.touchUp(x, y);
-  }
-
-  async swipe(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    durationMs = 250
-  ): Promise<void> {
-    await this.primary.touchDown(x1, y1);
-    // 中間点を補間して流す（HID は coalesce、WDA は蓄積される）
-    const steps = 12;
-    const stepDelay = Math.max(8, Math.min(durationMs, 600) / steps);
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      await this.primary.touchMove(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
-      await sleep(stepDelay);
-    }
-    await this.primary.touchUp(x2, y2);
-  }
-
-  async gesture(
-    points: Array<{x: number; y: number; duration: number}>
-  ): Promise<void> {
-    if (points.length === 0) return;
-    await this.primary.touchDown(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      await this.primary.touchMove(points[i].x, points[i].y);
-      const dt = points[i].duration - points[i - 1].duration;
-      await sleep(Math.max(8, Math.min(dt, 100)));
-    }
-    const last = points[points.length - 1];
-    await this.primary.touchUp(last.x, last.y);
-  }
-
   async keypress(key: string, special?: boolean): Promise<void> {
     if (special) {
       const usage = SimulatorInputController.specialUsage(key);
@@ -236,11 +183,6 @@ export class SimulatorInputController {
     }
     // Android の BACK は mobilecli が担当（HID 経路でも back は WDA へ委譲）
     await this.opts.mobileCliClient.pressButton(this.opts.deviceId, 'BACK');
-  }
-
-  /** 修飾キー（webview がホストのキーボード修飾を送る場合に使う） */
-  async modifier(name: keyof typeof HidModifier, down: boolean): Promise<void> {
-    await this.primary.modifier(HidModifier[name], down);
   }
 
   dispose(): void {

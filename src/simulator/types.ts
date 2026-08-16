@@ -11,7 +11,3 @@ export interface Device {
   type?: DeviceType;
 }
 
-export interface ScreenInfo {
-  width: number;
-  height: number;
-}
