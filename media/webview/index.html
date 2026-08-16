@@ -11,14 +11,18 @@
     <select id="device">
       <option value="">Select Device...</option>
     </select>
+    <span class="lamp" id="lamp" title="切断中"></span>
+    <button class="control-btn" id="btn-refresh" title="デバイス一覧を再取得">↻</button>
   </div>
 
-  <div class="simulator-container" id="simulator-container">
-    <canvas id="simulator-canvas" style="display: none;"></canvas>
-    <img id="simulator-img" style="display: none;" alt="" />
-    <canvas id="touch-overlay"></canvas>
-    <div class="overlay" id="overlay">
-      <span>Select a device to start</span>
+  <div class="phone-frame">
+    <div class="simulator-container" id="simulator-container">
+      <canvas id="simulator-canvas" style="display: none;"></canvas>
+      <img id="simulator-img" style="display: none;" alt="" />
+      <canvas id="touch-overlay"></canvas>
+      <div class="overlay" id="overlay">
+        <span>Select a device to start</span>
+      </div>
     </div>
   </div>
 
@@ -26,6 +30,7 @@
     <button class="control-btn" id="btn-home" title="Home">Home</button>
     <button class="control-btn" id="btn-back" title="Back">Back</button>
     <button class="control-btn" id="btn-disconnect" title="Disconnect">Disconnect</button>
+    <button class="control-btn" id="btn-trail" title="タップのリップルとドラッグ軌跡の表示">Trail ON</button>
   </div>
 
   <div class="resources" id="resources" title="30秒ごとに更新。拡張ホストは他拡張と共有のプロセス。">計測中…</div>
