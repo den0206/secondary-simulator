@@ -220,8 +220,8 @@ webview → 拡張ホストのメッセージ（`SimulatorWebviewProvider.handle
 | スクロールホイール | ✗ | **ドラッグ**で代替（`touchMove` の連続） |
 | ホームインジケータのスワイプ | ✗ | **`button "home"`** で代替 |
 | Back ボタン | iOS に無し | iOS は no-op、Android は WdaBackend が担当（§10.2） |
-| 音量・Siri 等 | ✗ | 未対応（必要なら WdaBackend の `io_button` に委譲） |
-| 日本語/IME 入力 | ASCII のみ | **WdaBackend.inputText（`io_text`）へ委譲**（§10.3） |
+| 音量・Siri 等 | ✗ | 未対応（必要なら WdaBackend の `device.io.button` に委譲） |
+| 日本語/IME 入力 | ASCII のみ | **WdaBackend.inputText（`device.io.text`）へ委譲**（§10.3） |
 
 `keypress` の非 ASCII（IME 経由の日本語など）は HID で扱えないため、
 **「ASCII は HID、それ以外は WdaBackend.inputText」の二段構えで確定**（§10.3）。
@@ -248,12 +248,12 @@ webview → 拡張ホストのメッセージ（`SimulatorWebviewProvider.handle
 
 ### 10.2 Back の扱い → **iOS では no-op（ログのみ）で確定**
 iOS に Back ボタンは存在しない。home にマップすると誤操作になるため写像しない。
-Android は `WdaBackend` が `io_button` で担当する。
+Android は `WdaBackend` が `device.io.button` で担当する。
 UI 面では、iOS Simulator 選択時に Back ボタンを無効表示にするのが望ましい（表示フェーズで対応）。
 
 ### 10.3 非 ASCII 入力 → **二段フォールバックで確定**
 `text` コマンドは ASCII を HID で送る。非 ASCII（日本語/IME 等）を含む文字は
-**`WdaBackend.inputText`（mobilecli の `io_text`）へ委譲する**。
+**`WdaBackend.inputText`（mobilecli の `device.io.text`）へ委譲する**。
 iOS Simulator ではデバイス一覧取得等で mobilecli を常に併用しているため、この委譲は常に可能。
 コントローラが文字列を「ASCII 連続部分＝HID / 非 ASCII 部分＝WDA」に分割して送る。
 
