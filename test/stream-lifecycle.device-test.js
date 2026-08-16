@@ -23,6 +23,16 @@ if (!UDID) {
   process.exit(2);
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 初回接続は mobilecli が WDA を起動するまで数秒かかる。固定 sleep だと不安定なので
+// 条件が満たされるまでポーリングする。
+const waitFor = async (fn, timeoutMs = 20000, stepMs = 250) => {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (fn()) return true;
+    await sleep(stepMs);
+  }
+  return false;
+};
 let failures = 0;
 const check = (n, c, d) => {
   console.log(`  ${c ? '✅' : '❌'} ${n}${!c && d ? ' — ' + d : ''}`);
@@ -46,7 +56,7 @@ const check = (n, c, d) => {
     });
   });
   r1.on('error', () => {});
-  await sleep(3000);
+  await waitFor(() => f1 > 10);
   const framesBefore = f1;
   check('接続1がフレームを受信', framesBefore > 10, `frames=${framesBefore}`);
 
@@ -69,7 +79,7 @@ const check = (n, c, d) => {
     });
   });
   r2.on('error', () => {});
-  await sleep(3000);
+  await waitFor(() => f2 > 10);
   check('再接続でフレームが再開', f2 > 10, `frames=${f2}`);
   r2.destroy();
   proxy.dispose();
@@ -80,14 +90,14 @@ const check = (n, c, d) => {
   let frames = 0;
   cap.onFrame(() => frames++);
   await cap.start();
-  await sleep(1500);
+  await waitFor(() => frames > 5);
   const n1 = frames;
   check('start でフレームが来る', n1 > 5, `frames=${n1}`);
 
   // 素早く stop→start（世代管理が無いと旧ストリームが残り二重になる）
   cap.stop();
   await cap.start();
-  await sleep(2000);
+  await waitFor(() => frames - n1 > 5);
   const n2 = frames - n1;
   check('再 start 後もフレームが来る', n2 > 5, `frames=${n2}`);
 
