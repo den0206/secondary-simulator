@@ -255,6 +255,12 @@ check('接続中は緑（on）', els.lamp.classList.contains('on'));
 listeners['window:message']({data: {type: 'disconnected'}});
 check('切断で赤（on が外れる）', !els.lamp.classList.contains('on'));
 
+console.log('\n12.5) 待機中スピナー');
+listeners['window:message']({data: {type: 'connecting', name: 'iPhone 15'}});
+check('「…」を含む文言は busy', els.overlay.classList.contains('busy'));
+listeners['window:message']({data: {type: 'error', text: '接続に失敗しました'}});
+check('通常の文言は busy でない', !els.overlay.classList.contains('busy'));
+
 console.log('\n13) Trail トグル');
 check('初期は ON', els['btn-trail'].classList.contains('on'));
 // ripple は container.appendChild で追加される。呼ばれたかを数える。
