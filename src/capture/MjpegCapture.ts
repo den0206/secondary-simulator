@@ -34,6 +34,14 @@ export class MjpegCapture implements CaptureStrategy {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private streamGen = 0;
   private static readonly RECONNECT_DELAY_MS = 500;
+  /**
+   * 再接続の待ち時間の上限。デバイスが落ちている間は 500ms 固定で永久に叩き続け、
+   * 1 回ごとにログが 2 行以上増えて OutputChannel が際限なく膨らんでいた
+   * （CLAUDE.md「無制限に伸びる入れ物を作らない」）。
+   */
+  private static readonly RECONNECT_MAX_DELAY_MS = 10_000;
+  /** 連続失敗数。フレームが 1 枚届いたら 0 へ戻す。 */
+  private reconnectAttempts = 0;
 
   constructor(serverPort: number) {
     this.serverPort = serverPort;
@@ -57,6 +65,7 @@ export class MjpegCapture implements CaptureStrategy {
     }
 
     this.wantCapture = true;
+    this.reconnectAttempts = 0;
     this.streamGen++;
     const gen = this.streamGen;
     this.isCapturing = true;
@@ -88,18 +97,30 @@ export class MjpegCapture implements CaptureStrategy {
   }
 
   // ストリームが異常終了したとき、利用者がまだ継続を望んでいれば再接続する。
+  // 失敗が続くほど間隔を空ける（500ms から倍々で最大 10 秒）。
   private scheduleReconnect(): void {
     if (!this.wantCapture || this.reconnectTimer) return;
     const gen = this.streamGen;
+    const delay = MjpegCapture.reconnectDelayFor(this.reconnectAttempts);
+    this.reconnectAttempts++;
+    // 毎回出すと出力チャンネルが膨らむので、最初の数回だけ記録する
+    if (this.reconnectAttempts <= 3) {
+      Logger.info(`MJPEG stream reconnect in ${delay}ms (${this.reconnectAttempts})`);
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.wantCapture || !this.deviceId || gen !== this.streamGen) return;
-      Logger.info('Reconnecting MJPEG stream');
       this.isCapturing = true;
       void this.startMjpegStream(gen).catch((e) =>
-        Logger.error('MJPEG reconnect failed', e as Error)
+        Logger.debug(`MJPEG reconnect failed: ${(e as Error).message}`)
       );
-    }, MjpegCapture.RECONNECT_DELAY_MS);
+    }, delay);
+  }
+
+  /** 指数バックオフ（500ms, 1s, 2s, 4s, 8s, 10s, 10s, ...）。 */
+  static reconnectDelayFor(attempt: number): number {
+    const delay = MjpegCapture.RECONNECT_DELAY_MS * 2 ** Math.max(0, attempt);
+    return Math.min(delay, MjpegCapture.RECONNECT_MAX_DELAY_MS);
   }
 
   dispose(): void {
@@ -300,6 +321,8 @@ export class MjpegCapture implements CaptureStrategy {
 
   // MJPEG から受け取った JPEG をそのままコールバックへ渡す（再エンコードしない）
   private displayMjpegImage(imageData: Uint8Array): void {
+    // 1 枚でも届けば復帰したとみなす
+    this.reconnectAttempts = 0;
     this.armStallTimer();
     this.frameCallback?.(imageData);
   }
