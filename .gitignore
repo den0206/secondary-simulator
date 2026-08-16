@@ -7,3 +7,5 @@ node_modules/
 
 # ネイティブビルド生成物（npm run build:native で生成）
 native/simhid-server
+
+vsix/
