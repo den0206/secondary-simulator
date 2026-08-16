@@ -111,11 +111,13 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run build:native",
     "compile": "tsc -p ./",
+    "build:native": "clang -fobjc-arc -O2 -framework Foundation -framework CoreFoundation -o native/simhid-server native/simhid-server.m",
+    "build": "npm run compile && npm run build:native",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "clean": "rm -rf out"
+    "clean": "rm -rf out native/simhid-server"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
