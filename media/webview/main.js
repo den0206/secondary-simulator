@@ -11,6 +11,7 @@ const touchOverlay = document.getElementById('touch-overlay');
 const octx = touchOverlay.getContext('2d');
 const deviceSelect = document.getElementById('device');
 const resourcesEl = document.getElementById('resources');
+const lamp = document.getElementById('lamp');
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -140,6 +141,7 @@ container.addEventListener('pointercancel', onPointerUp);
 // ---- 楽観的フィードバック（リップル・軌跡）----------------------------------
 
 function showRipple(e) {
+  if (!trailEnabled) return;
   const r = container.getBoundingClientRect();
   const dot = document.createElement('div');
   dot.className = 'touch-ripple';
@@ -158,6 +160,7 @@ function syncOverlaySize() {
 }
 
 function pushTrail(p) {
+  if (!trailEnabled) return;
   trailPoints.push(p);
   if (trailPoints.length > 40) trailPoints.shift();
   drawTrail();
@@ -222,14 +225,43 @@ document.addEventListener('keydown', (e) => {
 
 // ---- デバイス選択・ボタン ----------------------------------------------------
 
+const btnBack = document.getElementById('btn-back');
+const platformById = new Map(); // deviceId -> 'ios' | 'android'
+
+// iOS に Back は存在しないので押せないようにする（未選択時も同様）
+function syncBackButton() {
+  btnBack.disabled = platformById.get(deviceSelect.value) !== 'android';
+}
+
 deviceSelect.addEventListener('change', () => {
+  syncBackButton();
   vscode.postMessage({type: 'deviceChange', deviceId: deviceSelect.value});
 });
 document.getElementById('btn-home').addEventListener('click', () => post('home'));
-document.getElementById('btn-back').addEventListener('click', () => post('back'));
+btnBack.addEventListener('click', () => post('back'));
 document
   .getElementById('btn-disconnect')
   .addEventListener('click', () => post('disconnect'));
+document
+  .getElementById('btn-refresh')
+  .addEventListener('click', () => post('refresh'));
+
+// タップのリップルとドラッグ軌跡の表示切替。状態は webview の state に残す。
+const btnTrail = document.getElementById('btn-trail');
+let trailEnabled = vscode.getState()?.trail ?? true;
+
+function syncTrailButton() {
+  btnTrail.classList.toggle('on', trailEnabled);
+  btnTrail.textContent = trailEnabled ? 'Trail ON' : 'Trail OFF';
+  if (!trailEnabled) clearTrail();
+}
+
+btnTrail.addEventListener('click', () => {
+  trailEnabled = !trailEnabled;
+  vscode.setState(Object.assign({}, vscode.getState(), {trail: trailEnabled}));
+  syncTrailButton();
+});
+syncTrailButton();
 
 // ---- レンダリング（MJPEG フレーム）------------------------------------------
 
@@ -290,6 +322,9 @@ function enqueueFrame(bytes) {
 
 function setOverlayVisible(visible, text = 'Select a device to start') {
   if (!overlay) return;
+  // 画面が出ている＝接続中。オーバーレイの表示状態がそのまま接続状態になる。
+  lamp.classList.toggle('on', !visible);
+  lamp.title = visible ? '切断中' : '接続中';
   overlay.classList.toggle('hidden', !visible);
   overlay.querySelector('span').textContent = text;
   // 表示中のメディア要素だけを見せる
@@ -324,15 +359,28 @@ function cleanup() {
 window.addEventListener('message', (event) => {
   const message = event.data;
   switch (message.type) {
-    case 'devices':
+    case 'devices': {
+      const selected = deviceSelect.value;
       deviceSelect.innerHTML = '<option value="">Select Device...</option>';
+      platformById.clear();
       message.devices.forEach((device) => {
+        platformById.set(device.id, device.platform);
         const option = document.createElement('option');
         option.value = device.id;
         option.textContent = `${device.name} (${device.state})`;
         deviceSelect.appendChild(option);
       });
+      // 再取得しても選択中のデバイスは維持する。消えていたらホストのキャプチャも止める。
+      const next = platformById.has(selected) ? selected : '';
+      deviceSelect.value = next;
+      syncBackButton();
+      if (selected && next === '') {
+        vscode.postMessage({type: 'deviceChange', deviceId: ''});
+        cleanup();
+        setOverlayVisible(true, 'Disconnected — デバイスを選び直すと再接続します');
+      }
       break;
+    }
 
     case 'streamUrl': {
       // Phase 2: <img> に MJPEG を直結。Chromium が multipart をネイティブ復号する。
@@ -373,7 +421,10 @@ window.addEventListener('message', (event) => {
 
     case 'disconnected':
       cleanup();
-      setOverlayVisible(true, 'Disconnected');
+      // 同じデバイスを選び直しても change が飛ぶように選択を空へ戻す（復帰導線）
+      deviceSelect.value = '';
+      syncBackButton();
+      setOverlayVisible(true, 'Disconnected — デバイスを選び直すと再接続します');
       break;
 
     case 'pauseStream':

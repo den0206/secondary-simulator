@@ -151,6 +151,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     try {
       switch (message.type) {
         case 'init':
+        case 'refresh':
           await this.refreshDevices();
           break;
 

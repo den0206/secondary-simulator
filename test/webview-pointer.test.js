@@ -7,6 +7,7 @@ const vm = require('vm');
 const SRC = path.join(__dirname, '..', 'media', 'webview', 'main.js');
 
 const sent = [];
+let webviewState; // vscode.getState/setState の保存先
 const listeners = {}; // "elementId:event" -> handler
 
 function makeEl(id, opts = {}) {
@@ -54,11 +55,17 @@ const els = {
   'btn-home': makeEl('btn-home'),
   'btn-back': makeEl('btn-back'),
   'btn-disconnect': makeEl('btn-disconnect'),
+  'btn-trail': makeEl('btn-trail'),
+  lamp: makeEl('lamp'),
 };
 
 const sandbox = {
   console,
-  acquireVsCodeApi: () => ({postMessage: (m) => sent.push(m)}),
+  acquireVsCodeApi: () => ({
+    postMessage: (m) => sent.push(m),
+    getState: () => webviewState,
+    setState: (s) => (webviewState = s),
+  }),
   document: {
     getElementById: (id) => els[id] || makeEl(id),
     createElement: (t) => makeEl('created-' + t),
@@ -177,6 +184,90 @@ check('キー入力が抑止される', sent.length === 0, JSON.stringify(sent))
 els.overlay.classList.add('hidden'); // 非表示（デバイス選択中）
 listeners['document:keydown']({key: 'a', preventDefault() {}});
 check('選択中はキー入力を送る', sent.some((m) => m.type === 'keypress' && m.key === 'a'));
+
+console.log('\n10) Back ボタンは Android のときだけ押せる');
+listeners['window:message']({
+  data: {
+    type: 'devices',
+    devices: [
+      {id: 'ios-1', name: 'iPhone', state: 'Booted', platform: 'ios'},
+      {id: 'and-1', name: 'Pixel', state: 'Booted', platform: 'android'},
+    ],
+  },
+});
+check('未選択では無効', els['btn-back'].disabled === true);
+els.device.value = 'ios-1';
+listeners['device:change']();
+check('iOS では無効', els['btn-back'].disabled === true);
+els.device.value = 'and-1';
+listeners['device:change']();
+check('Android では有効', els['btn-back'].disabled === false);
+
+console.log('\n10b) 一覧から消えたデバイスはホスト側も切断する');
+els.device.value = 'ios-1';
+sent.length = 0;
+listeners['window:message']({
+  data: {
+    type: 'devices',
+    devices: [
+      {id: 'ios-1', name: 'iPhone', state: 'Booted', platform: 'ios'},
+      {id: 'and-1', name: 'Pixel', state: 'Booted', platform: 'android'},
+    ],
+  },
+});
+check('残っていれば選択を維持', els.device.value === 'ios-1');
+check('維持時は deviceChange を送らない', !sent.some((m) => m.type === 'deviceChange'));
+sent.length = 0;
+listeners['window:message']({
+  data: {
+    type: 'devices',
+    devices: [{id: 'and-1', name: 'Pixel', state: 'Booted', platform: 'android'}],
+  },
+});
+check('消えたら選択が空', els.device.value === '');
+check(
+  'deviceChange 空を送る',
+  sent.some((m) => m.type === 'deviceChange' && m.deviceId === '')
+);
+check('ランプが赤', !els.lamp.classList.contains('on'));
+
+console.log('\n11) disconnected 後は選択を戻して復帰できる');
+listeners['window:message']({data: {type: 'disconnected'}});
+check('選択が空に戻る', els.device.value === '', els.device.value);
+check('Back も無効に戻る', els['btn-back'].disabled === true);
+sent.length = 0;
+listeners['btn-refresh:click']();
+check('Refresh が refresh を送る', sent.some((m) => m.type === 'refresh'));
+
+console.log('\n12) 接続ランプ');
+listeners['window:message']({data: {type: 'frame', data: new Uint8Array([1])}});
+check('接続中は緑（on）', els.lamp.classList.contains('on'));
+listeners['window:message']({data: {type: 'disconnected'}});
+check('切断で赤（on が外れる）', !els.lamp.classList.contains('on'));
+
+console.log('\n13) Trail トグル');
+check('初期は ON', els['btn-trail'].classList.contains('on'));
+// ripple は container.appendChild で追加される。呼ばれたかを数える。
+let appended = 0;
+els['simulator-container'].appendChild = () => appended++;
+fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+fire('simulator-container', 'pointermove', {clientX: 150, clientY: 200});
+fire('simulator-container', 'pointerup', {clientX: 150, clientY: 200});
+check('ON ならリップルを描く', appended === 1, String(appended));
+
+listeners['btn-trail:click']();
+check('トグルで OFF', !els['btn-trail'].classList.contains('on'));
+check('state に残る', webviewState && webviewState.trail === false,
+  JSON.stringify(webviewState));
+appended = 0;
+sent.length = 0;
+fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+fire('simulator-container', 'pointermove', {clientX: 150, clientY: 200});
+fire('simulator-container', 'pointerup', {clientX: 150, clientY: 200});
+check('OFF ならリップルを描かない', appended === 0, String(appended));
+check('OFF でも入力は送る',
+  sent.filter((m) => m.type.startsWith('touch')).length === 3,
+  JSON.stringify(sent.map((m) => m.type)));
 
 console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
 process.exit(failures === 0 ? 0 : 1);
