@@ -263,6 +263,23 @@ btnTrail.addEventListener('click', () => {
 });
 syncTrailButton();
 
+// 自動接続の切替。状態は設定（secondarySimulator.autoConnect）が持つので、
+// 押した直後は仮に反映し、拡張ホストからの autoConnect メッセージで確定させる。
+const btnAuto = document.getElementById('btn-auto');
+let autoConnectEnabled = true;
+
+function syncAutoButton() {
+  btnAuto.classList.toggle('on', autoConnectEnabled);
+  btnAuto.textContent = autoConnectEnabled ? 'Auto ON' : 'Auto OFF';
+}
+
+btnAuto.addEventListener('click', () => {
+  autoConnectEnabled = !autoConnectEnabled;
+  syncAutoButton();
+  vscode.postMessage({type: 'setAutoConnect', enabled: autoConnectEnabled});
+});
+syncAutoButton();
+
 // ---- レンダリング（MJPEG フレーム）------------------------------------------
 
 let frameQueue = [];
@@ -382,6 +399,33 @@ window.addEventListener('message', (event) => {
       break;
     }
 
+    // 未接続で起動中デバイスを探している間。やめたときは自分が出した文言だけ戻す
+    // （Disconnect やエラーの表示を上書きしないため）。
+    case 'searching':
+      if (message.active) {
+        setOverlayVisible(true, 'Searching…');
+      } else if (overlay.querySelector('span').textContent === 'Searching…') {
+        setOverlayVisible(true, 'Select a device to start');
+      }
+      break;
+
+    // 接続開始。最初のフレーム（frame / img.onload）が来るまで出したままにする。
+    case 'connecting':
+      setOverlayVisible(true, `Connecting… ${message.name}`);
+      break;
+
+    // 設定側の値。設定画面から変えたときもここで揃う。
+    case 'autoConnect':
+      autoConnectEnabled = message.enabled;
+      syncAutoButton();
+      break;
+
+    // 拡張ホストが自動接続したデバイスを <select> に反映する（change は発火させない）
+    case 'selectedDevice':
+      deviceSelect.value = message.deviceId;
+      syncBackButton();
+      break;
+
     case 'streamUrl': {
       // Phase 2: <img> に MJPEG を直結。Chromium が multipart をネイティブ復号する。
       // 初回は WDA 起動待ちで最初のフレームまで数秒かかることがあるため、
@@ -389,7 +433,7 @@ window.addEventListener('message', (event) => {
       usingImg = true;
       canvas.style.display = 'none';
       img.style.display = 'none';
-      setOverlayVisible(true, 'ストリームに接続中…');
+      setOverlayVisible(true, 'Connecting…');
       // setOverlayVisible(false) が displayEl()（= img）を表示状態にする
       img.onload = () => setOverlayVisible(false);
       img.onerror = () => setOverlayVisible(true, 'ストリームに接続できません');
