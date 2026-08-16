@@ -86,6 +86,22 @@ VSCodeの設定で以下のオプションを調整できます：
    - **Trail**: リップルとドラッグ軌跡の表示切替
    - **Auto**: 起動中デバイスへの自動接続の切替
 
+## ⌨️ コマンド
+
+コマンドパレット（`Cmd+Shift+P`）から **Secondary Simulator:** で絞り込めます。
+スクリーンショット・再取得・ログはビュータイトルのアイコンからも実行できます。
+
+| コマンド | 説明 |
+|---|---|
+| `Select Device` | 一覧から選んで接続する |
+| `Save Screenshot` | 接続中のデバイスの画面を保存する |
+| `Press Home` | Home ボタン（`Cmd+Shift+H`） |
+| `Press Back` | Back ボタン・Android のみ（`Cmd+Shift+B`） |
+| `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`） |
+| `Show Logs` | 出力パネルの Secondary Simulator を開く |
+
+キーバインドはサイドバーにフォーカスがあるときだけ効きます。
+
 ## 🏗️ プロジェクト構造
 
 ```
@@ -100,7 +116,9 @@ secondary-simulator/
 │   ├── capture/
 │   │   ├── CaptureStrategy.ts         # キャプチャインターフェース
 │   │   ├── MjpegCapture.ts            # MJPEGストリーミング実装（canvas 経路）
+│   │   ├── MjpegParser.ts             # multipart のインクリメンタル解析
 │   │   ├── MjpegProxy.ts              # MJPEG 直結プロキシ（webview <img> 経路）
+│   │   ├── Screenshot.ts              # device.screenshot 応答のデコード
 │   │   └── WdaSettings.ts             # WDA の MJPEG 帯域設定（iOS）
 │   ├── input/
 │   │   ├── InputBackend.ts            # 入力バックエンドの抽象

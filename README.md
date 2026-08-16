@@ -84,6 +84,22 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
 
+## ⌨️ Commands
+
+Open the command palette (`Cmd+Shift+P`) and filter by **Secondary Simulator:**.
+Screenshot, refresh, and logs are also available as icons in the view title bar.
+
+| Command | Description |
+|---|---|
+| `Select Device` | Pick a device from a list and connect |
+| `Save Screenshot` | Save the connected device's screen to a file |
+| `Press Home` | Home button (`Cmd+Shift+H`) |
+| `Press Back` | Back button, Android only (`Cmd+Shift+B`) |
+| `Refresh Device List` | Re-fetch the device list (`Cmd+Shift+R`) |
+| `Show Logs` | Open the Secondary Simulator output channel |
+
+Key bindings apply only while the sidebar view has focus.
+
 ## 🏗️ Project structure
 
 ```
@@ -98,7 +114,9 @@ secondary-simulator/
 │   ├── capture/
 │   │   ├── CaptureStrategy.ts         # Capture interface
 │   │   ├── MjpegCapture.ts            # MJPEG streaming (canvas path)
+│   │   ├── MjpegParser.ts             # Incremental multipart parsing
 │   │   ├── MjpegProxy.ts              # MJPEG proxy (webview <img> path)
+│   │   ├── Screenshot.ts              # device.screenshot response decoding
 │   │   └── WdaSettings.ts             # WDA MJPEG bandwidth settings (iOS)
 │   ├── input/
 │   │   ├── InputBackend.ts            # Input backend abstraction

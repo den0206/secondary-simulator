@@ -33,6 +33,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 - **capture**: `MjpegCapture`（拡張ホストが中継し canvas 描画）と `MjpegProxy`
   （webview の `<img>` に直結。`secondarySimulator.directStream` で切替）。
+  multipart の解析は `MjpegParser` が持つ（ネットワークに触らないので単体テスト可能）。
+  フレームは base64 の文字列で webview へ渡す。`MjpegProxy` は起動毎のトークンを
+  URL に要求する（同じマシンの他プロセスから覗かれないため）。
   iOS の帯域は `WdaSettings` が WDA の scale/quality を設定する。
 - **input**: `SimulatorInputController` が司令塔。**iOS Simulator かつサイドカーが
   存在する場合だけ** HID 直接注入（`HidSidecarBackend` → `SimhidSidecar` →
@@ -48,7 +51,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   サイズを集め、provider が 30 秒ごとに webview のフッターへ流す。
 
 詳細設計は `docs/sidecar-protocol.md`（サイドカープロトコル）と
-`docs/ios-hid-injection.md`（HID 仕様）、`docs/sync-research.md`（同期改善の調査）。
+`docs/ios-hid-injection.md`（HID 仕様）、`docs/sync-research.md`（同期改善の調査）、
+`docs/project-review.md`（全体精査と未対応の提案）。
 
 ## 守る境界
 
@@ -70,7 +74,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **無制限に伸びるバッファ・キュー・Map を作らない**。上限と破棄条件をセットで書く
   （`MjpegCapture` の 10MB 上限、webview の `MAX_FRAME_QUEUE = 1`、軌跡 40 点）。
 - **高頻度パスでログを出さない**。`touch*` は 60Hz で届く。OutputChannel は全文を
-  メモリに持つので、1 イベント 1 行で確実に膨らむ。
+  メモリに持つので、1 イベント 1 行で確実に膨らむ。**リトライループも高頻度パス**
+  （`MjpegCapture` の再接続は指数バックオフで、記録は最初の 3 回まで）。
 - **確保したものは必ず捨てる**。`Disposable` はフィールドに保持して `dispose()` で
   外す（`resolveWebviewView` は再呼び出しされるので冒頭で前回分を捨てる）。
   子プロセス（mobilecli / simhid-server）・タイマー・`ImageBitmap` も同じ。
@@ -83,7 +88,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   例: `feat(input): HID/WDA を切り替える入力バックエンドを追加`
 - 作業ブランチは `feature/**` / `fix/**`。push すると CI（型チェック・テスト・VSIX）が回る。
 - リリースは `release/Ver_X.Y.Z` ブランチを push する（README「リリース」参照）。
-- ロジックを変えたら `npm test` を通してからコミットする。
+- ロジックを変えたら `npm test` を通してからコミットする。テストを足したら
+  `package.json` の `test` へ登録する（列挙が手作業なので忘れやすい）。
+  `vscode` に依存するモジュールは `test/helpers/vscode-stub.js` を先に読み込む。
 
 ## 注意
 
