@@ -380,6 +380,8 @@ function setOverlayVisible(visible, text = 'Select a device to start') {
   lamp.classList.toggle('on', !visible);
   lamp.title = visible ? '切断中' : '接続中';
   overlay.classList.toggle('hidden', !visible);
+  // 「…」を含む文言（Searching… / Connecting… 端末名）は待機中なのでスピナーを出す
+  overlay.classList.toggle('busy', visible && text.includes('…'));
   overlay.querySelector('span').textContent = text;
   // 表示中のメディア要素だけを見せる
   const el = displayEl();
@@ -488,11 +490,16 @@ window.addEventListener('message', (event) => {
       setOverlayVisible(false);
       break;
 
-    case 'resources':
-      resourcesEl.textContent =
-        `拡張ホスト ${message.rssMb}MB (heap ${message.heapUsedMb}MB)` +
-        ` ・ 子プロセス ${message.childrenMb}MB ・ ストレージ ${message.storageMb}MB`;
+    case 'resources': {
+      // 値は拡張ホストが作った数値のみ。<b> ラベル付きのチップに並べる。
+      const chip = (label, mb) => `<span class="chip"><b>${label}</b> ${mb}MB</span>`;
+      resourcesEl.innerHTML =
+        chip('ホスト', message.rssMb) +
+        chip('heap', message.heapUsedMb) +
+        chip('子プロセス', message.childrenMb) +
+        chip('ストレージ', message.storageMb);
       break;
+    }
 
     case 'status':
       // 互換モード等の状態表示（オーバーレイは触らない）
