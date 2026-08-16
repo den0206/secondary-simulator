@@ -18,6 +18,7 @@ export class WdaBackend implements InputBackend {
   readonly kind = 'wda' as const;
 
   private static readonly TAP_MOVE_THRESHOLD = 0.01; // 正規化。これ未満の移動は tap 扱い
+  private static readonly LONG_PRESS_MS = 400; // 静止ホールドは gesture にして long press を維持
 
   private points: Pt[] = [];
   private startMs = 0;
@@ -52,11 +53,13 @@ export class WdaBackend implements InputBackend {
     this.points = [];
     if (pts.length === 0) return;
 
-    // 総移動量で tap / gesture を判定
+    // 総移動量で tap / gesture を判定。静止でも長押しなら gesture にする
+    // （生 pointer 経路では webview が longPress メッセージを送らないため）
     const first = pts[0];
     const last = pts[pts.length - 1];
     const dist = Math.hypot(last.x - first.x, last.y - first.y);
-    if (pts.length <= 2 && dist < WdaBackend.TAP_MOVE_THRESHOLD) {
+    const holdMs = last.t;
+    if (dist < WdaBackend.TAP_MOVE_THRESHOLD && holdMs < WdaBackend.LONG_PRESS_MS) {
       const p = this.px(first.x, first.y);
       await this.client.tap(this.deviceId, p.x, p.y);
       return;
