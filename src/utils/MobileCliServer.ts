@@ -264,4 +264,8 @@ export class MobileCliServer {
   public isServerRunning(): boolean {
     return this.mobilecliServerProcess !== null;
   }
+
+  public getPid(): number | undefined {
+    return this.mobilecliServerProcess?.pid;
+  }
 }
