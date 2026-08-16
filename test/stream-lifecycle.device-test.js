@@ -1,0 +1,106 @@
+// 手動修正の検証:
+//  (a) pauseStream で <img> の GET が実際に閉じ、サーバ側の接続も切れるか
+//  (b) 再度 streamUrl を受けたら復帰するか
+//  (c) MjpegCapture の streamGen が stop→start の競合を防ぐか
+const Module = require('module');
+const orig = Module._load;
+Module._load = function (r, ...a) {
+  if (r === 'vscode') {
+    return {window: {createOutputChannel: () => ({appendLine: () => {}, show() {}, dispose() {}})}};
+  }
+  return orig.call(this, r, ...a);
+};
+const path = require('path');
+const http = require('http');
+const ROOT = path.join(__dirname, '..');
+const {MjpegProxy} = require(path.join(ROOT, 'out/capture/MjpegProxy'));
+const {MjpegCapture} = require(path.join(ROOT, 'out/capture/MjpegCapture'));
+
+const UDID = process.argv[2];
+if (!UDID) {
+  console.error('使い方: node test/stream-lifecycle.device-test.js <UDID>');
+  console.error('起動中のシミュレータと mobilecli(:12099) が必要です');
+  process.exit(2);
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+const check = (n, c, d) => {
+  console.log(`  ${c ? '✅' : '❌'} ${n}${!c && d ? ' — ' + d : ''}`);
+  if (!c) failures++;
+};
+
+(async () => {
+  console.log('(a)(b) 直結ストリームの切断と復帰');
+  const proxy = new MjpegProxy(12099);
+  const port = await proxy.start(12400);
+
+  // 接続1: <img src=...> 相当
+  let f1 = 0;
+  const r1 = http.get(`http://localhost:${port}/stream?device=${UDID}`, (res) => {
+    let tail = '';
+    res.on('data', (c) => {
+      const s = tail + c.toString('latin1');
+      const m = s.match(/--BoundaryString/g);
+      if (m) f1 += m.length;
+      tail = s.slice(-32);
+    });
+  });
+  r1.on('error', () => {});
+  await sleep(3000);
+  const framesBefore = f1;
+  check('接続1がフレームを受信', framesBefore > 10, `frames=${framesBefore}`);
+
+  // pauseStream 相当: img.src='' → GET を破棄
+  r1.destroy();
+  await sleep(1200);
+  const afterDestroy = f1;
+  await sleep(1200);
+  check('切断後にフレームが増えない', f1 === afterDestroy, `${afterDestroy} → ${f1}`);
+
+  // 再開: 新しい streamUrl 相当
+  let f2 = 0;
+  const r2 = http.get(`http://localhost:${port}/stream?device=${UDID}`, (res) => {
+    let tail = '';
+    res.on('data', (c) => {
+      const s = tail + c.toString('latin1');
+      const m = s.match(/--BoundaryString/g);
+      if (m) f2 += m.length;
+      tail = s.slice(-32);
+    });
+  });
+  r2.on('error', () => {});
+  await sleep(3000);
+  check('再接続でフレームが再開', f2 > 10, `frames=${f2}`);
+  r2.destroy();
+  proxy.dispose();
+
+  console.log('\n(c) MjpegCapture: stop→start の連続で二重ストリームにならない');
+  const cap = new MjpegCapture(12099);
+  cap.setDevice(UDID);
+  let frames = 0;
+  cap.onFrame(() => frames++);
+  await cap.start();
+  await sleep(1500);
+  const n1 = frames;
+  check('start でフレームが来る', n1 > 5, `frames=${n1}`);
+
+  // 素早く stop→start（世代管理が無いと旧ストリームが残り二重になる）
+  cap.stop();
+  await cap.start();
+  await sleep(2000);
+  const n2 = frames - n1;
+  check('再 start 後もフレームが来る', n2 > 5, `frames=${n2}`);
+
+  // stop 後はフレームが止まる（再接続タイマも動かない）
+  cap.stop();
+  const atStop = frames;
+  await sleep(1500);
+  check('stop 後はフレームが増えない', frames === atStop, `${atStop} → ${frames}`);
+  cap.dispose();
+
+  console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
+  process.exit(failures === 0 ? 0 : 1);
+})().catch((e) => {
+  console.error('ERROR', e);
+  process.exit(1);
+});
