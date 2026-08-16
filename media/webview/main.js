@@ -230,19 +230,12 @@ document
   .getElementById('btn-disconnect')
   .addEventListener('click', () => post('disconnect'));
 
-// ---- レンダリング（MJPEG フレーム / H.264）----------------------------------
+// ---- レンダリング（MJPEG フレーム）------------------------------------------
 
 let frameQueue = [];
 let currentBitmap = null;
 let isRendering = false;
-let animationFrameId = null;
 const MAX_FRAME_QUEUE = 1; // 最新フレームのみ保持
-
-let decoder = null;
-let decoderConfig = null;
-let decodedQueue = 0;
-const maxDecodeQueue = 3;
-let askedFallback = false;
 
 function normalizeToUint8Array(data) {
   if (data instanceof Uint8Array) return data;
@@ -264,10 +257,6 @@ async function renderFrame(bytes) {
     if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
-    }
-    if (animationFrameId !== null) {
-      cancelAnimationFrame(animationFrameId);
-      animationFrameId = null;
     }
     if (currentBitmap && ctx) {
       ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
@@ -298,57 +287,6 @@ function enqueueFrame(bytes) {
   dequeueAndRender();
 }
 
-function handleH264Chunk(message) {
-  if (!('VideoDecoder' in window) || !decoderConfig) {
-    if (!askedFallback) {
-      askedFallback = true;
-      vscode.postMessage({type: 'fallback-jpeg', reason: 'WebCodecs unavailable'});
-    }
-    return;
-  }
-  const data = normalizeToUint8Array(message.data);
-  if (!data) return;
-  if (decodedQueue > maxDecodeQueue) return;
-  const chunk = new EncodedVideoChunk({
-    type: message.isKeyframe ? 'key' : 'delta',
-    timestamp: performance.now() * 1000,
-    data,
-  });
-  decoder.decode(chunk);
-  decodedQueue++;
-}
-
-function setupDecoder(config) {
-  if (!('VideoDecoder' in window)) {
-    vscode.postMessage({type: 'fallback-jpeg', reason: 'WebCodecs not supported'});
-    return;
-  }
-  decoderConfig = {
-    codec: config.codec || 'avc1.42E01E',
-    description: normalizeToUint8Array(config.description) || undefined,
-  };
-  if (decoder) {
-    decoder.close();
-    decoder = null;
-  }
-  decoder = new VideoDecoder({
-    output: (frame) => {
-      if (canvas.width !== frame.codedWidth || canvas.height !== frame.codedHeight) {
-        canvas.width = frame.codedWidth;
-        canvas.height = frame.codedHeight;
-      }
-      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-      frame.close();
-      decodedQueue = Math.max(0, decodedQueue - 1);
-    },
-    error: (err) => {
-      console.error('VideoDecoder error', err);
-      vscode.postMessage({type: 'fallback-jpeg', reason: err?.message || 'decoder error'});
-    },
-  });
-  decoder.configure(decoderConfig);
-}
-
 function setOverlayVisible(visible, text = 'Select a device to start') {
   if (!overlay) return;
   overlay.classList.toggle('hidden', !visible);
@@ -367,17 +305,7 @@ function cleanup() {
     currentBitmap.close?.();
     currentBitmap = null;
   }
-  if (decoder) {
-    decoder.close();
-    decoder = null;
-  }
-  decoderConfig = null;
   frameQueue = [];
-  if (animationFrameId !== null) {
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = null;
-  }
-  decodedQueue = 0;
   isRendering = false;
   clearTrail();
   pointers.clear();
@@ -446,14 +374,6 @@ window.addEventListener('message', (event) => {
       if (usingImg) {
         img.src = '';
       }
-      break;
-
-    case 'h264-config':
-      setupDecoder(message);
-      break;
-
-    case 'h264-chunk':
-      handleH264Chunk(message);
       break;
   }
 });

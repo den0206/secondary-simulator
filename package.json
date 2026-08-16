@@ -61,11 +61,6 @@
     "configuration": {
       "title": "Secondary Simulator",
       "properties": {
-        "secondarySimulator.experimentalH264": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable experimental H.264 streaming (requires adb/simctl and WebCodecs). Falls back to JPEG if not available."
-        },
         "secondarySimulator.directStream": {
           "type": "boolean",
           "default": false,
@@ -84,27 +79,6 @@
           "minimum": 1,
           "maximum": 100,
           "description": "iOS: MJPEG の JPEG 品質（1-100）。streamScale と併用して帯域を調整する。"
-        },
-        "secondarySimulator.tapThreshold": {
-          "type": "number",
-          "default": 10,
-          "minimum": 1,
-          "maximum": 100,
-          "description": "Tap判定に使用する移動距離の閾値（ピクセル）。"
-        },
-        "secondarySimulator.swipeThreshold": {
-          "type": "number",
-          "default": 30,
-          "minimum": 5,
-          "maximum": 200,
-          "description": "スワイプ判定に使用する移動距離の閾値（ピクセル）。"
-        },
-        "secondarySimulator.longPressDuration": {
-          "type": "number",
-          "default": 600,
-          "minimum": 200,
-          "maximum": 2000,
-          "description": "ロングタップ判定までの時間（ミリ秒）。"
         }
       }
     },
@@ -136,15 +110,11 @@
     "build": "npm run compile && npm run build:native",
     "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
     "clean": "rm -rf out native/simhid-server"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "@types/vscode": "^1.80.0",
-    "@typescript-eslint/eslint-plugin": "^8.47.0",
-    "@typescript-eslint/parser": "^8.47.0",
-    "eslint": "^9.39.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {

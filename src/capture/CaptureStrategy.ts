@@ -1,7 +1,4 @@
-export type FrameCallback = (
-  frame: Uint8Array,
-  stats: {fps: number; latency: number}
-) => void;
+export type FrameCallback = (frame: Uint8Array) => void;
 
 /**
  * キャプチャ戦略のインターフェース
