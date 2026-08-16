@@ -9,6 +9,12 @@ export class MobileCliServer {
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
   private mobilecliServerProcess: ChildProcess | null = null;
+  /**
+   * 使えるサーバを掴んでいるか。自分で spawn した場合と、既存サーバを再利用した場合の
+   * 両方で true になる。プロセスの有無だけで判定すると、再利用時に毎回ポート走査
+   * （101 ポート × 2 リクエスト）をやり直すことになる。
+   */
+  private serverReady = false;
 
   constructor() {
     this.mobilecliPath = this.findMobilecliPath();
@@ -131,19 +137,6 @@ export class MobileCliServer {
     return '@mobilenext/mobilecli@0.1.64';
   }
 
-  private async findAvailablePort(
-    minPort: number,
-    maxPort: number
-  ): Promise<number> {
-    for (let port = minPort; port <= maxPort; port++) {
-      const isHealthy = await this.checkServerHealth(port);
-      if (!isHealthy) {
-        return port;
-      }
-    }
-    throw new Error('No available port found');
-  }
-
   private async waitForServerReady(
     port: number,
     timeoutMs: number
@@ -177,24 +170,43 @@ export class MobileCliServer {
       return;
     }
 
-    // 既存の稼働中サーバを範囲全体から探して再利用する（default ポートだけでなく、
-    // 過去に別ポートで起動したものも拾えるようにする）。
-    // 0.0.x は RPC 名が違うので /health だけでは不十分。devices.list が通るものだけ使う。
+    // 既に掴んだサーバが生きていれば走査ごと省く。ここを飛ばすと、外部サーバを
+    // 再利用したときに接続の度へ 101 ポートの走査が戻ってくる。
+    if (this.serverReady && (await this.checkServerHealth(this.serverPort))) {
+      return;
+    }
+    this.serverReady = false;
+
     const rangeStart = MobileCliServer.DEFAULT_SERVER_PORT;
     const rangeEnd = MobileCliServer.DEFAULT_SERVER_PORT + 100;
-    for (let port = rangeStart; port <= rangeEnd; port++) {
-      if (
-        (await this.checkServerHealth(port)) &&
-        (await this.isRpcCompatible(port))
-      ) {
+
+    // 既存の稼働中サーバを範囲全体から探して再利用する（default ポートだけでなく、
+    // 過去に別ポートで起動したものも拾えるようにする）。
+    // /health は並列に叩いて待ち時間を畳む（直列だと最悪 101 秒かかる）。
+    const health = await Promise.all(
+      Array.from({length: rangeEnd - rangeStart + 1}, (_, i) =>
+        this.checkServerHealth(rangeStart + i)
+      )
+    );
+
+    // 0.0.x は RPC 名が違うので /health だけでは不十分。devices.list が通るものだけ使う。
+    for (let i = 0; i < health.length; i++) {
+      if (!health[i]) continue;
+      const port = rangeStart + i;
+      if (await this.isRpcCompatible(port)) {
         Logger.info(`Reusing running mobilecli server on port ${port}`);
         this.serverPort = port;
+        this.serverReady = true;
         return;
       }
     }
 
-    // 稼働中が無ければ空きポートで起動する
-    this.serverPort = await this.findAvailablePort(rangeStart, rangeEnd);
+    // 稼働中が無ければ空きポートで起動する（上の /health 結果を再利用する）
+    const freeIndex = health.indexOf(false);
+    if (freeIndex < 0) {
+      throw new Error('No available port found');
+    }
+    this.serverPort = rangeStart + freeIndex;
     Logger.info(`Launching mobilecli server on port ${this.serverPort}...`);
 
     const args =
@@ -235,11 +247,13 @@ export class MobileCliServer {
     this.mobilecliServerProcess.on('close', (code: number) => {
       Logger.info(`mobilecli server process exited with code ${code}`);
       this.mobilecliServerProcess = null;
+      this.serverReady = false;
     });
 
     this.mobilecliServerProcess.on('error', (error: Error) => {
       Logger.error(`mobilecli server error: ${error.message}`);
       this.mobilecliServerProcess = null;
+      this.serverReady = false;
     });
 
     // サーバーの準備完了を待つ
@@ -247,9 +261,11 @@ export class MobileCliServer {
       this.serverPort,
       MobileCliServer.SERVER_STARTUP_TIMEOUT_MS
     );
+    this.serverReady = true;
   }
 
-  public async stopServer(): Promise<void> {
+  public stopServer(): void {
+    this.serverReady = false;
     if (this.mobilecliServerProcess) {
       this.mobilecliServerProcess.kill();
       this.mobilecliServerProcess = null;
@@ -261,8 +277,9 @@ export class MobileCliServer {
     return this.serverPort;
   }
 
+  /** 使えるサーバを掴んでいるか。外部サーバを再利用している場合も true。 */
   public isServerRunning(): boolean {
-    return this.mobilecliServerProcess !== null;
+    return this.serverReady;
   }
 
   public getPid(): number | undefined {
