@@ -23,6 +23,12 @@ export class MjpegCapture implements CaptureStrategy {
   private buffer: Uint8Array | null = null;
   private imageData: Uint8Array | null = null;
   private lastBoundaryFoundTime: number = 0;
+  // 利用者がキャプチャ継続を望んでいるか（isCapturing は現在ストリーム中かで別物）。
+  // ストリームが異常終了しても wantCapture が true なら自動再接続する。
+  private wantCapture: boolean = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private streamGen = 0;
+  private static readonly RECONNECT_DELAY_MS = 500;
 
   constructor(serverPort: number) {
     this.serverPort = serverPort;
@@ -45,6 +51,9 @@ export class MjpegCapture implements CaptureStrategy {
       return;
     }
 
+    this.wantCapture = true;
+    this.streamGen++;
+    const gen = this.streamGen;
     this.isCapturing = true;
     this.frameCount = 0;
     this.lastFpsUpdate = Date.now();
@@ -52,21 +61,44 @@ export class MjpegCapture implements CaptureStrategy {
     this.startTime = Date.now();
 
     Logger.info(`Starting MJPEG stream for device: ${this.deviceId}`);
-    await this.startMjpegStream();
+    await this.startMjpegStream(gen);
   }
 
   stop(): void {
+    this.wantCapture = false;
+    this.streamGen++;
     this.isCapturing = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stopMjpegStream();
     Logger.info('MJPEG capture stopped');
   }
 
   updateConfig(): void {
     // MJPEGストリーミングでは設定変更は再起動が必要
-    if (this.isCapturing && this.deviceId) {
+    if (this.wantCapture && this.deviceId) {
       this.stop();
-      this.start();
+      void this.start().catch((e) =>
+        Logger.error('Failed to restart capture on config change', e as Error)
+      );
     }
+  }
+
+  // ストリームが異常終了したとき、利用者がまだ継続を望んでいれば再接続する。
+  private scheduleReconnect(): void {
+    if (!this.wantCapture || this.reconnectTimer) return;
+    const gen = this.streamGen;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.wantCapture || !this.deviceId || gen !== this.streamGen) return;
+      Logger.info('Reconnecting MJPEG stream');
+      this.isCapturing = true;
+      void this.startMjpegStream(gen).catch((e) =>
+        Logger.error('MJPEG reconnect failed', e as Error)
+      );
+    }, MjpegCapture.RECONNECT_DELAY_MS);
   }
 
   dispose(): void {
@@ -75,8 +107,11 @@ export class MjpegCapture implements CaptureStrategy {
     this.deviceId = null;
   }
 
-  private async startMjpegStream(): Promise<void> {
+  private async startMjpegStream(gen: number): Promise<void> {
     if (!this.deviceId) {
+      return;
+    }
+    if (gen !== this.streamGen) {
       return;
     }
 
@@ -110,10 +145,13 @@ export class MjpegCapture implements CaptureStrategy {
       this.streamReader = reader;
 
       // MJPEGストリームを処理
-      this.processMjpegStream(reader);
+      this.processMjpegStream(reader, gen);
     } catch (error) {
       Logger.error('Failed to start MJPEG stream', error as Error);
-      this.isCapturing = false;
+      if (gen === this.streamGen) {
+        this.isCapturing = false;
+        this.scheduleReconnect();
+      }
       throw error;
     }
   }
@@ -135,7 +173,8 @@ export class MjpegCapture implements CaptureStrategy {
   }
 
   private async processMjpegStream(
-    reader: ReadableStreamDefaultReader<Uint8Array>
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    gen: number
   ): Promise<void> {
     const boundary = '--BoundaryString';
     this.buffer = new Uint8Array();
@@ -332,7 +371,11 @@ export class MjpegCapture implements CaptureStrategy {
         Logger.error('Error processing MJPEG stream', error);
       }
     } finally {
-      this.isCapturing = false;
+      // 新しい世代が始まっているなら、そのストリームのフラグを壊さない
+      if (gen === this.streamGen) {
+        this.isCapturing = false;
+        this.scheduleReconnect();
+      }
     }
   }
 
