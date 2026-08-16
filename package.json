@@ -162,7 +162,7 @@
     "build:native": "sh scripts/build-native.sh",
     "build": "npm run compile && npm run build:native",
     "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
-    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js && node test/mjpeg-parser.test.js && node test/mjpeg-proxy.test.js && node test/screenshot.test.js",
+    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js && node test/mjpeg-parser.test.js && node test/mjpeg-proxy.test.js && node test/screenshot.test.js && node test/memory-leak.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },

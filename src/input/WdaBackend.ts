@@ -19,6 +19,13 @@ export class WdaBackend implements InputBackend {
 
   private static readonly TAP_MOVE_THRESHOLD = 0.01; // 正規化。これ未満の移動は tap 扱い
   private static readonly LONG_PRESS_MS = 400; // 静止ホールドは gesture にして long press を維持
+  /**
+   * 蓄積する軌跡点の上限。touchMove は 60Hz で届くため、上限が無いと
+   * 長いドラッグでそのまま伸び、touchUp を取りこぼすと永久に残る
+   * （実測: 60 秒のドラッグで 3,601 点・約 190KB の RPC ペイロード）。
+   * 超えたら間引くので、上限に達しても始点・終点と所要時間は保たれる。
+   */
+  private static readonly MAX_POINTS = 240; // 60Hz で約 4 秒ぶん
 
   private points: Pt[] = [];
   private startMs = 0;
@@ -43,8 +50,27 @@ export class WdaBackend implements InputBackend {
   }
 
   async touchMove(x: number, y: number): Promise<void> {
-    if (this.points.length === 0) this.points = [{x, y, t: 0}];
-    else this.points.push({x, y, t: Date.now() - this.startMs});
+    if (this.points.length === 0) {
+      this.points = [{x, y, t: 0}];
+      return;
+    }
+    this.points.push({x, y, t: Date.now() - this.startMs});
+    if (this.points.length > WdaBackend.MAX_POINTS) {
+      this.points = WdaBackend.decimate(this.points);
+    }
+  }
+
+  /**
+   * 中間点を 1 つおきに間引いて半分にする。始点と終点は必ず残すので、
+   * ドラッグの向き・距離・所要時間（各点の t）は保たれる。
+   */
+  private static decimate(points: Pt[]): Pt[] {
+    const out: Pt[] = [points[0]];
+    for (let i = 1; i < points.length - 1; i += 2) {
+      out.push(points[i]);
+    }
+    out.push(points[points.length - 1]);
+    return out;
   }
 
   async touchUp(x: number, y: number): Promise<void> {
