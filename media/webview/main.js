@@ -25,6 +25,9 @@ function displayEl() {
 
 const pointers = new Map(); // pointerId -> {x, y} 正規化座標
 const order = []; // pointerId の順序
+// pointerup / pointercancel を取りこぼすと pointerId が残る。タッチ環境では
+// pointerId が毎回変わるので、上限が無いと押した回数だけ増え続ける。
+const MAX_POINTERS = 10;
 let mode = 0; // 0=なし, 1=1本指, 2=2本指
 let lastSingle = {x: 0, y: 0};
 let lastPair = [
@@ -55,6 +58,10 @@ function onPointerDown(e) {
   const p = norm(e);
   if (!pointers.has(e.pointerId)) order.push(e.pointerId);
   pointers.set(e.pointerId, p);
+  // 取りこぼした古い pointerId を落とす（現在の 1〜2 本より古いものだけが対象）
+  while (order.length > MAX_POINTERS) {
+    pointers.delete(order.shift());
+  }
 
   const count = order.length;
   if (count === 1) {
@@ -351,8 +358,24 @@ function enqueueFrame(bytes) {
   dequeueAndRender();
 }
 
+let overlayVisible = null; // 直近に適用した状態。frame 毎の DOM 書き換えを避ける
+let overlayText = null;
+let overlayUsingImg = null; // 表示要素が canvas と img のどちらだったか
+
 function setOverlayVisible(visible, text = 'Select a device to start') {
   if (!overlay) return;
+  // 'frame' は毎秒 26 回届く。状態が同じなら DOM を触らない。
+  // 表示要素の切替（img ⇄ canvas）は見た目が変わるので、必ず適用する。
+  if (
+    overlayVisible === visible &&
+    overlayUsingImg === usingImg &&
+    (!visible || overlayText === text)
+  ) {
+    return;
+  }
+  overlayVisible = visible;
+  overlayText = text;
+  overlayUsingImg = usingImg;
   // 画面が出ている＝接続中。オーバーレイの表示状態がそのまま接続状態になる。
   lamp.classList.toggle('on', !visible);
   lamp.title = visible ? '切断中' : '接続中';
@@ -368,6 +391,9 @@ function setOverlayVisible(visible, text = 'Select a device to start') {
 }
 
 function cleanup() {
+  overlayVisible = null;
+  overlayText = null;
+  overlayUsingImg = null;
   if (currentBitmap) {
     currentBitmap.close?.();
     currentBitmap = null;

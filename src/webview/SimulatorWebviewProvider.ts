@@ -97,6 +97,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.stopCapture();
       this.stopStatsTimer();
       this.stopAutoConnectTimer();
+      // 破棄されたビューを持ち続けない（webview の内容ごと参照が残る）。
+      // 差し替えで resolveWebviewView が先に走っている場合は新しい方を消さない。
+      if (this.view === webviewView) {
+        this.view = undefined;
+      }
     });
 
     this.visibilityDisposable = webviewView.onDidChangeVisibility(() => {
