@@ -1,9 +1,15 @@
 import {randomUUID} from 'node:crypto';
+import * as os from 'node:os';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {MjpegCapture} from '../capture/MjpegCapture';
 import {MjpegProxy} from '../capture/MjpegProxy';
+import {
+  DecodedScreenshot,
+  decodeScreenshotResult,
+  defaultScreenshotName,
+} from '../capture/Screenshot';
 import {WdaSettings} from '../capture/WdaSettings';
 import {SimulatorInputController} from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
@@ -598,6 +604,80 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
     await this.inputController.back();
+  }
+
+  /** コマンド側（QuickPick）から見える一覧。参照だけ返す。 */
+  getDevices(): readonly Device[] {
+    return this.devices;
+  }
+
+  getCurrentDeviceId(): string | null {
+    return this.currentDeviceId;
+  }
+
+  /**
+   * 接続中のデバイスの画面を 1 枚取り、保存先を尋ねて書き出す。
+   * 保存先はユーザーが選ぶので、拡張が勝手に永続ストレージを持つことにはならない。
+   */
+  async saveScreenshot(): Promise<void> {
+    const deviceId = this.currentDeviceId;
+    if (!deviceId || !this.mobileCliClient) {
+      void vscode.window.showWarningMessage(
+        'Secondary Simulator: デバイスに接続してからスクリーンショットを撮ってください。'
+      );
+      return;
+    }
+    const device = this.devices.find((d) => d.id === deviceId);
+    const deviceName = device?.name ?? 'device';
+
+    let shot: DecodedScreenshot;
+    try {
+      const result = await this.mobileCliClient.screenshot(deviceId, 'png');
+      shot = decodeScreenshotResult(result, 'png');
+    } catch (error) {
+      Logger.error('スクリーンショットの取得に失敗', error as Error);
+      void vscode.window.showErrorMessage(
+        `Secondary Simulator: スクリーンショットを取得できませんでした — ${
+          (error as Error).message
+        }`
+      );
+      return;
+    }
+
+    const target = await vscode.window.showSaveDialog({
+      title: 'スクリーンショットの保存先',
+      defaultUri: vscode.Uri.joinPath(
+        this.defaultScreenshotDir(),
+        defaultScreenshotName(deviceName, shot.ext)
+      ),
+      filters: {画像: [shot.ext]},
+    });
+    if (!target) return; // キャンセル
+
+    try {
+      await vscode.workspace.fs.writeFile(target, shot.bytes);
+    } catch (error) {
+      Logger.error('スクリーンショットの保存に失敗', error as Error);
+      void vscode.window.showErrorMessage(
+        `Secondary Simulator: 保存できませんでした — ${(error as Error).message}`
+      );
+      return;
+    }
+
+    Logger.info(`スクリーンショットを保存: ${target.fsPath}`);
+    const open = await vscode.window.showInformationMessage(
+      `スクリーンショットを保存しました: ${target.fsPath}`,
+      '開く'
+    );
+    if (open === '開く') {
+      await vscode.commands.executeCommand('vscode.open', target);
+    }
+  }
+
+  /** 保存ダイアログの初期位置。ワークスペースがあればその直下、無ければホーム。 */
+  private defaultScreenshotDir(): vscode.Uri {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    return folder ? folder.uri : vscode.Uri.file(os.homedir());
   }
 
   private stopCapture(): void {

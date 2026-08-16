@@ -54,21 +54,57 @@
     "commands": [
       {
         "command": "simulator.selectDevice",
-        "title": "Simulator: Select Device"
+        "title": "Select Device",
+        "category": "Secondary Simulator"
+      },
+      {
+        "command": "simulator.screenshot",
+        "title": "Save Screenshot",
+        "category": "Secondary Simulator",
+        "icon": "$(device-camera)"
       },
       {
         "command": "simulator.home",
-        "title": "Simulator: Press Home"
+        "title": "Press Home",
+        "category": "Secondary Simulator"
       },
       {
         "command": "simulator.back",
-        "title": "Simulator: Press Back"
+        "title": "Press Back",
+        "category": "Secondary Simulator"
       },
       {
         "command": "simulator.refresh",
-        "title": "Simulator: Refresh Device List"
+        "title": "Refresh Device List",
+        "category": "Secondary Simulator",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "simulator.showLogs",
+        "title": "Show Logs",
+        "category": "Secondary Simulator",
+        "icon": "$(output)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "simulator.screenshot",
+          "when": "view == simulatorView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "simulator.refresh",
+          "when": "view == simulatorView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "simulator.showLogs",
+          "when": "view == simulatorView",
+          "group": "navigation@3"
+        }
+      ]
+    },
     "configuration": {
       "title": "Secondary Simulator",
       "properties": {
@@ -103,19 +139,19 @@
         "command": "simulator.refresh",
         "key": "ctrl+shift+r",
         "mac": "cmd+shift+r",
-        "when": "view == simulatorView"
+        "when": "focusedView == simulatorView"
       },
       {
         "command": "simulator.home",
         "key": "ctrl+shift+h",
         "mac": "cmd+shift+h",
-        "when": "view == simulatorView"
+        "when": "focusedView == simulatorView"
       },
       {
         "command": "simulator.back",
         "key": "ctrl+shift+b",
         "mac": "cmd+shift+b",
-        "when": "view == simulatorView"
+        "when": "focusedView == simulatorView"
       }
     ]
   },
@@ -126,7 +162,7 @@
     "build:native": "sh scripts/build-native.sh",
     "build": "npm run compile && npm run build:native",
     "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
-    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js",
+    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js && node test/mjpeg-parser.test.js && node test/mjpeg-proxy.test.js && node test/screenshot.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },
