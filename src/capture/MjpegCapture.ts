@@ -1,14 +1,24 @@
 import {Logger} from '../utils/Logger';
 import {CaptureStrategy, FrameCallback} from './CaptureStrategy';
+import {MjpegParseError, MjpegParser, parseBoundary} from './MjpegParser';
 
 /**
  * MJPEGストリーミング方式のキャプチャ実装
  * mobilecliのMJPEGストリームを使用
+ *
+ * multipart の解析自体は MjpegParser が行う（単体テスト可能な純ロジック）。
+ * ここはセッション確立・再接続・ライフサイクルだけを見る。
  */
 export class MjpegCapture implements CaptureStrategy {
   private static readonly MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB
   private static readonly MAX_IMAGE_DATA_SIZE = 10 * 1024 * 1024; // 10MB
-  private static readonly BOUNDARY_TIMEOUT_MS = 5000; // 5秒
+  /** boundary が取れなかったときだけ使う既定値（mobilecli の実装値） */
+  private static readonly FALLBACK_BOUNDARY = '--BoundaryString';
+  /**
+   * この時間フレームが 1 枚も来なければ、繋がったまま死んだとみなして張り直す。
+   * 実測のフレーム間隔は p99 41ms（docs/sync-research.md §1.1）なので桁で余裕がある。
+   */
+  private static readonly STALL_TIMEOUT_MS = 15_000;
 
   private deviceId: string | null = null;
   private frameCallback: FrameCallback | null = null;
@@ -16,9 +26,8 @@ export class MjpegCapture implements CaptureStrategy {
   private serverPort: number;
   private streamController: AbortController | null = null;
   private streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private buffer: Uint8Array | null = null;
-  private imageData: Uint8Array | null = null;
-  private lastBoundaryFoundTime: number = 0;
+  private parser: MjpegParser | null = null;
+  private stallTimer: ReturnType<typeof setTimeout> | null = null;
   // 利用者がキャプチャ継続を望んでいるか（isCapturing は現在ストリーム中かで別物）。
   // ストリームが異常終了しても wantCapture が true なら自動再接続する。
   private wantCapture: boolean = false;
@@ -183,8 +192,19 @@ export class MjpegCapture implements CaptureStrategy {
         throw new Error('ReadableStream not supported');
       }
 
+      // boundary はレスポンスの Content-Type から取る（ソースへ固定しない）
+      const boundary =
+        parseBoundary(response.headers.get('content-type')) ??
+        MjpegCapture.FALLBACK_BOUNDARY;
+      this.parser = new MjpegParser(boundary, {
+        maxBufferSize: MjpegCapture.MAX_BUFFER_SIZE,
+        maxPartSize: MjpegCapture.MAX_IMAGE_DATA_SIZE,
+      });
+
       const reader = response.body.getReader();
       this.streamReader = reader;
+      // 最初の 1 枚が来ないまま黙るケースも拾えるよう、ここから見張り始める
+      this.armStallTimer();
 
       // MJPEGストリームを処理
       this.processMjpegStream(reader, gen);
@@ -215,202 +235,53 @@ export class MjpegCapture implements CaptureStrategy {
       this.streamReader = null;
     }
 
-    // バッファのクリア（メモリリーク防止）
-    this.buffer = null;
-    this.imageData = null;
+    // バッファ・タイマーのクリア（メモリリーク防止）
+    this.clearStallTimer();
+    this.parser?.reset();
+    this.parser = null;
   }
 
   private async processMjpegStream(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     gen: number
   ): Promise<void> {
-    const boundary = '--BoundaryString';
-    this.buffer = new Uint8Array();
-    let inImage = false;
-    this.imageData = new Uint8Array();
-    let contentLength = 0;
-    let contentType = '';
-    let bytesRead = 0;
-    this.lastBoundaryFoundTime = Date.now();
-
     Logger.info('Starting MJPEG stream processing');
 
     try {
       while (this.isActive) {
         const {done, value} = await reader.read();
-
         if (done) {
           Logger.info('MJPEG stream ended');
           break;
         }
 
-        // バッファサイズチェック（メモリ保護）
-        const currentBufferSize = this.buffer?.length || 0;
-        if (currentBufferSize + value.length > MjpegCapture.MAX_BUFFER_SIZE) {
-          Logger.warn(
-            `Buffer size exceeded limit (${
-              currentBufferSize + value.length
-            } bytes). Resetting stream.`
-          );
-          this.resetStream(reader);
-          break;
-        }
+        const parser = this.parser;
+        if (!parser) break;
 
-        // バウンダリ検出のタイムアウトチェック
-        const timeSinceLastBoundary = Date.now() - this.lastBoundaryFoundTime;
-        if (
-          !inImage &&
-          timeSinceLastBoundary > MjpegCapture.BOUNDARY_TIMEOUT_MS
-        ) {
-          Logger.warn(
-            `Boundary not found for ${timeSinceLastBoundary}ms. Resetting stream.`
-          );
-          this.resetStream(reader);
-          break;
-        }
-
-        // バッファにデータを追加
-        const newBuffer: Uint8Array = new Uint8Array(
-          currentBufferSize + value.length
-        );
-        if (this.buffer) {
-          newBuffer.set(this.buffer);
-        }
-        newBuffer.set(value, currentBufferSize);
-        this.buffer = newBuffer;
-
-        let processedData = false;
-        while (true) {
-          if (!inImage) {
-            // バウンダリを探す
-            const bufferString = new TextDecoder().decode(
-              this.buffer || new Uint8Array()
-            );
-            const boundaryIndex = bufferString.indexOf(boundary);
-            if (boundaryIndex === -1) {
-              break;
-            }
-
-            // バウンダリが見つかった時刻を更新
-            this.lastBoundaryFoundTime = Date.now();
-
-            // ヘッダーの終わりを探す
-            const headerEndIndex = bufferString.indexOf(
-              '\r\n\r\n',
-              boundaryIndex
-            );
-            if (headerEndIndex === -1) {
-              break;
-            }
-
-            // ヘッダーを解析
-            const headers = bufferString.substring(
-              boundaryIndex + boundary.length,
-              headerEndIndex
-            );
-            const contentLengthMatch = headers.match(
-              /Content-Length:\s*(\d+)/i
-            );
-            if (contentLengthMatch) {
-              contentLength = parseInt(contentLengthMatch[1], 10);
-              // Content-Lengthの妥当性チェック
-              if (
-                contentLength <= 0 ||
-                contentLength > MjpegCapture.MAX_IMAGE_DATA_SIZE
-              ) {
-                Logger.warn(
-                  `Invalid Content-Length: ${contentLength}. Resetting stream.`
-                );
-                this.resetStream(reader);
-                break;
-              }
-            }
-
-            const contentTypeMatch = headers.match(
-              /Content-Type:\s*([^\r\n]+)/i
-            );
-            contentType = contentTypeMatch ? contentTypeMatch[1].trim() : '';
-
-            // ヘッダー部分をバッファから削除
-            const headerEndBytes = headerEndIndex + 4;
-            if (this.buffer) {
-              this.buffer = this.buffer.slice(headerEndBytes);
-            }
-            inImage = true;
-            this.imageData = new Uint8Array();
-            bytesRead = 0;
-            processedData = true;
+        let parts;
+        try {
+          parts = parser.push(value);
+        } catch (error) {
+          if (error instanceof MjpegParseError) {
+            // 壊れた入力。バッファを捨ててストリームを張り直す（finally で再接続）。
+            Logger.warn(`MJPEG 解析を中断: ${error.message}`);
+            this.resetStream(reader);
+            break;
           }
+          throw error;
+        }
 
-          if (inImage) {
-            // 画像データを読み取る
-            const remainingBytes = contentLength - bytesRead;
-            const bytesToRead = Math.min(
-              remainingBytes,
-              this.buffer?.length || 0
+        for (const part of parts) {
+          if (part.contentType === 'image/jpeg') {
+            // フレームを即座に処理（遅延を最小化）
+            this.displayMjpegImage(part.data);
+          } else {
+            // 非JPEGフレーム（JSON-RPC通知など）
+            Logger.debug(
+              `Non-JPEG frame: ${part.contentType}, body: ${new TextDecoder().decode(part.data)}`
             );
-
-            if (bytesToRead === 0) {
-              break;
-            }
-
-            // 画像データサイズチェック（メモリ保護）
-            const currentImageDataSize = this.imageData?.length || 0;
-            if (
-              currentImageDataSize + bytesToRead >
-              MjpegCapture.MAX_IMAGE_DATA_SIZE
-            ) {
-              Logger.warn(
-                `Image data size exceeded limit (${
-                  currentImageDataSize + bytesToRead
-                } bytes). Resetting stream.`
-              );
-              this.resetStream(reader);
-              break;
-            }
-
-            const newImageData: Uint8Array = new Uint8Array(
-              currentImageDataSize + bytesToRead
-            );
-            if (this.imageData) {
-              newImageData.set(this.imageData);
-            }
-            if (this.buffer) {
-              newImageData.set(
-                this.buffer.slice(0, bytesToRead),
-                this.imageData?.length || 0
-              );
-            }
-            this.imageData = newImageData;
-
-            bytesRead += bytesToRead;
-            if (this.buffer) {
-              this.buffer = this.buffer.slice(bytesToRead);
-            }
-            processedData = true;
-
-            if (bytesRead >= contentLength) {
-              // フレームが完成
-              if (contentType === 'image/jpeg' && this.imageData) {
-                // フレームを即座に処理（遅延を最小化）
-                this.displayMjpegImage(this.imageData);
-              } else if (this.imageData) {
-                // 非JPEGフレーム（JSON-RPC通知など）
-                const bodyText = new TextDecoder().decode(this.imageData);
-                Logger.debug(
-                  `Non-JPEG frame: ${contentType}, body: ${bodyText}`
-                );
-              }
-
-              inImage = false;
-              this.imageData = new Uint8Array();
-              bytesRead = 0;
-            }
           }
         }
-
-        // フレーム処理を最適化：不要な遅延を削除
-        // 連続したフレーム処理を可能にするため、awaitを削除
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -429,7 +300,34 @@ export class MjpegCapture implements CaptureStrategy {
 
   // MJPEG から受け取った JPEG をそのままコールバックへ渡す（再エンコードしない）
   private displayMjpegImage(imageData: Uint8Array): void {
+    this.armStallTimer();
     this.frameCallback?.(imageData);
+  }
+
+  /**
+   * フレームが届く度に張り直す停止検出。繋がったままフレームが止まる
+   * （WDA セッションだけ死ぬ等）ケースは done も error も来ないので、これが無いと
+   * 画面が固まったまま再接続が走らない。
+   */
+  private armStallTimer(): void {
+    this.clearStallTimer();
+    if (!this.wantCapture) return;
+    const gen = this.streamGen;
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
+      if (!this.wantCapture || gen !== this.streamGen) return;
+      Logger.warn(
+        `${MjpegCapture.STALL_TIMEOUT_MS}ms フレームが来ないためストリームを張り直す`
+      );
+      // reader を閉じると processMjpegStream の finally が再接続を予約する
+      this.stopMjpegStream();
+    }, MjpegCapture.STALL_TIMEOUT_MS);
+  }
+
+  private clearStallTimer(): void {
+    if (!this.stallTimer) return;
+    clearTimeout(this.stallTimer);
+    this.stallTimer = null;
   }
 
   private get isActive(): boolean {
@@ -441,9 +339,7 @@ export class MjpegCapture implements CaptureStrategy {
    */
   private resetStream(reader: ReadableStreamDefaultReader<Uint8Array>): void {
     Logger.warn('Resetting MJPEG stream due to memory protection');
-    this.buffer = null;
-    this.imageData = null;
-    this.lastBoundaryFoundTime = Date.now();
+    this.parser?.reset();
     // リーダーをキャンセルして再起動を促す
     reader.cancel().catch((err) => {
       Logger.debug(`Error canceling reader during reset: ${err}`);
