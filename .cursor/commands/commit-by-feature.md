@@ -36,6 +36,7 @@ secondary-simulator 向けの典型グループ例:
 - 未実施、または差分が変わっている場合は、`/review-for-merge` と同等の確認を行う:
   - 差分を読む（未追跡はファイルを読む）
   - [docs/sidecar-protocol.md](docs/sidecar-protocol.md) の境界（`InputBackend`・正規化座標・HID は iOS Simulator のみ・私有 API は `native/` のみ）を確認
+  - 現行の RPC 名・設定・経路が `CLAUDE.md` / README / `docs/` と食い違っていないか確認する
   - ロジック変更があれば `npm test` を実行し、失敗ならコミットしない
 - ブロッカーがある、またはテスト失敗なら**ここで停止**し、修正を促す。コミットに進まない。
 
