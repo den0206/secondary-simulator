@@ -3,9 +3,20 @@
   "displayName": "Secondary Simulator",
   "description": "Display iOS/Android simulators in the sidebar with real-time screen capture",
   "version": "0.1.0",
-  "publisher": "secondary-simulator",
+  "publisher": "yuuki-sakai",
+  "icon": "media/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/den0206/secondary-simulator"
+  },
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "galleryBanner": {
+    "color": "#38bdf8",
+    "theme": "light"
   },
   "categories": [
     "Debuggers",
@@ -104,17 +115,20 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile && npm run build:native",
+    "vscode:prepublish": "npm run build",
     "compile": "tsc -p ./",
-    "build:native": "clang -fobjc-arc -O2 -framework Foundation -framework CoreFoundation -o native/simhid-server native/simhid-server.m",
+    "typecheck": "tsc -p ./ --noEmit",
+    "build:native": "sh scripts/build-native.sh",
     "build": "npm run compile && npm run build:native",
+    "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
     "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },
   "devDependencies": {
+    "@vscode/vsce": "^3.6.0",
     "@types/node": "^24.10.1",
-    "@types/vscode": "^1.80.0",
+    "@types/vscode": "^1.90.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
