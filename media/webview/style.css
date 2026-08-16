@@ -36,11 +36,35 @@ body {
   min-height: 200px;
 }
 
-#simulator-canvas {
+#simulator-canvas,
+#simulator-img {
   width: 100%;
   height: auto;
   display: block;
   cursor: pointer;
+  touch-action: none; /* ブラウザのスクロール/ズームを無効化し pointer を専有 */
+}
+
+/* タッチのフィードバック（リップル・軌跡）を表示する透明オーバーレイ */
+#touch-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* 下の表示要素へ pointer を通す */
+}
+
+.touch-ripple {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: var(--vscode-focusBorder, #007acc);
+  opacity: 0.6;
+  pointer-events: none;
+  animation: ripple 0.4s ease-out forwards;
 }
 
 .overlay {

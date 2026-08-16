@@ -66,6 +66,25 @@
           "default": false,
           "description": "Enable experimental H.264 streaming (requires adb/simctl and WebCodecs). Falls back to JPEG if not available."
         },
+        "secondarySimulator.directStream": {
+          "type": "boolean",
+          "default": false,
+          "description": "表示を webview 直結 MJPEG（<img>）にする。フレームが拡張ホストを経由せず、Chromium がネイティブ復号する。実験的。"
+        },
+        "secondarySimulator.streamScale": {
+          "type": "number",
+          "default": 1.0,
+          "minimum": 0.1,
+          "maximum": 1.0,
+          "description": "iOS: MJPEG の縮小率（1.0=原寸）。小さくすると帯域が下がる（WDA の mjpegScalingFactor を設定）。"
+        },
+        "secondarySimulator.streamQuality": {
+          "type": "number",
+          "default": 80,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "iOS: MJPEG の JPEG 品質（1-100）。streamScale と併用して帯域を調整する。"
+        },
         "secondarySimulator.tapThreshold": {
           "type": "number",
           "default": 10,
@@ -115,6 +134,7 @@
     "compile": "tsc -p ./",
     "build:native": "clang -fobjc-arc -O2 -framework Foundation -framework CoreFoundation -o native/simhid-server native/simhid-server.m",
     "build": "npm run compile && npm run build:native",
+    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "clean": "rm -rf out native/simhid-server"
