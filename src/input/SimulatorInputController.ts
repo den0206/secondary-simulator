@@ -40,6 +40,8 @@ export class SimulatorInputController {
       opts.deviceId,
       opts.getScreenSize
     );
+    // init 完了前に touch が来ても primary 未設定で落ちないようにする
+    this.primary = this.wdaFallback;
   }
 
   /** バックエンドを選択して初期化する。iOS Simulator なら HID を試み、失敗時は WDA。 */
@@ -82,7 +84,29 @@ export class SimulatorInputController {
     return this.primary.kind;
   }
 
-  // ---- 高レベル操作（既存 handleMessage から呼ぶ）----
+  // ---- 生ポインタ（Phase 1: webview の pointerdown/move/up をそのまま流す）----
+  // これにより HID 経路ではドラッグに画面が追従する（タップ/スワイプ判定は端末が行う）。
+
+  touchDown(x: number, y: number): Promise<void> {
+    return this.primary.touchDown(x, y);
+  }
+  touchMove(x: number, y: number): Promise<void> {
+    return this.primary.touchMove(x, y);
+  }
+  touchUp(x: number, y: number): Promise<void> {
+    return this.primary.touchUp(x, y);
+  }
+  touch2Down(x: number, y: number, x2: number, y2: number): Promise<void> {
+    return this.primary.touch2Down(x, y, x2, y2);
+  }
+  touch2Move(x: number, y: number, x2: number, y2: number): Promise<void> {
+    return this.primary.touch2Move(x, y, x2, y2);
+  }
+  touch2Up(x: number, y: number, x2: number, y2: number): Promise<void> {
+    return this.primary.touch2Up(x, y, x2, y2);
+  }
+
+  // ---- 高レベル操作（キーバインドコマンドや後方互換で使う）----
 
   async tap(x: number, y: number): Promise<void> {
     await this.primary.touchDown(x, y);
