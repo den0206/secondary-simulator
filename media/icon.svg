@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e0f7ff"/>
+      <stop offset="1" stop-color="#bae6fd"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- サイドバー（拡張が住む場所） -->
+  <rect x="64" y="96" width="76" height="320" rx="20" fill="#ffffff" opacity="0.28"/>
+  <rect x="86" y="132" width="32" height="10" rx="5" fill="#ffffff" opacity="0.9"/>
+  <rect x="86" y="164" width="32" height="10" rx="5" fill="#ffffff" opacity="0.55"/>
+  <rect x="86" y="196" width="32" height="10" rx="5" fill="#ffffff" opacity="0.55"/>
+
+  <!-- デバイス本体 -->
+  <rect x="182" y="72" width="268" height="368" rx="44" fill="#ffffff"/>
+  <rect x="206" y="104" width="220" height="288" rx="20" fill="url(#screen)"/>
+  <rect x="286" y="86" width="60" height="10" rx="5" fill="#bae6fd"/>
+  <rect x="276" y="410" width="80" height="12" rx="6" fill="#bae6fd"/>
+
+  <!-- タップのリップル（リアルタイム操作） -->
+  <circle cx="316" cy="248" r="72" fill="none" stroke="#0ea5e9" stroke-width="8" opacity="0.35"/>
+  <circle cx="316" cy="248" r="44" fill="none" stroke="#0ea5e9" stroke-width="10" opacity="0.7"/>
+  <circle cx="316" cy="248" r="18" fill="#0284c7"/>
+</svg>
