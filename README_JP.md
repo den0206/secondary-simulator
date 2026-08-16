@@ -63,6 +63,7 @@ npm run build
 
 VSCodeの設定で以下のオプションを調整できます：
 
+- **`secondarySimulator.autoConnect`**: 起動中のデバイスへ自動接続する（デフォルト: true）。未接続のあいだは 5 秒ごとに探す。Auto ボタンと連動し、Disconnect で OFF になる。
 - **`secondarySimulator.directStream`**: 表示を webview 直結 MJPEG（`<img>`）にする（デフォルト: false・実験的）
 - **`secondarySimulator.streamScale`**: iOS の MJPEG 縮小率（デフォルト: 1.0＝原寸）
 - **`secondarySimulator.streamQuality`**: iOS の MJPEG JPEG 品質 1-100（デフォルト: 80）
@@ -73,7 +74,7 @@ VSCodeの設定で以下のオプションを調整できます：
 
 1. VSCodeを開き、拡張機能をアクティブ化
 2. サイドバーに **Secondary Simulator** アクティビティバーが出る（ビュー名は Device Preview）
-3. ドロップダウンメニューからデバイスを選択（↻ で一覧を再取得）
+3. ドロップダウンメニューからデバイスを選択（↻ で一覧を再取得）。Auto ON なら起動中のデバイスへ自動で繋ぐ
 4. デバイス画面がリアルタイムで表示されます
 5. マウス/タッチでデバイスと対話：
    - **クリック/タップ**: シングルタップ
@@ -83,6 +84,7 @@ VSCodeの設定で以下のオプションを調整できます：
    - **Home**: プレビュー下のボタン
    - **Back**: Android のみ（iOS では無効）
    - **Trail**: リップルとドラッグ軌跡の表示切替
+   - **Auto**: 起動中デバイスへの自動接続の切替
 
 ## 🏗️ プロジェクト構造
 
@@ -91,7 +93,8 @@ secondary-simulator/
 ├── src/
 │   ├── extension.ts                    # 拡張機能のエントリーポイント
 │   ├── simulator/
-│   │   └── types.ts                   # 型定義
+│   │   ├── types.ts                   # 型定義
+│   │   └── autoConnect.ts             # 自動接続する起動中デバイスの選択
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理
 │   ├── capture/

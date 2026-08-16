@@ -61,6 +61,7 @@ npm run build
 
 ## ⚙️ Settings
 
+- **`secondarySimulator.autoConnect`**: automatically connect to a booted device (default: true). While disconnected the sidebar polls every 5 seconds. The Auto button stays in sync; Disconnect turns this off.
 - **`secondarySimulator.directStream`**: render the stream as a webview-native MJPEG `<img>` (default: false, experimental)
 - **`secondarySimulator.streamScale`**: MJPEG scaling factor for iOS (default: 1.0 = original size)
 - **`secondarySimulator.streamQuality`**: MJPEG JPEG quality for iOS, 1-100 (default: 80)
@@ -71,7 +72,7 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 
 1. Open VS Code and activate the extension
 2. The **Secondary Simulator** activity bar appears in the sidebar (view name: Device Preview)
-3. Pick a device from the dropdown (↻ refreshes the list)
+3. Pick a device from the dropdown (↻ refreshes the list). With Auto ON, a booted device is selected for you.
 4. The device screen is mirrored in real time
 5. Interact with the mouse or touchpad:
    - **Click / tap**: single tap
@@ -81,6 +82,7 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Home**: control below the preview
    - **Back**: Android only (disabled on iOS)
    - **Trail**: toggle ripple and drag trail overlay
+   - **Auto**: toggle automatic connection to a booted device
 
 ## 🏗️ Project structure
 
@@ -89,7 +91,8 @@ secondary-simulator/
 ├── src/
 │   ├── extension.ts                    # Extension entry point
 │   ├── simulator/
-│   │   └── types.ts                   # Type definitions
+│   │   ├── types.ts                   # Type definitions
+│   │   └── autoConnect.ts             # Pick a booted device for auto-connect
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview management
 │   ├── capture/

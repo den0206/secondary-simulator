@@ -207,12 +207,17 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `deviceChange {deviceId}` | 空文字ならキャプチャ停止。一覧から消えた選択もこれを送る |
-| `refresh` / `init` | デバイス一覧の再取得 |
-| `disconnect` | キャプチャ停止 |
+| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` 状態も返す |
+| `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
+| `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
 
 | ホスト → webview | 意味 |
 |---|---|
 | `devices` | 一覧。`platform` で Back の有効/無効を決める |
+| `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない） |
+| `searching` | 未接続で起動中デバイスを探している |
+| `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |
+| `autoConnect` | 設定値。Auto ボタンと揃える |
 | `streamUrl` / `frame` | 直結 MJPEG / canvas フレーム |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
 | `resources` | RSS / heap / 子プロセス / ストレージ（約 30 秒ごと） |
