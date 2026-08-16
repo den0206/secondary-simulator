@@ -5,8 +5,8 @@ import {Logger} from '../utils/Logger';
  * MJPEG 直結プロキシ（Phase 2）。
  *
  * webview の `<img src="http://localhost:PORT/stream?device=UDID">` から GET されると、
- * mobilecli の `POST /rpc screencapture(mjpeg)` へ中継し、multipart ストリームをそのまま
- * pipe で返す。これによりフレームが拡張ホストの postMessage を経由しなくなり、
+ * mobilecli の `POST /rpc device.screencapture(mjpeg)` でセッションを開き、返ってきた
+ * `/stream?s=...` の multipart をそのまま pipe で返す。フレームが拡張ホストの postMessage を経由しなくなり、
  * Chromium が multipart をネイティブ復号する（JS 側の手動パースが不要）。
  *
  * 画像の <img> 表示に CORS は不要（canvas 読み出しをしないため）。
@@ -49,7 +49,9 @@ export class MjpegProxy {
 
   private listen(port: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const server = http.createServer((req, res) => this.handle(req, res));
+      const server = http.createServer(
+        (req, res) => void this.handle(req, res)
+      );
       server.once('error', reject);
       server.listen(port, '127.0.0.1', () => {
         server.removeListener('error', reject);
@@ -59,7 +61,10 @@ export class MjpegProxy {
     });
   }
 
-  private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
+  private async handle(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const deviceId = url.searchParams.get('device');
     if (!deviceId) {
@@ -68,47 +73,69 @@ export class MjpegProxy {
       return;
     }
 
-    const body = JSON.stringify({
-      jsonrpc: '2.0',
-      id: '1',
-      method: 'screencapture',
-      params: {format: 'mjpeg', deviceId},
-    });
+    try {
+      const sessionUrl = await this.openSession(deviceId);
+      // クライアントが既に切れていたらセッションを開いたまま中継しない
+      if (res.writableEnded || res.destroyed) return;
 
-    const upstream = http.request(
-      {
-        host: '127.0.0.1',
-        port: this.mobileCliPort,
-        path: '/rpc',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-        },
-      },
-      (up) => {
-        res.writeHead(200, {
-          'Content-Type':
-            up.headers['content-type'] ??
-            'multipart/x-mixed-replace; boundary=--BoundaryString',
-          'Cache-Control': 'no-cache, private',
-          Connection: 'close',
-          Pragma: 'no-cache',
-        });
-        up.pipe(res);
-      }
-    );
+      const upstream = http.get(
+        {host: '127.0.0.1', port: this.mobileCliPort, path: sessionUrl},
+        (up) => {
+          res.writeHead(200, {
+            'Content-Type':
+              up.headers['content-type'] ??
+              'multipart/x-mixed-replace; boundary=BoundaryString',
+            'Cache-Control': 'no-cache, private',
+            Connection: 'close',
+            Pragma: 'no-cache',
+          });
+          up.pipe(res);
+        }
+      );
 
-    upstream.on('error', (err) => {
-      Logger.error('MJPEG proxy upstream error', err);
+      upstream.on('error', (err) => {
+        Logger.error('MJPEG proxy upstream error', err);
+        if (!res.headersSent) res.writeHead(502);
+        res.end();
+      });
+
+      // クライアント切断時に上流も止める
+      res.on('close', () => upstream.destroy());
+    } catch (err) {
+      Logger.error('MJPEG proxy session error', err as Error);
       if (!res.headersSent) res.writeHead(502);
       res.end();
-    });
+    }
+  }
 
-    // クライアント切断時に上流も止める
-    res.on('close', () => upstream.destroy());
-    upstream.write(body);
-    upstream.end();
+  /**
+   * mobilecli 0.1.x の `device.screencapture` はストリーム本体ではなく
+   * `/stream?s=...` のセッション URL を返す。multipart はその GET 側で流れる。
+   */
+  private async openSession(deviceId: string): Promise<string> {
+    const response = await fetch(`http://127.0.0.1:${this.mobileCliPort}/rpc`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'device.screencapture',
+        params: {format: 'mjpeg', deviceId},
+      }),
+    });
+    const body = (await response.json()) as {
+      result?: {sessionUrl?: string};
+      error?: {message?: string; data?: string};
+    };
+    const sessionUrl = body.result?.sessionUrl;
+    if (!sessionUrl) {
+      throw new Error(
+        body.error?.data ??
+          body.error?.message ??
+          'device.screencapture が sessionUrl を返さなかった'
+      );
+    }
+    return sessionUrl;
   }
 
   dispose(): void {

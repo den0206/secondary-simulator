@@ -107,22 +107,73 @@ export class MjpegCapture implements CaptureStrategy {
       return;
     }
 
+    // RPC 中の stop() でも打ち切れるように、GET より前から abort を共有する
+    const controller = new AbortController();
+    this.streamController = controller;
+    if (gen !== this.streamGen) {
+      controller.abort();
+      return;
+    }
+
     try {
-      const response = await fetch(`http://localhost:${this.serverPort}/rpc`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          method: 'screencapture',
-          id: '1',
-          jsonrpc: '2.0',
-          params: {
-            format: 'mjpeg',
-            deviceId: this.deviceId,
+      // mobilecli 0.1.x: RPC はストリーム本体ではなくセッション URL を返す。
+      // multipart は続けて GET する `/stream?s=...` 側で流れてくる。
+      const rpcResponse = await fetch(
+        `http://localhost:${this.serverPort}/rpc`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify({
+            method: 'device.screencapture',
+            id: '1',
+            jsonrpc: '2.0',
+            params: {
+              format: 'mjpeg',
+              deviceId: this.deviceId,
+            },
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      if (gen !== this.streamGen) {
+        controller.abort();
+        return;
+      }
+
+      if (!rpcResponse.ok) {
+        throw new Error(`HTTP error! status: ${rpcResponse.status}`);
+      }
+
+      const rpcBody = (await rpcResponse.json()) as {
+        result?: {sessionUrl?: string};
+        error?: {message?: string; data?: string};
+      };
+      if (gen !== this.streamGen) {
+        controller.abort();
+        return;
+      }
+
+      const sessionUrl = rpcBody.result?.sessionUrl;
+      if (!sessionUrl) {
+        throw new Error(
+          rpcBody.error?.data ??
+            rpcBody.error?.message ??
+            'device.screencapture が sessionUrl を返さなかった'
+        );
+      }
+
+      const response = await fetch(
+        `http://localhost:${this.serverPort}${sessionUrl}`,
+        {signal: controller.signal}
+      );
+
+      if (gen !== this.streamGen) {
+        controller.abort();
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -132,13 +183,17 @@ export class MjpegCapture implements CaptureStrategy {
         throw new Error('ReadableStream not supported');
       }
 
-      this.streamController = new AbortController();
       const reader = response.body.getReader();
       this.streamReader = reader;
 
       // MJPEGストリームを処理
       this.processMjpegStream(reader, gen);
     } catch (error) {
+      // stop() 中の abort は異常ではない（再接続もしない）
+      if ((error as Error).name === 'AbortError') {
+        Logger.info('MJPEG stream aborted before start');
+        return;
+      }
       Logger.error('Failed to start MJPEG stream', error as Error);
       if (gen === this.streamGen) {
         this.isCapturing = false;
@@ -155,7 +210,8 @@ export class MjpegCapture implements CaptureStrategy {
     }
 
     if (this.streamReader) {
-      this.streamReader.cancel();
+      // abort 済みのストリームでは cancel() が reject する（無視してよい）
+      this.streamReader.cancel().catch(() => {});
       this.streamReader = null;
     }
 

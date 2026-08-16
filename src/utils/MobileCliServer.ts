@@ -80,6 +80,57 @@ export class MobileCliServer {
     }
   }
 
+  // 0.0.x は `devices`、0.1.x は `devices.list`。名前が通るサーバだけ再利用する。
+  private async isRpcCompatible(port: number): Promise<boolean> {
+    try {
+      const response = await fetch(`http://localhost:${port}/rpc`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'devices.list',
+          params: {includeOffline: false},
+        }),
+        signal: AbortSignal.timeout(1500),
+      });
+      if (!response.ok) return false;
+      const body = (await response.json()) as {result?: unknown; error?: unknown};
+      return body.result != null && body.error == null;
+    } catch {
+      return false;
+    }
+  }
+
+  // npx フォールバック用。ハードコードすると package.json の ^ と乖離する。
+  private npxPackageSpec(): string {
+    const path = require('path') as typeof import('path');
+    const fs = require('fs') as typeof import('fs');
+    try {
+      const installed = require('@mobilenext/mobilecli/package.json') as {
+        version?: string;
+      };
+      if (installed.version) {
+        return `@mobilenext/mobilecli@${installed.version}`;
+      }
+    } catch {
+      // node_modules に無いときだけ下へ
+    }
+    try {
+      const pkgPath = path.join(__dirname, '..', '..', 'package.json');
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+        dependencies?: Record<string, string>;
+      };
+      const spec = pkg.dependencies?.['@mobilenext/mobilecli'];
+      if (spec) {
+        return `@mobilenext/mobilecli@${spec.replace(/^[~^]/, '')}`;
+      }
+    } catch {
+      // 読めなければ最後の手段
+    }
+    return '@mobilenext/mobilecli@0.1.64';
+  }
+
   private async findAvailablePort(
     minPort: number,
     maxPort: number
@@ -128,10 +179,14 @@ export class MobileCliServer {
 
     // 既存の稼働中サーバを範囲全体から探して再利用する（default ポートだけでなく、
     // 過去に別ポートで起動したものも拾えるようにする）。
+    // 0.0.x は RPC 名が違うので /health だけでは不十分。devices.list が通るものだけ使う。
     const rangeStart = MobileCliServer.DEFAULT_SERVER_PORT;
     const rangeEnd = MobileCliServer.DEFAULT_SERVER_PORT + 100;
     for (let port = rangeStart; port <= rangeEnd; port++) {
-      if (await this.checkServerHealth(port)) {
+      if (
+        (await this.checkServerHealth(port)) &&
+        (await this.isRpcCompatible(port))
+      ) {
         Logger.info(`Reusing running mobilecli server on port ${port}`);
         this.serverPort = port;
         return;
@@ -146,7 +201,9 @@ export class MobileCliServer {
       this.mobilecliPath === 'npx'
         ? [
             '-y',
-            '@mobilenext/mobilecli@latest',
+            // RPC 名は版で変わるので @latest は使わない。
+            // ピンは package.json / インストール済み版から取る
+            this.npxPackageSpec(),
             'server',
             'start',
             '--cors',

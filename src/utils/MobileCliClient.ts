@@ -48,7 +48,7 @@ export class MobileCliClient {
   // デバイス管理
   async getDeviceInfo(deviceId: string): Promise<DeviceInfoResponse> {
     return this.jsonRpcClient.sendJsonRpcRequest<DeviceInfoResponse>(
-      'device_info',
+      'device.info',
       {deviceId}
     );
   }
@@ -57,14 +57,18 @@ export class MobileCliClient {
     includeOffline: boolean = false
   ): Promise<ListDevicesResponse> {
     return this.jsonRpcClient.sendJsonRpcRequest<ListDevicesResponse>(
-      'devices',
+      'devices.list',
       {includeOffline}
     );
   }
 
   // 入力操作
   async tap(deviceId: string, x: number, y: number): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest('io_tap', {x, y, deviceId});
+    return this.jsonRpcClient.sendJsonRpcRequest('device.io.tap', {
+      x,
+      y,
+      deviceId,
+    });
   }
 
   async gesture(
@@ -77,7 +81,7 @@ export class MobileCliClient {
       button?: number;
     }>
   ): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest('io_gesture', {
+    return this.jsonRpcClient.sendJsonRpcRequest('device.io.gesture', {
       deviceId,
       actions,
     });
@@ -89,14 +93,14 @@ export class MobileCliClient {
     timeoutMs?: number
   ): Promise<void> {
     return this.jsonRpcClient.sendJsonRpcRequest(
-      'io_text',
+      'device.io.text',
       {text, deviceId},
       timeoutMs
     );
   }
 
   async pressButton(deviceId: string, button: ButtonType): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest('io_button', {
+    return this.jsonRpcClient.sendJsonRpcRequest('device.io.button', {
       deviceId,
       button,
     });
