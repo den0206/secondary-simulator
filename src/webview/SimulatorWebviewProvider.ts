@@ -3,7 +3,8 @@ import * as vscode from 'vscode';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {H264Streamer} from '../capture/H264Streamer';
 import {MjpegCapture} from '../capture/MjpegCapture';
-import {Device} from '../simulator/types';
+import {SimulatorInputController} from '../input/SimulatorInputController';
+import {Device, DeviceType} from '../simulator/types';
 import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
@@ -18,6 +19,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private h264Streamer: H264Streamer | null = null;
   private mobileCliServer: MobileCliServer;
   private mobileCliClient: MobileCliClient | null = null;
+  private inputController: SimulatorInputController | null = null;
   private currentDeviceId: string | null = null;
   private devices: Device[] = [];
   private screenSize: {width: number; height: number} | null = null;
@@ -216,6 +218,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         platform: d.platform,
         state: d.state === 'online' ? 'Booted' : 'Shutdown',
         runtime: d.version || '',
+        type: d.type as DeviceType,
       }));
       this.postMessage({type: 'devices', devices: this.devices});
       this.postMessage({
@@ -281,6 +284,32 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           `Failed to get device info for screen size: ${
             (error as Error).message
           }`
+        );
+      }
+    }
+
+    // 入力コントローラを初期化（iOS Simulator は HID 直接注入、それ以外は WDA フォールバック）
+    if (this.mobileCliClient) {
+      this.inputController?.dispose();
+      this.inputController = new SimulatorInputController({
+        deviceId,
+        platform: device.platform,
+        type: device.type ?? 'simulator',
+        mobileCliClient: this.mobileCliClient,
+        getScreenSize: () => this.screenSize,
+        sidecarBinaryPath: this.resolveSidecarPath(),
+        onBackendChange: (kind) => {
+          this.postMessage({
+            type: 'status',
+            text: kind === 'hid' ? '高速モード (HID)' : '互換モード (WDA)',
+          });
+        },
+      });
+      try {
+        await this.inputController.init();
+      } catch (error) {
+        Logger.warn(
+          `入力コントローラの初期化に失敗: ${(error as Error).message}`
         );
       }
     }
@@ -370,58 +399,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleTap(x: number, y: number): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot tap: no device selected');
       return;
     }
-
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       Logger.warn(`Tap ignored due to invalid coordinates: x=${x}, y=${y}`);
       return;
     }
-
-    const clampedX = this.clamp01(x);
-    const clampedY = this.clamp01(y);
-
-    try {
-      // mobilecliクライアントを初期化（まだ初期化されていない場合）
-      if (!this.mobileCliClient) {
-        Logger.debug('Initializing mobilecli client for tap operation');
-        if (!this.mobileCliServer.isServerRunning()) {
-          await this.mobileCliServer.launchServer();
-        }
-        const serverPort = this.mobileCliServer.getServerPort();
-        const jsonRpcClient = new JsonRpcClient(
-          `http://localhost:${serverPort}`
-        );
-        this.mobileCliClient = new MobileCliClient(jsonRpcClient);
-      }
-
-      // 正規化座標をピクセル座標に変換（mobilecliサーバーは整数座標を期待）
-      let pixelX: number;
-      let pixelY: number;
-      if (this.screenSize) {
-        pixelX = Math.round(clampedX * this.screenSize.width);
-        pixelY = Math.round(clampedY * this.screenSize.height);
-      } else {
-        // 画面サイズが取得できていない場合、エラーをスロー
-        throw new Error(
-          'Screen size not available. Please wait for device initialization.'
-        );
-      }
-
-      Logger.debug(
-        `Sending tap: deviceId=${this.currentDeviceId}, normalized(${clampedX}, ${clampedY}) -> pixel(${pixelX}, ${pixelY})`
-      );
-      await this.mobileCliClient.tap(this.currentDeviceId, pixelX, pixelY);
-      Logger.debug('Tap sent successfully');
-    } catch (error) {
-      Logger.error(
-        `Failed to send tap: deviceId=${this.currentDeviceId}, x=${clampedX}, y=${clampedY}`,
-        error as Error
-      );
-      throw error;
-    }
+    await this.inputController.tap(this.clamp01(x), this.clamp01(y));
   }
 
   private async handleSwipe(
@@ -431,11 +417,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     y2: number,
     durationMs?: number
   ): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot swipe: no device selected');
       return;
     }
-
     if (
       !Number.isFinite(x1) ||
       !Number.isFinite(y1) ||
@@ -447,149 +432,32 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       );
       return;
     }
-
-    const clampedX1 = this.clamp01(x1);
-    const clampedY1 = this.clamp01(y1);
-    const clampedX2 = this.clamp01(x2);
-    const clampedY2 = this.clamp01(y2);
-    // durationを短縮：最小50ms、最大500ms（遅延を最小化）
-    const safeDuration =
-      typeof durationMs === 'number' && Number.isFinite(durationMs)
-        ? Math.max(50, Math.min(durationMs, 500))
-        : undefined;
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      if (!this.screenSize) {
-        throw new Error(
-          'Screen size not available. Please wait for device initialization.'
-        );
-      }
-
-      // 正規化座標をピクセル座標に変換
-      const pixelX1 = Math.round(clampedX1 * this.screenSize.width);
-      const pixelY1 = Math.round(clampedY1 * this.screenSize.height);
-      const pixelX2 = Math.round(clampedX2 * this.screenSize.width);
-      const pixelY2 = Math.round(clampedY2 * this.screenSize.height);
-
-      const actions = [
-        {type: 'pointerMove', duration: 0, x: pixelX1, y: pixelY1},
-        {type: 'pointerDown', button: 0},
-        {
-          type: 'pointerMove',
-          duration: safeDuration || 100, // デフォルトを300msから100msに短縮
-          x: pixelX2,
-          y: pixelY2,
-        },
-        {type: 'pointerUp', button: 0},
-      ];
-      Logger.debug(
-        `Sending swipe: deviceId=${
-          this.currentDeviceId
-        }, (${pixelX1}, ${pixelY1}) -> (${pixelX2}, ${pixelY2}), duration=${
-          safeDuration || 100
-        }ms`
-      );
-      await this.mobileCliClient.gesture(this.currentDeviceId, actions);
-      Logger.debug('Swipe sent successfully');
-    } catch (error) {
-      Logger.error('Failed to send swipe', error as Error);
-      throw error;
-    }
+    await this.inputController.swipe(
+      this.clamp01(x1),
+      this.clamp01(y1),
+      this.clamp01(x2),
+      this.clamp01(y2),
+      durationMs
+    );
   }
 
   private async handleGesture(
     points: Array<{x: number; y: number; duration: number}>
   ): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot send gesture: no device selected');
       return;
     }
-
     if (!points || points.length === 0) {
       Logger.warn('Gesture ignored: no points provided');
       return;
     }
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      if (!this.screenSize) {
-        throw new Error(
-          'Screen size not available. Please wait for device initialization.'
-        );
-      }
-
-      // mobiledeck方式: 複数のポイントをactionsに変換
-      const actions: Array<{
-        type: string;
-        duration?: number;
-        x?: number;
-        y?: number;
-        button?: number;
-      }> = [];
-
-      if (points.length > 0) {
-        // 正規化座標をピクセル座標に変換
-        const clampedPoints = points.map((p) => ({
-          x: Math.round(this.clamp01(p.x) * this.screenSize!.width),
-          y: Math.round(this.clamp01(p.y) * this.screenSize!.height),
-          duration: p.duration,
-        }));
-
-        // 最初のポイント - 開始位置に移動
-        actions.push({
-          type: 'pointerMove',
-          duration: 0,
-          x: clampedPoints[0].x,
-          y: clampedPoints[0].y,
-        });
-
-        // ポインターを下げる
-        actions.push({
-          type: 'pointerDown',
-          button: 0,
-        });
-
-        // 中間ポイントを通過
-        // mobiledeck方式: durationは前のポイントからの経過時間を使用
-        for (let i = 1; i < clampedPoints.length; i++) {
-          // durationの計算：前のポイントからの経過時間
-          // 最後のポイントは100ms、それ以外は実際の経過時間（最小1ms）
-          const duration =
-            i < clampedPoints.length - 1
-              ? Math.max(
-                  clampedPoints[i].duration - clampedPoints[i - 1].duration,
-                  1 // 最小1ms（0msはmobilecliサーバーが処理できない可能性があるため）
-                )
-              : 100; // 最後のポイントは100ms（mobiledeck方式）
-          actions.push({
-            type: 'pointerMove',
-            duration: duration,
-            x: clampedPoints[i].x,
-            y: clampedPoints[i].y,
-          });
-        }
-
-        // ポインターを上げる
-        actions.push({
-          type: 'pointerUp',
-          button: 0,
-        });
-      }
-
-      Logger.debug(
-        `Sending gesture: deviceId=${this.currentDeviceId}, points=${points.length}, actions=${actions.length}`
-      );
-      await this.mobileCliClient.gesture(this.currentDeviceId, actions);
-      Logger.debug('Gesture sent successfully');
-    } catch (error) {
-      Logger.error('Failed to send gesture', error as Error);
-      throw error;
-    }
+    const clamped = points.map((p) => ({
+      x: this.clamp01(p.x),
+      y: this.clamp01(p.y),
+      duration: p.duration,
+    }));
+    await this.inputController.gesture(clamped);
   }
 
   private async handleLongPress(
@@ -597,150 +465,65 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     y: number,
     durationMs?: number
   ): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot long-press: no device selected');
       return;
     }
-
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       Logger.warn(
         `Long press ignored due to invalid coordinates: x=${x}, y=${y}`
       );
       return;
     }
-
     const config = vscode.workspace.getConfiguration('secondarySimulator');
     const defaultDuration = config.get<number>('longPressDuration', 600);
     const duration =
       typeof durationMs === 'number' && Number.isFinite(durationMs)
         ? Math.max(200, Math.min(durationMs, 2000))
         : defaultDuration;
-
-    const clampedX = this.clamp01(x);
-    const clampedY = this.clamp01(y);
-    const epsilon = 0.001;
-    const x2 = this.clamp01(clampedX + epsilon);
-    const y2 = this.clamp01(clampedY + epsilon);
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      if (!this.screenSize) {
-        throw new Error(
-          'Screen size not available. Please wait for device initialization.'
-        );
-      }
-
-      // 正規化座標をピクセル座標に変換
-      const pixelX = Math.round(clampedX * this.screenSize.width);
-      const pixelY = Math.round(clampedY * this.screenSize.height);
-      const pixelX2 = Math.round(x2 * this.screenSize.width);
-      const pixelY2 = Math.round(y2 * this.screenSize.height);
-
-      const actions = [
-        {type: 'pointerMove', duration: 0, x: pixelX, y: pixelY},
-        {type: 'pointerDown', button: 0},
-        {type: 'pointerMove', duration, x: pixelX2, y: pixelY2},
-        {type: 'pointerUp', button: 0},
-      ];
-      await this.mobileCliClient.gesture(this.currentDeviceId, actions);
-    } catch (error) {
-      Logger.error('Failed to send long press', error as Error);
-      throw error;
-    }
+    await this.inputController.longPress(
+      this.clamp01(x),
+      this.clamp01(y),
+      duration
+    );
   }
 
   private async handleDoubleTap(x: number, y: number): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot double-tap: no device selected');
       return;
     }
-
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       Logger.warn(
         `Double tap ignored due to invalid coordinates: x=${x}, y=${y}`
       );
       return;
     }
-
-    const clampedX = this.clamp01(x);
-    const clampedY = this.clamp01(y);
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      if (!this.screenSize) {
-        throw new Error(
-          'Screen size not available. Please wait for device initialization.'
-        );
-      }
-
-      // 正規化座標をピクセル座標に変換
-      const pixelX = Math.round(clampedX * this.screenSize.width);
-      const pixelY = Math.round(clampedY * this.screenSize.height);
-
-      await this.mobileCliClient.tap(this.currentDeviceId, pixelX, pixelY);
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      await this.mobileCliClient.tap(this.currentDeviceId, pixelX, pixelY);
-    } catch (error) {
-      Logger.error('Failed to send double tap', error as Error);
-      throw error;
-    }
+    await this.inputController.doubleTap(this.clamp01(x), this.clamp01(y));
   }
 
   private async handleKeypress(key: string, special?: boolean): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot send key: no device selected');
       return;
     }
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      await this.mobileCliClient.inputText(this.currentDeviceId, key);
-    } catch (error) {
-      Logger.error('Failed to send key', error as Error);
-      throw error;
-    }
+    await this.inputController.keypress(key, special);
   }
 
   async pressHome(): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot press home: no device selected');
       return;
     }
-
-    try {
-      Logger.debug(`Pressing home on device: ${this.currentDeviceId}`);
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      await this.mobileCliClient.pressButton(this.currentDeviceId, 'HOME');
-      Logger.debug('Home pressed successfully');
-    } catch (error) {
-      Logger.error('Failed to press home', error as Error);
-      throw error;
-    }
+    await this.inputController.home();
   }
 
   async pressBack(): Promise<void> {
-    if (!this.currentDeviceId) {
+    if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot press back: no device selected');
       return;
     }
-
-    try {
-      if (!this.mobileCliClient) {
-        throw new Error('mobilecli client is not initialized');
-      }
-      await this.mobileCliClient.pressButton(this.currentDeviceId, 'BACK');
-    } catch (error) {
-      Logger.error('Failed to press back', error as Error);
-      throw error;
-    }
+    await this.inputController.back();
   }
 
   private stopCapture(): void {
@@ -752,6 +535,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.h264Streamer.dispose();
       this.h264Streamer = null;
     }
+    if (this.inputController) {
+      this.inputController.dispose();
+      this.inputController = null;
+    }
+  }
+
+  /** 同梱の simhid-server バイナリのパス。存在しなければ WDA フォールバックになる。 */
+  private resolveSidecarPath(): string {
+    return vscode.Uri.joinPath(
+      this.extensionUri,
+      'native',
+      'simhid-server'
+    ).fsPath;
   }
 
   private disconnect(): void {
