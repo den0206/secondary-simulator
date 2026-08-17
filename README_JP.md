@@ -67,6 +67,10 @@ VSCodeの設定で以下のオプションを調整できます：
 - **`secondarySimulator.directStream`**: 表示を webview 直結 MJPEG（`<img>`）にする（デフォルト: false・実験的）
 - **`secondarySimulator.streamScale`**: iOS の MJPEG 縮小率（デフォルト: 1.0＝原寸）
 - **`secondarySimulator.streamQuality`**: iOS の MJPEG JPEG 品質 1-100（デフォルト: 80）
+- **`secondarySimulator.captureSource`**: `auto`（デフォルト）は HID サイドカー経由で iOS Simulator のフレームバッファを取り込む（ソフトウェアキーボード・ステータスバーも写る）。`wda` は従来の mobilecli/WDA MJPEG（アプリのウィンドウのみ）。サイドカーが使えないときは自動で WDA へ降格する。
+- **`secondarySimulator.captureFps`**: サイドカー取り込みの上限 fps（デフォルト: 30）。変化のないフレームは送られない。
+- **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG の最大幅 px（デフォルト: 640）
+- **`secondarySimulator.keyInput`**: iOS Simulator へのキー入力経路。`hid`（デフォルト・高速）または `wda`（1文字あたり約 370ms）。HID のキーはハードウェアキーボード扱いになるためソフトウェアキーボードが出ない。サイドバーにソフトキーボードを映したいときは `wda`。タッチは常に HID。
 
 タップ/スワイプ/ロングプレスの判定はデバイス側が行うため、閾値の設定項目はありません。
 

@@ -65,6 +65,10 @@ npm run build
 - **`secondarySimulator.directStream`**: render the stream as a webview-native MJPEG `<img>` (default: false, experimental)
 - **`secondarySimulator.streamScale`**: MJPEG scaling factor for iOS (default: 1.0 = original size)
 - **`secondarySimulator.streamQuality`**: MJPEG JPEG quality for iOS, 1-100 (default: 80)
+- **`secondarySimulator.captureSource`**: `auto` (default) grabs the iOS Simulator's framebuffer through the HID sidecar — the software keyboard and status bar are included; `wda` keeps the old mobilecli/WDA MJPEG stream, which only renders the app's own window. Falls back to WDA automatically when the sidecar is unavailable.
+- **`secondarySimulator.captureFps`**: cap for sidecar capture (default: 30). Unchanged frames are not sent.
+- **`secondarySimulator.captureMaxWidth`**: JPEG width sent by the sidecar, in px (default: 640)
+- **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a *hardware* keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
 
 There are no gesture threshold settings: tap, swipe, and long press are all recognized on the device side.
 

@@ -31,7 +31,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
                                          └─ input（操作）
 ```
 
-- **capture**: `MjpegCapture`（拡張ホストが中継し canvas 描画）と `MjpegProxy`
+- **capture**: iOS Simulator で HID サイドカーが生きているときは `SidecarCapture`
+  （端末のフレームバッファを直接 JPEG 化。**WDA 経路にはソフトウェアキーボードと
+  ステータスバーが写らない**ため。`docs/sidecar-protocol.md` §3.5）。
+  それ以外は `MjpegCapture`（拡張ホストが中継し canvas 描画）と `MjpegProxy`
   （webview の `<img>` に直結。`secondarySimulator.directStream` で切替）。
   multipart の解析は `MjpegParser` が持つ（ネットワークに触らないので単体テスト可能）。
   フレームは base64 の文字列で webview へ渡す。`MjpegProxy` は起動毎のトークンを
@@ -40,7 +43,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **input**: `SimulatorInputController` が司令塔。**iOS Simulator かつサイドカーが
   存在する場合だけ** HID 直接注入（`HidSidecarBackend` → `SimhidSidecar` →
   `native/simhid-server`）を使い、それ以外と HID 失敗時は `WdaBackend`
-  （mobilecli 経由）へ降格する。
+  （mobilecli 経由）へ降格する。**キー入力だけは `secondarySimulator.keyInput` で
+  WDA へ回せる**（HID のキーはハードウェアキーボード扱いになり、iOS がソフトウェア
+  キーボードを描かなくなるため。`docs/ios-hid-injection.md` §6）。タッチは常に HID。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに

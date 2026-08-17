@@ -258,6 +258,27 @@ void *IndigoHIDMessageForKeyboardArbitrary(uint64_t usageCode, uint64_t op);
 | `,` | 0x36 | `/` | 0x38 |
 | `;` | 0x33 | ← → ↓ ↑ | 0x50 0x4f 0x51 0x52 |
 
+### ソフトウェアキーボードは出なくなる（2026-08-17 実測）
+
+`IndigoHIDMessageForKeyboardArbitrary` は**ハードウェアキーボードの入力**として届く。
+iOS は HW キーボード接続中にソフトウェアキーボードを出さないので、**1 キー注入した
+時点で画面から消える**。Simulator の I/O ▸ キーボード ▸ ハードウェアキーボードを接続
+（⌘K）が ON の状態と同じ。
+
+実測手順と結果:
+
+1. Spotlight を開きソフトウェアキーボードが出た状態にする
+   → WDA の MJPEG（`:13201`）フレームにもキーボードが写る（**キャプチャ側は無実**）
+2. `{"cmd":"keyDown","usage":4}` / `keyUp` を 1 往復送る
+   → 文字は入るが、直後にソフトウェアキーボードが消える
+3. 以後フォーカスし直しても出ない。SpringBoard 再起動・backboardd 再起動・
+   端末の再起動でも戻らなかった（⌘K を OFF にするのが復帰手段）
+
+HID キー入力とソフトウェアキーボード表示は**原理的に両立しない**。サイドバーに
+キーボードを映したい場合は `secondarySimulator.keyInput: "wda"` で文字入力だけ
+WDA(`device.io.text`) へ回す。1 文字あたり約 370ms だが、端末側の入力ソース
+（英字/かな）にも左右されなくなる。タッチは HID のまま。
+
 ### 修飾キー
 
 ```c

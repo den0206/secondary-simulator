@@ -21,6 +21,11 @@
 
 ### 追加
 
+- iOS Simulator の画面をサイドカー経由でフレームバッファから直接取り込むようにした
+  （`secondarySimulator.captureSource`）。WDA のスクリーンショットはアプリのウィンドウしか
+  描かないため、ソフトウェアキーボードとステータスバーが写らなかった
+- `secondarySimulator.keyInput` — iOS のキー入力経路を HID / WDA で切り替える。
+  HID のキーはハードウェアキーボード扱いになり、iOS がソフトウェアキーボードを出さない
 - `Secondary Simulator: Save Screenshot` — 接続中デバイスの画面を保存する
 - `Secondary Simulator: Show Logs` — 出力チャンネルを開く
 - `Secondary Simulator: Select Device` を QuickPick 化（従来はビューへフォーカスするだけだった）
