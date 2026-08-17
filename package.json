@@ -2,7 +2,7 @@
   "name": "secondary-simulator",
   "displayName": "Secondary Simulator",
   "description": "Display iOS/Android simulators in the sidebar with real-time screen capture",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "publisher": "yuuki-sakai",
   "icon": "media/icon.png",
   "license": "MIT",
@@ -120,9 +120,9 @@
         },
         "secondarySimulator.streamScale": {
           "type": "number",
-          "default": 1.0,
+          "default": 1,
           "minimum": 0.1,
-          "maximum": 1.0,
+          "maximum": 1,
           "description": "iOS: MJPEG の縮小率（1.0=原寸）。小さくすると帯域が下がる（WDA の mjpegScalingFactor を設定）。"
         },
         "secondarySimulator.streamQuality": {
