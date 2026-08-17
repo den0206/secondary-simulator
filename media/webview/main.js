@@ -336,6 +336,13 @@ function showFrame(base64) {
   img.src = 'data:image/jpeg;base64,' + base64;
 }
 
+// 表示を止める。src="" にすると Chromium はページ自身の URL を読みに行くので、
+// 属性ごと外す（直結ストリームではこれが GET の切断になる）。
+function clearImage() {
+  streamMode = false;
+  img.removeAttribute('src');
+}
+
 img.addEventListener('load', () => {
   paintedFrames++;
   setOverlayVisible(false);
@@ -397,8 +404,7 @@ function cleanup() {
   order.length = 0;
   mode = 0;
   // 表示を閉じる（直結ストリームなら接続も切れる）
-  streamMode = false;
-  img.src = '';
+  clearImage();
 }
 
 // ---- 拡張ホストからのメッセージ ----------------------------------------------
@@ -513,10 +519,8 @@ window.addEventListener('message', (event) => {
       break;
 
     case 'pauseStream':
-      // 非表示・切替時。overlay は触らず表示だけ閉じる（再開時に streamUrl / frame が来る）。
-      // 直結ストリームではこれが GET の切断になる。
-      streamMode = false;
-      img.src = '';
+      // 非表示・切替時。overlay は触らず表示だけ閉じる（再開時に streamUrl / frame が来る）
+      clearImage();
       break;
   }
 });

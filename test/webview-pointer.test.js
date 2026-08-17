@@ -36,6 +36,8 @@ function makeEl(id, opts = {}) {
     releasePointerCapture() {},
     appendChild() {},
     removeChild() {},
+    // removeAttribute('src') は .src も空にする（実 DOM と同じ）
+    removeAttribute(name) { if (name === 'src') this.src = ''; },
     remove() {},
     querySelector: () => ({textContent: ''}),
     getContext: () => ({
