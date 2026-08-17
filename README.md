@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/icon.png" width="128" alt="Secondary Simulator">
+  <img src="https://raw.githubusercontent.com/den0206/secondary-simulator/main/media/icon.png" width="128" alt="Secondary Simulator">
 </p>
 
 # Secondary Simulator
@@ -11,6 +11,10 @@
 **English** | [日本語](README_JP.md)
 
 A VS Code / Cursor extension that shows iOS Simulators and Android Emulators in the sidebar and lets you drive them in real time.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/den0206/secondary-simulator/main/media/demo.gif" width="400" alt="Driving an iOS Simulator from the sidebar">
+</p>
 
 ## 🎯 Overview
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/icon.png" width="128" alt="Secondary Simulator">
+  <img src="https://raw.githubusercontent.com/den0206/secondary-simulator/main/media/icon.png" width="128" alt="Secondary Simulator">
 </p>
 
 # Secondary Simulator
@@ -11,6 +11,10 @@
 [English](README.md) | **日本語**
 
 VSCode / Cursor 拡張機能として、iOS/Androidシミュレータとエミュレータをサイドバーに表示し、リアルタイムで操作できる機能を提供します。
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/den0206/secondary-simulator/main/media/demo.gif" width="400" alt="サイドバーから iOS Simulator を操作する様子">
+</p>
 
 ## 🎯 概要
 
