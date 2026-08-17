@@ -103,6 +103,7 @@ VSCodeの設定で以下のオプションを調整できます：
 | `Press Back` | Back ボタン・Android のみ（`Cmd+Shift+B`） |
 | `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`） |
 | `Show Logs` | 出力パネルの Secondary Simulator を開く |
+| `Clear Logs` | 出力チャンネルを空にする（VS Code が全文をメモリに持つため） |
 
 キーバインドはサイドバーにフォーカスがあるときだけ効きます。
 
@@ -135,7 +136,7 @@ secondary-simulator/
 │       ├── MobileCliClient.ts         # mobilecliクライアント
 │       ├── MobileCliServer.ts         # mobilecliサーバー管理
 │       ├── JsonRpcClient.ts           # JSON-RPC 2.0クライアント
-│       └── ResourceStats.ts           # RSS / heap / 子プロセス / ストレージ
+│       └── ResourceStats.ts           # RSS / heap / 子プロセス / 拡張ディレクトリ
 ├── native/
 │   └── simhid-server.m                # HID 注入サイドカー（macOS/iOS Simulator）
 ├── media/

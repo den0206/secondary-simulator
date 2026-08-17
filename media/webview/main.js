@@ -497,7 +497,9 @@ window.addEventListener('message', (event) => {
         chip('ホスト', message.rssMb) +
         chip('heap', message.heapUsedMb) +
         chip('子プロセス', message.childrenMb) +
-        chip('ストレージ', message.storageMb);
+        // 測っているのは拡張ディレクトリ（VSIX 同梱物）だけ。mobilecli が入れる
+        // WebDriverAgent や npx の npm キャッシュは含まれないので「ストレージ」とは呼ばない。
+        chip('拡張', message.storageMb);
       break;
     }
 

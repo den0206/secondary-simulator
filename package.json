@@ -84,6 +84,11 @@
         "title": "Show Logs",
         "category": "Secondary Simulator",
         "icon": "$(output)"
+      },
+      {
+        "command": "simulator.clearLogs",
+        "title": "Clear Logs",
+        "category": "Secondary Simulator"
       }
     ],
     "menus": {

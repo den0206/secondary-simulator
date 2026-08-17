@@ -40,6 +40,17 @@ export class Logger {
     Logger.outputChannel?.show();
   }
 
+  /**
+   * 出力チャンネルを空にする。
+   *
+   * OutputChannel の中身は VS Code がメモリに保持し、古い行を捨てる API が無い。
+   * 拡張側で減らす手段はこれだけなので、コマンドとして導線を出している
+   * （docs/project-review.md §3.5.7）。
+   */
+  static clear(): void {
+    Logger.outputChannel?.clear();
+  }
+
   static dispose(): void {
     Logger.outputChannel?.dispose();
     Logger.outputChannel = null;
