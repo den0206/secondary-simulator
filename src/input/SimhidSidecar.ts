@@ -55,6 +55,12 @@ export class SimhidSidecar {
    */
   public onFrame?: (base64: string) => void;
 
+  /**
+   * 取り込みが生きている合図（約2秒毎）。SidecarCapture が停止検出に使う。
+   * **静止画面では frame が 1 枚も来ない**ので、frame の途絶だけでは死活を判定できない。
+   */
+  public onCaptureAlive?: () => void;
+
   constructor(private readonly binaryPath: string) {}
 
   isFatal(): boolean {
@@ -173,6 +179,10 @@ export class SimhidSidecar {
       case 'frame':
         // 高頻度パス。ログもコピーもせず、そのまま渡す
         if (typeof msg.data === 'string') this.onFrame?.(msg.data);
+        break;
+      case 'captureAlive':
+        // 2秒毎。ログを出すと出力チャンネルが膨らむので数えるだけ
+        this.onCaptureAlive?.();
         break;
       case 'ready':
         Logger.info(`simhid-server ready (pid=${msg.pid})`);

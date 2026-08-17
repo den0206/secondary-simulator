@@ -16,6 +16,59 @@ export interface CaptureRate {
   kbps: number;
 }
 
+/** 実際にサイドカーへ送る取り込み設定。 */
+export interface EffectiveCapture {
+  fps: number;
+  maxWidth: number;
+  quality: number;
+}
+
+/** 取り込みの粗さを決める外部条件。 */
+export interface CaptureContext {
+  /** 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。未報告なら null。 */
+  viewportWidth: number | null;
+  /** 指が触れている最中か。 */
+  interacting: boolean;
+}
+
+/** 操作中でも超えない fps。これ以上は端末の更新レートを超えるので意味が無い。 */
+const MAX_FPS = 60;
+/** 送る最小幅。これ以下だと何が映っているか分からない。 */
+const MIN_WIDTH = 160;
+
+/**
+ * 設定値・表示幅・操作状態から、実際に送る取り込み設定を決める。
+ *
+ * 方針（docs/sync-enhancement.md §3.4）:
+ * - **設定値は上限として扱う。** 表示が狭いときに要らない画素を送らない。
+ *   広げたときは設定値で頭打ちになる（帯域が黙って増えないため。鮮明にしたい人は
+ *   `captureMaxWidth` を上げる）。
+ * - **操作中だけ fps を上げる。** 追従が要るのはドラッグ中だけで、静止中に
+ *   同じレートで回すのはエンコードの無駄。上げ幅は 2 倍・上限 60fps。
+ *   **通常時は設定値のまま**なので、今より遅くなる状況は無い。
+ */
+export function effectiveCaptureConfig(
+  config: EffectiveCapture,
+  context: CaptureContext
+): EffectiveCapture {
+  const base = clampFps(config.fps);
+  const fps = context.interacting ? Math.min(MAX_FPS, base * 2) : base;
+
+  const limit = Math.max(MIN_WIDTH, Math.round(config.maxWidth) || MIN_WIDTH);
+  const wanted =
+    context.viewportWidth && context.viewportWidth > 0
+      ? Math.round(context.viewportWidth)
+      : limit;
+  const maxWidth = Math.min(limit, Math.max(MIN_WIDTH, wanted));
+
+  return {fps, maxWidth, quality: config.quality};
+}
+
+function clampFps(fps: number): number {
+  if (!Number.isFinite(fps) || fps <= 0) return 1;
+  return Math.min(MAX_FPS, Math.max(1, Math.round(fps)));
+}
+
 /**
  * 変わったときに取り込みを張り直す必要がある設定。
  *

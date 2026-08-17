@@ -92,6 +92,7 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `modifier` | `bit`（16..20）, `down`（bool） | 修飾キー |
 | `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解） |
 | `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6) | 画面バッファの JPEG 配信を開始（§3.5） |
+| `captureConfig` | 同上 | 配信中の設定を**張り直さずに**変える（§3.5） |
 | `captureStop` | — | 同 停止 |
 | `ping` | — | 生存確認 |
 
@@ -118,6 +119,7 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `portLost` | `device` | HID ポート断を検知（自動でクライアント再生成を試みる） |
 | `recovered` | `device` | 再生成に成功した |
 | `frame` | `device`, `w`, `h`, `data`（base64 JPEG） | 画面フレーム（`captureStart` 中のみ） |
+| `captureAlive` | `device`, `ticks`, `frames`, `noSurface` | 取り込みが生きている合図（約2秒毎）。§3.5 |
 
 ### 3.5 画面取り込み（`captureStart` / `frame`）
 
@@ -138,6 +140,25 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
   `write` がブロックし、そのぶん取り込みも止まる（＝キューを作らない背圧）。
 - 実測（iPhone 17 / 640px / q60）: 1 枚 68KB、静止画面で約 0.5MB/s、
   最大 30fps。WDA 経路（2.9MB/s・アプリのみ）より軽く、写る範囲も広い。
+
+**生存通知（`captureAlive`）と停止検出。** 送るのは変化したフレームだけなので、
+**静止画面ではフレームが 1 枚も出ない**。拡張ホストはフレームの途絶だけでは
+「画面が動いていない」のか「取り込みが死んだ」のかを区別できないため、
+取り込み中は約2秒毎に `captureAlive` を送る。拡張ホスト（`SidecarCapture`）は
+これを 1 度でも受け取ってから停止検出（10 秒）を張る
+（**通知を送らない古いバイナリを、静止画面のたびに再起動しないため**）。
+
+**descriptor の取り直し。** シミュレータを再起動すると descriptor が古くなり、
+`maskedFramebufferSurface` が nil を返し続ける。以前はこれを黙って飛ばすだけで
+**画面が固まったまま復帰しなかった**。連続 60 tick（約2秒相当）で
+`SimDeviceIOClient` から取り直す。
+
+**`captureConfig` を張り直しの代わりに使う。** 表示幅への追従と操作中の fps 引き上げは
+頻繁に起きる（拡張ホストが `ResizeObserver` と `touchDown`/`touchUp` から送る）。
+`captureStop` → `captureStart` で作り直すと、その間のフレームが落ちて画面が一瞬止まる。
+`captureConfig` は取り込みキュー上で値だけ差し替え、次の tick から効く
+（幅や品質が変わっても静止画面だと同じ JPEG になって捨てられるため、
+比較対象をその場で落として 1 枚出させる）。
 
 ---
 
@@ -283,6 +304,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `refresh` / `init` | デバイス一覧の再取得。`autoConnect` 状態も返す |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
+| `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限） |
 
 | ホスト → webview | 意味 |
 |---|---|
@@ -291,9 +313,9 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `searching` | 未接続で起動中デバイスを探している |
 | `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |
 | `autoConnect` | 設定値。Auto ボタンと揃える |
-| `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ canvas フレーム（`data` は base64 文字列） |
+| `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ 個別フレーム（`data` は base64 文字列）。どちらも同じ `<img>` に出す（frame は data URL） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
-| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える |
+| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム） |
 | `mode` | 入力経路のラベル（`高速モード (HID)` / `互換モード (WDA)`）。`null` で隠す。フッターの `#mode` とステータスバーが同じ文字列を使う |
 | `disconnected` | 切断 |
 

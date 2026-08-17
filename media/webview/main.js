@@ -341,6 +341,27 @@ img.addEventListener('load', () => {
   setOverlayVisible(false);
 });
 
+// 表示中の実ピクセル幅をホストへ伝える。取り込みの幅がこれに追従する
+// （狭いサイドバーへ 640px を送り続けない。docs/sync-enhancement.md §2.6）。
+let lastReportedWidth = 0;
+function reportViewport() {
+  // <img> ではなくコンテナを測る（img は最初のフレームまで display:none で幅が 0）
+  const width = Math.round(
+    container.getBoundingClientRect().width * (window.devicePixelRatio || 1)
+  );
+  // 数 px の揺れで送らない（ホスト側も同じ幅で弾くが、無駄な postMessage を作らない）
+  if (!width || Math.abs(width - lastReportedWidth) < 16) return;
+  lastReportedWidth = width;
+  post('viewport', {width});
+}
+
+// ResizeObserver が無い環境（古い Electron）では resize イベントで代用する
+if (typeof ResizeObserver === 'function') {
+  new ResizeObserver(reportViewport).observe(container);
+} else {
+  window.addEventListener('resize', reportViewport);
+}
+
 img.addEventListener('error', () => {
   // 直結ストリームは接続そのものが切れた合図。個別フレームは 1 枚壊れただけなので
   // 次のフレームで直る（毎秒 30 回届く経路で警告を出さない）。

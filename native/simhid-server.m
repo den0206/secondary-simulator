@@ -17,6 +17,7 @@
 //   modifier { bit, down }                       bit は 16..20
 //   text { value }                               ASCII 一括入力
 //   captureStart { fps?, maxWidth?, quality? }   画面バッファの JPEG 配信を開始
+//   captureConfig { fps?, maxWidth?, quality? }  配信中の設定を張り直さずに変える
 //   captureStop                                  同 停止
 //   ping
 //
@@ -24,6 +25,8 @@
 //   応答: { "id": <num>, "ok": <bool>, "error": <str?>, "latencyMs": <num?> }
 //   通知: { "event": "ready"|"fatal"|"portLost"|"recovered", ... }
 //         { "event": "frame", "device": <udid>, "w": <num>, "h": <num>, "data": <base64 JPEG> }
+//         { "event": "captureAlive", "device": <udid>, "ticks": <num>, "frames": <num>,
+//           "noSurface": <num> }  取り込みが生きている合図（約2秒毎）
 //
 // 全て非公開 API に依存。Xcode 更新で壊れうる（起動時にシンボル検査し fatal を出す）。
 #import <CoreImage/CoreImage.h>
@@ -100,6 +103,18 @@ static uint64_t nowNs(void) {
  * 保持は常に 1 枚ぶん（実測 640px/q60 で約 68KB）。
  */
 @property(nonatomic, strong) NSData *lastJpeg;
+/**
+ * 生存通知（captureAlive）用のカウンタ。
+ *
+ * **静止画面では frame が 1 枚も出ない**ので、親は「画面が動いていない」のか
+ * 「取り込みが死んだ」のかを frame の有無だけでは区別できない。約2秒毎に
+ * これを送り、親が停止検出を張れるようにする（docs/sync-enhancement.md §2.5）。
+ */
+@property(nonatomic, assign) uint64_t lastAliveNs;
+@property(nonatomic, assign) uint32_t tickCount;
+@property(nonatomic, assign) uint32_t frameCount;
+/** 連続して面が取れなかった tick 数。続くと descriptor を取り直す。 */
+@property(nonatomic, assign) uint32_t noSurfaceTicks;
 @end
 
 @implementation DeviceState
@@ -296,11 +311,50 @@ static id displayDescriptorForDevice(id simDevice, id *ioClientOut) {
   return nil;
 }
 
+// 約2秒毎の生存通知。取れなくても（trylock 失敗）次の機会に送る。
+static const uint64_t kAliveIntervalNs = 2000000000ULL;  // 2s
+// 面が取れないまま何 tick 続いたら descriptor を取り直すか（約2秒相当を上限とする）
+static const uint32_t kReacquireAfterTicks = 60;
+
+static void emitAlive(DeviceState *st, NSString *udid) {
+  if (emitFrameLine(@{
+        @"event": @"captureAlive",
+        @"device": udid,
+        @"ticks": @(st.tickCount),
+        @"frames": @(st.frameCount),
+        @"noSurface": @(st.noSurfaceTicks),
+      })) {
+    st.tickCount = 0;
+    st.frameCount = 0;
+  }
+  // 送れなくても時刻は進める。詰まっている間に通知だけ溜め込まない
+  st.lastAliveNs = nowNs();
+}
+
 // gCaptureQueue 上。1 フレーム取り込んで JPEG にし、frame 通知として送る。
 static void captureTick(DeviceState *st, NSString *udid) {
   @autoreleasepool {
+    st.tickCount++;
+    if (nowNs() - st.lastAliveNs >= kAliveIntervalNs) emitAlive(st, udid);
+
     id surfObj = surfaceForDescriptor(st.displayDescriptor);
-    if (!surfObj) return;  // 画面が無い間（消灯・切替中）は黙って飛ばす
+    if (!surfObj) {
+      // 画面が無い間（消灯・切替中）は黙って飛ばす。ただし**戻ってこない**場合がある
+      // ―― シミュレータを再起動すると descriptor が古くなり、以後ずっと nil を返す。
+      // 一定回数続いたら取り直す（docs/sync-enhancement.md §2.5）。
+      if (++st.noSurfaceTicks < kReacquireAfterTicks) return;
+      st.noSurfaceTicks = 0;
+      id client = nil;
+      id desc = displayDescriptorForDevice(st.simDevice, &client);
+      if (!desc) return;  // まだ駄目。次の周期でまた試す
+      fprintf(stderr, "[simhid] display descriptor を取り直した\n");
+      st.ioClient = client;  // 旧 client は ARC が解放する（port も閉じる）
+      st.displayDescriptor = desc;
+      st.hasLastSeed = NO;
+      st.lastJpeg = nil;
+      return;
+    }
+    st.noSurfaceTicks = 0;
     IOSurfaceRef surface = (__bridge IOSurfaceRef)surfObj;
     uint32_t seed = IOSurfaceGetSeed(surface);
     if (st.hasLastSeed && seed == st.lastSeed) return;  // 画面が変わっていない
@@ -332,7 +386,10 @@ static void captureTick(DeviceState *st, NSString *udid) {
       @"data": [jpeg base64EncodedStringWithOptions:0],
     });
     // 送れなかったぶんを「直前のフレーム」にすると、画面が止まったまま復帰しない
-    if (sent) st.lastJpeg = jpeg;
+    if (sent) {
+      st.lastJpeg = jpeg;
+      st.frameCount++;
+    }
   }
 }
 
@@ -368,7 +425,46 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
     if (s) captureTick(s, udid);
   });
   st.captureTimer = timer;
+  st.lastAliveNs = nowNs();
+  st.tickCount = 0;
+  st.frameCount = 0;
+  st.noSurfaceTicks = 0;
   dispatch_resume(timer);
+  return YES;
+}
+
+/**
+ * 配信中の設定だけを差し替える（gQueue 上）。
+ *
+ * captureStop → captureStart で張り直すと、その間のフレームが落ちて画面が一瞬止まる。
+ * 表示幅への追従と操作中の fps 引き上げは頻繁に起きる（docs/sync-enhancement.md §3.4）
+ * ので、張り直さずに変えられる必要がある。
+ *
+ * 値の書き換えは取り込みと同じキューへ載せる（gCaptureQueue 上の captureTick が
+ * 読んでいるフィールドを、別のキューから直接触らない）。
+ */
+static BOOL configureCapture(DeviceState *st, double fps, double maxWidth, double quality,
+                             NSString **err) {
+  if (!st.captureTimer) {
+    *err = @"取り込みが開始されていない";
+    return NO;
+  }
+  dispatch_source_t timer = st.captureTimer;
+  __weak DeviceState *weakSt = st;
+  dispatch_async(gCaptureQueue, ^{
+    DeviceState *s = weakSt;
+    if (!s || s.captureTimer != timer) return;  // 途中で止まった/張り直された
+    s.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
+    s.maxWidth = maxWidth;
+    // 幅や品質が変わっても画面が静止していると次のフレームが出ない
+    // （seed も JPEG も同じなので捨てられる）。比較対象を落として1枚出させる。
+    s.hasLastSeed = NO;
+    s.lastJpeg = nil;
+    double hz = MIN(MAX(fps, 1.0), 60.0);
+    uint64_t interval = (uint64_t)(NSEC_PER_SEC / hz);
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval,
+                              interval / 10);
+  });
   return YES;
 }
 
@@ -533,6 +629,9 @@ static void handleCommand(NSDictionary *cmd) {
   } else if ([name isEqualToString:@"captureStart"]) {
     ok = startCapture(st, udid, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
                       numAt(cmd, @"quality", 0.6), &err);
+  } else if ([name isEqualToString:@"captureConfig"]) {
+    ok = configureCapture(st, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
+                          numAt(cmd, @"quality", 0.6), &err);
   } else if ([name isEqualToString:@"captureStop"]) {
     stopCapture(st);
   } else if ([name isEqualToString:@"text"]) {

@@ -2,7 +2,11 @@
 const assert = require('node:assert');
 require('./helpers/vscode-stub').install();
 
-const {captureRate, shouldRestartCapture} = require('../out/capture/CaptureStats');
+const {
+  captureRate,
+  shouldRestartCapture,
+  effectiveCaptureConfig,
+} = require('../out/capture/CaptureStats');
 
 let failures = 0;
 function check(name, fn) {
@@ -96,6 +100,70 @@ check('何も変わっていなければ張り直さない', () => {
 
 check('判定できないとき（イベント無し）は従来どおり張り直す', () => {
   assert.strictEqual(shouldRestartCapture(undefined), true);
+});
+
+console.log('\n3) 表示幅と操作状態に追従する取り込み設定');
+
+const cfg = {fps: 30, maxWidth: 640, quality: 0.8};
+const ctx = (over) => Object.assign({viewportWidth: null, interacting: false}, over);
+
+check('未報告なら設定値のまま', () => {
+  assert.deepStrictEqual(effectiveCaptureConfig(cfg, ctx()), {
+    fps: 30,
+    maxWidth: 640,
+    quality: 0.8,
+  });
+});
+
+check('狭いサイドバーには狭く送る', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(cfg, ctx({viewportWidth: 320})).maxWidth,
+    320
+  );
+});
+
+check('設定値が上限（広げても勝手に増やさない）', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(cfg, ctx({viewportWidth: 1800})).maxWidth,
+    640
+  );
+});
+
+check('極端に狭くても最低幅を割らない', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(cfg, ctx({viewportWidth: 20})).maxWidth,
+    160
+  );
+});
+
+check('操作中は 2 倍', () => {
+  assert.strictEqual(effectiveCaptureConfig(cfg, ctx({interacting: true})).fps, 60);
+});
+
+check('操作中でも 60fps を超えない', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig({...cfg, fps: 50}, ctx({interacting: true})).fps,
+    60
+  );
+});
+
+check('通常時は設定値のまま（今より遅くならない）', () => {
+  for (const fps of [1, 10, 30, 60]) {
+    assert.strictEqual(effectiveCaptureConfig({...cfg, fps}, ctx()).fps, fps);
+  }
+});
+
+check('壊れた設定値でも 1fps を下回らない', () => {
+  assert.strictEqual(effectiveCaptureConfig({...cfg, fps: 0}, ctx()).fps, 1);
+  assert.strictEqual(effectiveCaptureConfig({...cfg, fps: NaN}, ctx()).fps, 1);
+  assert.strictEqual(effectiveCaptureConfig({...cfg, fps: -5}, ctx()).fps, 1);
+});
+
+check('品質はそのまま通す', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig({...cfg, quality: 0.3}, ctx({interacting: true})).quality,
+    0.3
+  );
 });
 
 console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
