@@ -12,6 +12,9 @@ src/**
 native/*.m
 .gitignore
 .vscodeignore
+# ローカルの .env（OVSX トークン等）。git 管理外だが VSIX には入りうるので明示的に外す。
+.env
+.env.*
 **/tsconfig.json
 **/.eslintrc.json
 **/*.map

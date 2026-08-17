@@ -4,6 +4,7 @@ node_modules/
 .vscode-test/
 *.log
 .DS_Store
+.env
 
 # ネイティブビルド生成物（npm run build:native で生成）
 native/simhid-server
