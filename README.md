@@ -128,7 +128,7 @@ secondary-simulator/
 │   │   └── SimulatorWebviewProvider.ts # Webview management
 │   ├── capture/
 │   │   ├── CaptureStrategy.ts         # Capture interface
-│   │   ├── MjpegCapture.ts            # MJPEG streaming (canvas path)
+│   │   ├── MjpegCapture.ts            # MJPEG streaming (relayed by the host)
 │   │   ├── MjpegParser.ts             # Incremental multipart parsing
 │   │   ├── MjpegProxy.ts              # MJPEG proxy (webview <img> path)
 │   │   ├── Screenshot.ts              # device.screenshot response decoding
@@ -176,7 +176,7 @@ secondary-simulator/
 
 ### Capture
 
-1. **MJPEG via canvas (default)** — the extension host receives the `mobilecli` stream, forwards it to the webview, and draws to a canvas
+1. **Per-frame delivery (default)** — the extension host receives frames, forwards them to the webview, and shows them as a data URL on an `<img>`. On the iOS Simulator, `SidecarCapture` encodes the device framebuffer directly (the software keyboard is included), and the capture width and fps follow the panel size and whether you are touching the screen
 2. **Direct MJPEG (`directStream`, experimental)** — `MjpegProxy` serves the stream so the webview `<img>` receives it directly and Chromium decodes it natively
 
 ### Device input

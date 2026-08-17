@@ -41,12 +41,17 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **capture**: iOS Simulator で HID サイドカーが生きているときは `SidecarCapture`
   （端末のフレームバッファを直接 JPEG 化。**WDA 経路にはソフトウェアキーボードと
   ステータスバーが写らない**ため。`docs/sidecar-protocol.md` §3.5）。
-  それ以外は `MjpegCapture`（拡張ホストが中継し canvas 描画）と `MjpegProxy`
+  それ以外は `MjpegCapture`（拡張ホストが中継）と `MjpegProxy`
   （webview の `<img>` に直結。`secondarySimulator.directStream` で切替）。
   multipart の解析は `MjpegParser` が持つ（ネットワークに触らないので単体テスト可能）。
-  フレームは base64 の文字列で webview へ渡す。`MjpegProxy` は起動毎のトークンを
-  URL に要求する（同じマシンの他プロセスから覗かれないため）。
-  iOS の帯域は `WdaSettings` が WDA の scale/quality を設定する。
+  **フレームは base64 の文字列のまま webview へ渡し、`<img>` の data URL にする**
+  （経路の途中で復号して詰め直さない。復号は Chromium がやる）。
+  `MjpegProxy` は起動毎のトークンを URL に要求する（同じマシンの他プロセスから
+  覗かれないため）。iOS の帯域は `WdaSettings` が WDA の scale/quality を設定する。
+  **取り込みの粗さは固定ではない** — webview が報告する表示幅（× DPR）に幅を合わせ、
+  指を置いている間だけ fps を上げる（`captureConfig` で張り直さずに差し替える。
+  設定値は上限として扱う）。静止画面ではフレームが 1 枚も来ないので、死活は
+  サイドカーの生存通知（`captureAlive`）で見る（`docs/sync-enhancement.md`）。
 - **input**: `SimulatorInputController` が司令塔。**iOS Simulator かつサイドカーが
   存在する場合だけ** HID 直接注入（`HidSidecarBackend` → `SimhidSidecar` →
   `native/simhid-server`）を使い、それ以外と HID 失敗時は `WdaBackend`
@@ -101,7 +106,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   書き込みを増やさない。設定は `vscode.workspace.getConfiguration` だけで足りる。
   どうしても必要なら理由をここに書き、`ResourceStats` のサイズキャッシュも外す。
 - **無制限に伸びるバッファ・キュー・Map を作らない**。上限と破棄条件をセットで書く
-  （`MjpegCapture` の 10MB 上限、webview の `MAX_FRAME_QUEUE = 1`、軌跡 40 点）。
+  （`MjpegCapture` の 10MB 上限、`SimhidSidecar` の stdout 1MB 上限、軌跡 40 点、
+  pointer 10 件）。**捨てる判断も含む** — `sendNoWait` は stdin が詰まっている間
+  `touchMove` を捨てる（最新の座標だけが意味を持つので歪まない）。
+  webview はフレームを溜めない（`<img>` に渡し、間引きは Chromium がやる）。
 - **高頻度パスでログを出さない**。`touch*` は 60Hz で届く。OutputChannel は全文を
   メモリに持つので、1 イベント 1 行で確実に膨らむ。**リトライループも高頻度パス**
   （`MjpegCapture` の再接続は指数バックオフで、記録は最初の 3 回まで）。
@@ -110,10 +118,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   持つので、判定のために `getConfiguration` を呼ばない。
 - **確保したものは必ず捨てる**。`Disposable` はフィールドに保持して `dispose()` で
   外す（`resolveWebviewView` は再呼び出しされるので冒頭で前回分を捨てる）。
-  子プロセス（mobilecli / simhid-server / `AdbTouch` の adb shell）・タイマー・
-  `ImageBitmap` も同じ。
+  子プロセス（mobilecli / simhid-server / `AdbTouch` の adb shell）・タイマーも同じ。
+  非表示のあいだサイドカーを使い回す場合も、放置されたら解放する（2 分）。
 - **計測できる状態を保つ**。子プロセスを増やしたら pid を公開し、
   `SimulatorWebviewProvider.reportStats()` の集計対象に加える。
+  同期の質（受信 fps / 描画 fps / 帯域）も同じフッターに出す。**改善を入れる前に、
+  効果を確かめる手段を用意する**（`docs/sync-enhancement.md` §2.13）。
 
 ## 開発フロー
 

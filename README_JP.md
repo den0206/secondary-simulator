@@ -130,7 +130,7 @@ secondary-simulator/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理
 │   ├── capture/
 │   │   ├── CaptureStrategy.ts         # キャプチャインターフェース
-│   │   ├── MjpegCapture.ts            # MJPEGストリーミング実装（canvas 経路）
+│   │   ├── MjpegCapture.ts            # MJPEGストリーミング実装（拡張ホスト中継）
 │   │   ├── MjpegParser.ts             # multipart のインクリメンタル解析
 │   │   ├── MjpegProxy.ts              # MJPEG 直結プロキシ（webview <img> 経路）
 │   │   ├── Screenshot.ts              # device.screenshot 応答のデコード
@@ -179,8 +179,10 @@ secondary-simulator/
 
 ### キャプチャ方式
 
-1. **MJPEG（canvas 経路・デフォルト）**
-   - 拡張ホストが `mobilecli` の MJPEG を受けて webview に転送し canvas に描画
+1. **フレーム個別配信（デフォルト）**
+   - 拡張ホストがフレームを受けて webview へ転送し、`<img>` の data URL として表示
+   - iOS Simulator では `SidecarCapture` が端末のフレームバッファを直接 JPEG 化する
+     （ソフトウェアキーボードも写る）。取り込む幅と fps は表示幅と操作状態に追従する
 2. **MJPEG 直結（`directStream`・実験的）**
    - `MjpegProxy` 経由で webview の `<img>` が直接受信し、Chromium がネイティブ復号
 
