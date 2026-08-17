@@ -227,7 +227,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 |---|---|
 | `touchDown` / `touchMove` / `touchUp` | 1本指。座標は正規化。HID は同名コマンド、WDA は tap/gesture に再構成 |
 | `touch2Down` / `touch2Move` / `touch2Up` | 2本指（ピンチ等） |
-| `keypress {key, special}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3） |
+| `keypress {key, special, modifiers?}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3）。`modifiers`（`command`/`control`/`option`/`shift`）があれば `modifier` で挟んだ `keyDown`/`keyUp` を組む（HID 経路のみ。`text` は使えない — project-review.md §5.7） |
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
@@ -245,8 +245,9 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `autoConnect` | 設定値。Auto ボタンと揃える |
 | `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ canvas フレーム（`data` は base64 文字列） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
-| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ（約 30 秒ごと。WDA や npm キャッシュは含まない） |
-| `disconnected` / `status` | 切断と互換モード表示 |
+| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える |
+| `mode` | 入力経路のラベル（`高速モード (HID)` / `互換モード (WDA)`）。`null` で隠す。フッターの `#mode` とステータスバーが同じ文字列を使う |
+| `disconnected` | 切断 |
 
 旧メッセージ（`tap` / `swipe` / `longPress`）は webview から送らない。WDA 側の tap/gesture は Controller が `touch*` から作る。
 

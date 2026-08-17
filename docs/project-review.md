@@ -326,30 +326,73 @@ QuickPick で一覧から選んで接続する形にし、起動していない�
 そこへ辿り着く手段が無い状態だった。→ `simulator.showLogs` を追加し、
 ビュータイトルにも並べた。
 
-### 5.4 未対応の提案 **[提案]**
+### 5.4 mobilecli の RPC を使うもの
 
-mobilecli が既に RPC を提供しており、比較的小さく足せるもの:
+RPC 名は同梱バイナリのシンボル表で確認済み（`server.URLParams` / `server.DeviceBootParams` 等）。
 
-| 機能 | RPC | 価値 |
+| 機能 | RPC | 状況 |
 |---|---|---|
-| ディープリンクを開く | `device.url` | アプリ開発の反復が速くなる。実装量も小さい |
-| 画面の回転 | `device.io.orientation.set` / `.get` | 横向きの確認にシミュレータへ戻らなくて済む |
-| 画面録画 | `device.screenrecord` / `.stop` | 不具合報告用。保存先の扱いは screenshot と同じ形にできる |
-| デバイスの起動 | `device.boot` | 現在は「起動していません」で終わる。ここから起動できると自然 |
-| アプリの一覧・起動 | `device.apps.list` / `.launch` | 対象アプリへ直接飛べる |
+| ディープリンクを開く | `device.url` | **[実装済]** `Secondary Simulator: Open URL on Device`（§5.6） |
+| デバイスの起動 | `device.boot` | **[実装済]** QuickPick で停止中を選ぶと起動して繋ぐ（§5.5） |
+| 画面の回転 | `device.io.orientation.set` / `.get` | **[提案]** 横向きの確認にシミュレータへ戻らなくて済む。値の表記（`portrait` / `PORTRAIT`）が binary からは確定できず、実機確認が要る |
+| 画面録画 | `device.screenrecord` / `.stop` | **[提案]** 不具合報告用。保存先の扱いは screenshot と同じ形にできる |
+| アプリの一覧・起動 | `device.apps.list` / `.launch` | **[提案]** 対象アプリへ直接飛べる |
 
-コード側で完結するもの:
+### 5.5 停止中のデバイスを起動する **[実装済]**
 
-- **修飾キーの送出** — `HidModifier` と サイドカーの `modifier` コマンドは揃っているのに、
-  webview は `Shift` / `Control` / `Alt` / `Meta` を**捨てている**
-  （`main.js` の `keydown` で早期 return）。Cmd+A / Cmd+C が送れない。
-- **ログレベル設定** — `Logger.debug` が常に出力される。`OutputChannel` は全文を
-  メモリに持つので、`secondarySimulator.logLevel` で既定を info に落としたい。
+`Select Device` で停止していたデバイスを選ぶと「起動していません」で終わっていた。
+`device.boot` を投げ、一覧に `Booted` として現れるまで待ってから接続するようにした
+（2 秒 × 45 回 = 90 秒で打ち切る。起動要求の受理と起動完了は別なので待ちが要る）。
+
+### 5.6 ディープリンクを開く **[実装済]**
+
+`Secondary Simulator: Open URL on Device`。接続中のデバイスへ `device.url` を投げる。
+**RPC の実際の応答は未検証**（デバイスが要る）。失敗はメッセージを出して終わる。
+
+### 5.7 修飾キーの送出 **[実装済]**
+
+`HidModifier` とサイドカーの `modifier` コマンドは揃っていたのに、webview が
+`Shift` / `Control` / `Alt` / `Meta` を捨てていた（`keydown` で早期 return）ため
+Cmd+A / Cmd+C が送れなかった。
+
+webview は Cmd/Ctrl/Option を伴うときだけ `modifiers` を付けて送り、
+`SimulatorInputController.keyCombo` が modifier で挟んだ `keyDown`/`keyUp` を組む。
+
+**`text` コマンドは使えない。** サイドカーの `injectText` はバースト先頭の取りこぼし対策に
+Shift の捨てイベントを先に送るので、Cmd 押下中に呼ぶと Cmd+Shift が成立してしまう。
+そのため ASCII→usage の表を拡張ホスト側にも持つ（`usageForAsciiChar`。native の
+`usageForChar` と同じ表。二重管理になるが、これが理由）。
+
+押した修飾キーは `finally` で必ず離す。残ると以降の入力が全て Cmd 付きとして扱われるため、
+ここは失敗しても解放を止めない（`test/modifier-keys.test.js` §7）。
+
+WDA（`device.io.text`）は修飾キーを扱えないので、HID 経路のときだけ送る。
+
+### 5.8 ログレベル設定 **[実装済]**
+
+`secondarySimulator.logLevel`（`off` / `error` / `warn` / `info` / `debug`、既定 `info`）。
+`Logger.debug` が常に出ていたのを既定で落とす。`OutputChannel` は VS Code が全文を
+メモリに持ち古い行を捨てる API が無い（§3.5.7）ため、**書く量を絞ることが唯一の手段**。
+
+閾値は写しをフィールドに持つ（`log()` はメッセージ受信ごとに呼ばれるので、
+毎回 `getConfiguration` しない）。設定変更時に `Logger.refreshLevel()` で取り込む。
+
+### 5.9 ステータスバー表示 **[実装済]**
+
+接続中のデバイス名と入力経路（HID / WDA）をステータスバーへ出す。押すと
+`simulator.selectDevice` へ飛ぶ。未接続のときは隠す（常駐する情報ではない）。
+
+webview 側も同じラベルをフッターに出す。**HID→WDA の降格は無音で起きる**ので、
+遅くなった理由が見えるようにするのが主目的。表示文字列の組み立ては
+`renderStatus`（vscode に触らない純粋関数）に分け、`test/status-view.test.js` で検証する。
+
+フッターは `#mode`（textContent）と `#stats`（innerHTML）に分けた。リソース更新が
+30 秒ごとに innerHTML を作り直すため、経路の表示を巻き込ませないため。
+
+### 5.10 残る提案 **[提案]**
+
 - **Android の帯域設定** — `streamScale` / `streamQuality` は iOS 専用
   （WDA の設定を叩く実装）。Android にも相当の調整が要る。
-- **ステータスバー表示** — 接続中のデバイス名と HID/WDA の別。
-  現在 `status` メッセージは webview へ送っているが**捨てられている**
-  （`main.js` の `case 'status':` は空）。
 - **`directStream` の既定化** — Phase 2 の本命だが実験扱いのまま。
   実機で確認できたら既定を反転したい。
 
@@ -359,11 +402,13 @@ mobilecli が既に RPC を提供しており、比較的小さく足せるも�
 
 - **[提案] Lint / フォーマッタが無い** — ESLint も Prettier も設定が無い。
   インデントや引用符は概ね揃っているが、規約は人の目に頼っている。
-- **[提案] テストの登録が手作業** — `package.json` の `test` が個々のファイルを
-  直列に並べる形で、足し忘れても気づけない。`node --test test/*.test.js` にすると
-  ファイルを置くだけで走る。
-- **[提案] CI が macOS だけ** — ネイティブビルドと VSIX には macOS が要るが、
-  型チェックとテストは Linux でも走る。安価なジョブを 1 つ足すと、
+- **[修正済] テストの登録が手作業** — `package.json` の `test` が個々のファイルを
+  直列に並べる形で、足し忘れても気づけなかった。`node --test test/*.test.js` にして
+  ファイルを置くだけで走るようにした。`*.device-test.js` は `*.test.js` に一致しないので
+  従来どおり除外される。各テストは `process.exit` で結果を返す素の script のままで、
+  `node --test` は終了コードと未捕捉例外の両方を失敗として扱う（動作確認済み）。
+- **[修正済] CI が macOS だけ** — ネイティブビルドと VSIX には macOS が要るが、
+  型チェックとテストは Linux でも走る。`quick-check`（ubuntu-latest）を足したので、
   macOS ランナーの枯渇時にも壊れたことに気づける。
 - **[提案] README の二重管理** — `README.md` と `README_JP.md` が同じ内容を持ち、
   片方だけ古くなる。本 PR でも両方へ同じ変更を入れている。
@@ -384,3 +429,30 @@ mobilecli が既に RPC を提供しており、比較的小さく足せるも�
 
 **実機での検証は行っていない。** 特に §3.2（フレーム転送）と §5.1（スクリーンショット）は
 デバイスに繋いだ確認が要る。
+
+---
+
+## 8. 第 2 次（2026-08-17）— §5.4 / §6 の残りに着手
+
+前回「未対応の提案」として残した項目のうち、**外部の確認を待たずに閉じられるもの**を実装した。
+
+| 分類 | 対象 |
+|---|---|
+| 追加（UX） | 修飾キーの送出（§5.7）、ステータスバー表示（§5.9）、停止中デバイスの起動（§5.5）、ディープリンク（§5.6） |
+| 追加（運用） | ログレベル設定（§5.8） |
+| 開発基盤 | テスト登録の自動化・Linux CI（§6） |
+| テスト | 新規 3 ファイル 43 項目（修飾キー 22 / ログレベル 12 / ステータス 9）＋ webview 8 項目 |
+
+**実機での検証は行っていない。** デバイスに繋いだ確認が要るのは次の 3 点。
+
+- **修飾キー（§5.7）** — HID の `modifier` + `keyDown` が iOS Simulator 側で
+  Cmd+A として解釈されるか。`usageForAsciiChar` の表は native と一致させてあるが、
+  修飾キーを押したままキーを送る順序は実測していない。
+- **`device.boot`（§5.5）** — RPC 名とパラメータ（`deviceId`）は同梱バイナリの
+  シンボル表で確認済みだが、応答の形と「起動完了」の判定は未検証。
+  一覧の `Booted` を待つ形にしているので、応答が空でも動くはず。
+- **`device.url`（§5.6）** — 同上（`server.URLParams` / `json:"url"`）。
+
+残っている提案は §5.10（Android の帯域設定・`directStream` の既定化）、
+§5.4 の表（回転・録画・アプリ一覧）、§2.2（`Sec-Fetch-Site`・WDA ポート取得）、
+§6 の Lint / README の二重管理。
