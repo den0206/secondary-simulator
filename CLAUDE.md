@@ -21,6 +21,11 @@ npm run clean      # out/ と native/simhid-server を削除
 
 `test/*.device-test.js` は実機/シミュレータが要るため `npm test` には含めない。手動実行する。
 
+`sh scripts/check-xcode-hid.sh` はインストール済み Xcode すべてに
+`native/simhid-server --check` を当て、HID の私有シンボル（CoreSimulator /
+SimulatorKit）が解決できるかだけを見る。Xcode 更新で HID が壊れたときの一次検知で、
+CI の毎 push と週次 cron（`xcode-canary` ジョブ、macos-latest）で回る。
+
 デバッグは VS Code で F5（Extension Development Host）。ログは出力パネルの
 "Secondary Simulator" チャンネル（`src/utils/Logger.ts`）。
 
