@@ -2,8 +2,10 @@
 // 入力は生の Pointer Events をそのまま拡張ホストへ流す（Phase 1）。
 // タップ/スワイプ/ロングプレスの判定は端末側が行うため、ドラッグに画面が追従する。
 const vscode = acquireVsCodeApi();
-const canvas = document.getElementById('simulator-canvas');
-const ctx = canvas.getContext('2d');
+// 表示は <img> 1 つ。拡張ホストから届くフレーム（base64 JPEG）も、直結 MJPEG も
+// 同じ要素に出す。以前は canvas + createImageBitmap で描いていたが、
+// base64 を 1 バイトずつ詰め替えるループが要り、しかも同じ絵になるだけだった
+// （docs/sync-enhancement.md §2.10）。data URL を渡せば Chromium が復号する。
 const img = document.getElementById('simulator-img');
 const overlay = document.getElementById('overlay');
 const container = document.getElementById('simulator-container');
@@ -18,10 +20,9 @@ const lamp = document.getElementById('lamp');
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
-// 直結ストリーム時は <img>、それ以外は canvas が表示要素になる
-let usingImg = false;
+// 表示要素は常に <img>。座標の正規化とオーバーレイのサイズ合わせが参照する。
 function displayEl() {
-  return usingImg ? img : canvas;
+  return img;
 }
 
 // ---- 生ポインタ入力 ----------------------------------------------------------
@@ -142,7 +143,7 @@ function onPointerUp(e) {
   e.preventDefault();
 }
 
-// コンテナに束ねて、canvas / img どちらが表示中でも入力を受ける
+// コンテナに束ねて受ける（<img> はフレーム毎に src が変わるので直接は張らない）
 container.addEventListener('pointerdown', onPointerDown);
 container.addEventListener('pointermove', onPointerMove);
 container.addEventListener('pointerup', onPointerUp);
@@ -308,95 +309,55 @@ btnAuto.addEventListener('click', () => {
 });
 syncAutoButton();
 
-// ---- レンダリング（MJPEG フレーム）------------------------------------------
+// ---- レンダリング -----------------------------------------------------------
 
-let frameQueue = [];
-let currentBitmap = null;
-let isRendering = false;
-const MAX_FRAME_QUEUE = 1; // 最新フレームのみ保持
+// 直結 MJPEG（streamUrl）を表示しているか。フレーム個別配信と onerror の扱いが違う。
+let streamMode = false;
+// 実際に描けたフレーム数。resources の更新時に読んで 0 に戻す（貯めない）。
+// 拡張ホストが数える「受信 fps」との差が、そのまま落としたフレームになる。
+let paintedFrames = 0;
+let paintedSince = Date.now();
 
-// 拡張ホストは base64 文字列で送る（postMessage のシリアライズで膨らませないため）。
-// 配列で届く経路は古い拡張ホストとの組み合わせ用に残す。
-function normalizeToUint8Array(data) {
-  if (typeof data === 'string') return base64ToBytes(data);
-  // instanceof ではなく isView で見る（別 realm の TypedArray も受ける）
-  if (ArrayBuffer.isView(data)) {
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  }
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (data?.data && Array.isArray(data.data)) return new Uint8Array(data.data);
-  if (Array.isArray(data)) return new Uint8Array(data);
-  return null;
+/** 前回の集計からの描画 fps を返し、カウンタを 0 に戻す。 */
+function takePaintedFps() {
+  const now = Date.now();
+  const seconds = (now - paintedSince) / 1000;
+  const count = paintedFrames;
+  paintedFrames = 0;
+  paintedSince = now;
+  return seconds > 0 ? Math.round((count / seconds) * 10) / 10 : 0;
 }
 
-function base64ToBytes(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
+// 拡張ホストは base64 の JPEG を送る（postMessage のシリアライズで形がぶれないため）。
+// data URL にして <img> へ渡すと、復号も落としたフレームの間引きも Chromium がやる。
+function showFrame(base64) {
+  if (typeof base64 !== 'string' || !base64) return;
+  streamMode = false;
+  img.src = 'data:image/jpeg;base64,' + base64;
 }
 
-async function renderFrame(bytes) {
-  if (!bytes) return;
-  try {
-    const blob = new Blob([bytes], {type: 'image/jpeg'});
-    const bitmap = await createImageBitmap(blob);
-    if (currentBitmap) {
-      currentBitmap.close?.();
-      currentBitmap = null;
-    }
-    currentBitmap = bitmap;
-    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-    }
-    if (currentBitmap && ctx) {
-      ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
-    }
-  } catch (err) {
-    console.error('renderFrame failed', err);
-  }
-}
+img.addEventListener('load', () => {
+  paintedFrames++;
+  setOverlayVisible(false);
+});
 
-function dequeueAndRender() {
-  if (isRendering || frameQueue.length === 0) return;
-  isRendering = true;
-  const bytes = frameQueue.shift();
-  if (!bytes) {
-    isRendering = false;
-    return;
-  }
-  renderFrame(bytes).finally(() => {
-    isRendering = false;
-    dequeueAndRender();
-  });
-}
-
-function enqueueFrame(bytes) {
-  if (!bytes) return;
-  if (frameQueue.length >= MAX_FRAME_QUEUE) frameQueue = [];
-  frameQueue.push(bytes);
-  dequeueAndRender();
-}
+img.addEventListener('error', () => {
+  // 直結ストリームは接続そのものが切れた合図。個別フレームは 1 枚壊れただけなので
+  // 次のフレームで直る（毎秒 30 回届く経路で警告を出さない）。
+  if (streamMode) setOverlayVisible(true, 'ストリームに接続できません');
+});
 
 let overlayVisible = null; // 直近に適用した状態。frame 毎の DOM 書き換えを避ける
 let overlayText = null;
-let overlayUsingImg = null; // 表示要素が canvas と img のどちらだったか
 
 function setOverlayVisible(visible, text = 'Select a device to start') {
   if (!overlay) return;
-  // 'frame' は毎秒 26 回届く。状態が同じなら DOM を触らない。
-  // 表示要素の切替（img ⇄ canvas）は見た目が変わるので、必ず適用する。
-  if (
-    overlayVisible === visible &&
-    overlayUsingImg === usingImg &&
-    (!visible || overlayText === text)
-  ) {
+  // 'frame' は毎秒 30 回届く（load も同じ回数）。状態が同じなら DOM を触らない。
+  if (overlayVisible === visible && (!visible || overlayText === text)) {
     return;
   }
   overlayVisible = visible;
   overlayText = text;
-  overlayUsingImg = usingImg;
   // 画面が出ている＝接続中。オーバーレイの表示状態がそのまま接続状態になる。
   lamp.classList.toggle('on', !visible);
   lamp.title = visible ? '切断中' : '接続中';
@@ -404,34 +365,19 @@ function setOverlayVisible(visible, text = 'Select a device to start') {
   // 「…」を含む文言（Searching… / Connecting… 端末名）は待機中なのでスピナーを出す
   overlay.classList.toggle('busy', visible && text.includes('…'));
   overlay.querySelector('span').textContent = text;
-  // 表示中のメディア要素だけを見せる
-  const el = displayEl();
-  el.style.display = visible ? 'none' : 'block';
-  if (visible) {
-    canvas.style.display = 'none';
-    img.style.display = 'none';
-  }
+  img.style.display = visible ? 'none' : 'block';
 }
 
 function cleanup() {
   overlayVisible = null;
   overlayText = null;
-  overlayUsingImg = null;
-  if (currentBitmap) {
-    currentBitmap.close?.();
-    currentBitmap = null;
-  }
-  frameQueue = [];
-  isRendering = false;
   clearTrail();
   pointers.clear();
   order.length = 0;
   mode = 0;
-  // 直結ストリームを停止（接続を閉じる）
-  if (usingImg) {
-    img.src = '';
-    usingImg = false;
-  }
+  // 表示を閉じる（直結ストリームなら接続も切れる）
+  streamMode = false;
+  img.src = '';
 }
 
 // ---- 拡張ホストからのメッセージ ----------------------------------------------
@@ -492,23 +438,16 @@ window.addEventListener('message', (event) => {
     case 'streamUrl': {
       // Phase 2: <img> に MJPEG を直結。Chromium が multipart をネイティブ復号する。
       // 初回は WDA 起動待ちで最初のフレームまで数秒かかることがあるため、
-      // 実際に表示できるまでオーバーレイで待機中を示す。
-      usingImg = true;
-      canvas.style.display = 'none';
-      img.style.display = 'none';
+      // 実際に表示できるまでオーバーレイで待機中を示す（load で消える）。
+      streamMode = true;
       setOverlayVisible(true, 'Connecting…');
-      // setOverlayVisible(false) が displayEl()（= img）を表示状態にする
-      img.onload = () => setOverlayVisible(false);
-      img.onerror = () => setOverlayVisible(true, 'ストリームに接続できません');
       img.src = message.url;
       break;
     }
 
     case 'frame':
-      usingImg = false;
-      img.style.display = 'none';
-      enqueueFrame(normalizeToUint8Array(message.data));
-      setOverlayVisible(false);
+      // load ハンドラが paintedFrames を数え、オーバーレイを消す
+      showFrame(message.data);
       break;
 
     // 入力経路（HID 直接注入 / WDA 経由）。降格すると無音で遅くなるので見えるようにする。
@@ -520,14 +459,22 @@ window.addEventListener('message', (event) => {
 
     case 'resources': {
       // 値は拡張ホストが作った数値のみ。<b> ラベル付きのチップに並べる。
-      const chip = (label, mb) => `<span class="chip"><b>${label}</b> ${mb}MB</span>`;
+      const chip = (label, value) => `<span class="chip"><b>${label}</b> ${value}</span>`;
+      // 受信（拡張ホストが数えた fps）と描画（この webview が描けた数）を並べる。
+      // 差がそのまま落としたフレームで、同期の質はここに出る。
+      const painted = takePaintedFps();
+      const rate =
+        message.fps === undefined
+          ? ''
+          : chip('映像', `${message.fps}/${painted}fps ${message.kbps}KB/s`);
       statsEl.innerHTML =
-        chip('ホスト', message.rssMb) +
-        chip('heap', message.heapUsedMb) +
-        chip('子プロセス', message.childrenMb) +
+        rate +
+        chip('ホスト', message.rssMb + 'MB') +
+        chip('heap', message.heapUsedMb + 'MB') +
+        chip('子プロセス', message.childrenMb + 'MB') +
         // 測っているのは拡張ディレクトリ（VSIX 同梱物）だけ。mobilecli が入れる
         // WebDriverAgent や npx の npm キャッシュは含まれないので「ストレージ」とは呼ばない。
-        chip('拡張', message.storageMb);
+        chip('拡張', message.storageMb + 'MB');
       break;
     }
 
@@ -545,17 +492,15 @@ window.addEventListener('message', (event) => {
       break;
 
     case 'pauseStream':
-      // 非表示・切替時。overlay は触らず接続だけ閉じる（再開時に streamUrl が来る）
-      if (usingImg) {
-        img.src = '';
-      }
+      // 非表示・切替時。overlay は触らず表示だけ閉じる（再開時に streamUrl / frame が来る）。
+      // 直結ストリームではこれが GET の切断になる。
+      streamMode = false;
+      img.src = '';
       break;
   }
 });
 
-window.addEventListener('resize', () => {
-  if (currentBitmap) ctx.drawImage(currentBitmap, 0, 0, canvas.width, canvas.height);
-});
+// <img> は width:100% なのでリサイズ時に再描画は要らない（canvas 経路の名残を削除）。
 window.addEventListener('beforeunload', cleanup);
 
 vscode.postMessage({type: 'init'});

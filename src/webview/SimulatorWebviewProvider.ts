@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import * as os from 'node:os';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import {captureRate, shouldRestartCapture} from '../capture/CaptureStats';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {MjpegCapture} from '../capture/MjpegCapture';
 import {MjpegProxy} from '../capture/MjpegProxy';
@@ -41,6 +42,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private visibilityDisposable?: vscode.Disposable;
   private statsTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly STATS_INTERVAL_MS = 30_000;
+  /**
+   * 受け取ったフレームの数とバイト数。`reportStats` が読んで 0 に戻す
+   * （増える一方の入れ物にしない）。取り込みが効いているかを見る唯一の手段で、
+   * これが無いと同期の改善を評価できない（docs/sync-enhancement.md §2.13）。
+   * 数える以上のことはしない — フレームは高頻度パスなので。
+   */
+  private frameCount = 0;
+  private frameBytes = 0;
+  private lastStatsAtMs = Date.now();
   // 未接続のあいだだけ回すデバイス探索。接続したら止める。
   private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly AUTO_CONNECT_INTERVAL_MS = 5_000;
@@ -234,6 +244,17 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private async reportStats(): Promise<void> {
     if (!this.view) return;
+    // 計測値は取得の成否に関わらず、この tick で必ず 0 に戻す（次の期間と混ぜない）
+    const now = Date.now();
+    const rate = captureRate(
+      this.frameCount,
+      this.frameBytes,
+      now - this.lastStatsAtMs
+    );
+    this.frameCount = 0;
+    this.frameBytes = 0;
+    this.lastStatsAtMs = now;
+
     const pids = [
       this.mobileCliServer.getPid(),
       this.inputController?.sidecarPid,
@@ -241,7 +262,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     ].filter((p): p is number => typeof p === 'number');
     try {
       const stats = await collectResourceStats(this.extensionUri.fsPath, pids);
-      this.postMessage({type: 'resources', ...stats});
+      this.postMessage({type: 'resources', ...stats, ...rate});
     } catch (error) {
       Logger.warn(`リソース統計の取得に失敗: ${(error as Error).message}`);
     }
@@ -568,14 +589,17 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     this.currentCapture.setDevice(deviceId);
-    this.currentCapture.onFrame((frame) => {
+    this.currentCapture.onFrame((frameBase64) => {
+      // 高頻度パス（毎秒 20〜30 回）。ログも変換も挟まない。
       // base64 の文字列で渡す。Uint8Array のまま postMessage すると、シリアライザ次第で
       // `{"0":255,"1":216,...}` や `{type:'Buffer',data:[...]}` に化けて数倍に膨らむ
       // （webview 側が 3 通りの形を推測していたのはこのため）。
+      this.frameCount++;
+      this.frameBytes += frameBase64.length;
       this.postMessage({
         type: 'frame',
         encoding: 'base64',
-        data: Buffer.from(frame.buffer, frame.byteOffset, frame.byteLength).toString('base64'),
+        data: frameBase64,
       });
     });
 
@@ -965,8 +989,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     return randomUUID().replace(/-/g, '');
   }
 
-  onConfigurationChanged(): void {
-    if (this.currentCapture) {
+  /**
+   * @param event 何が変わったかを判定する。取り込みに関係ない設定
+   *   （`autoConnect` / `logLevel` / `keyInput`）で画面を切らないため。
+   */
+  onConfigurationChanged(event?: vscode.ConfigurationChangeEvent): void {
+    if (
+      this.currentCapture &&
+      shouldRestartCapture(event && ((s) => event.affectsConfiguration(s)))
+    ) {
       this.currentCapture.updateConfig();
     }
     // autoConnect の切り替えを即座に反映する（ON に戻したらその場で探しに行く）

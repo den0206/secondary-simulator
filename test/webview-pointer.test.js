@@ -7,9 +7,10 @@ const vm = require('vm');
 const SRC = path.join(__dirname, '..', 'media', 'webview', 'main.js');
 
 const sent = [];
-let lastBlobBytes = null; // renderFrame が Blob へ渡した最後のバイト列
 let webviewState; // vscode.getState/setState の保存先
 const listeners = {}; // "elementId:event" -> handler
+// 要素に addEventListener で張られたハンドラ（同じイベントに複数張れる）
+const elListeners = {}; // "elementId:event" -> [handler]
 
 function makeEl(id, opts = {}) {
   const el = {
@@ -22,7 +23,10 @@ function makeEl(id, opts = {}) {
       toggle(c, on) { on ? this._s.add(c) : this._s.delete(c); },
       contains(c) { return this._s.has(c); },
     },
-    addEventListener(ev, fn) { listeners[`${id}:${ev}`] = fn; },
+    addEventListener(ev, fn) {
+      listeners[`${id}:${ev}`] = fn;
+      (elListeners[`${id}:${ev}`] ||= []).push(fn);
+    },
     removeEventListener() {},
     getBoundingClientRect: () =>
       opts.rect || {left: 0, top: 0, width: 300, height: 600},
@@ -48,7 +52,6 @@ function makeEl(id, opts = {}) {
 }
 
 const els = {
-  'simulator-canvas': makeEl('simulator-canvas'),
   'simulator-img': makeEl('simulator-img'),
   overlay: makeEl('overlay'),
   'simulator-container': makeEl('simulator-container'),
@@ -82,16 +85,7 @@ const sandbox = {
   getComputedStyle: () => ({getPropertyValue: () => '#007acc'}),
   requestAnimationFrame: (fn) => { fn(); return 1; },
   cancelAnimationFrame: () => {},
-  setTimeout, clearTimeout, performance,
-  atob: (b64) => Buffer.from(b64, 'base64').toString('latin1'),
-  // renderFrame が Blob に渡したバイト列を覗けるようにしておく
-  Blob: class {
-    constructor(parts) {
-      this.parts = parts;
-      lastBlobBytes = parts && parts[0] ? parts[0] : null;
-    }
-  },
-  createImageBitmap: async () => ({width: 1, height: 1, close() {}}),
+  setTimeout, clearTimeout, performance, Date,
 };
 
 sandbox.globalThis = sandbox;
@@ -160,17 +154,26 @@ check('touch2Move→touch2Up→touchDown',
   JSON.stringify(t3));
 fire('simulator-container', 'pointerup', {pointerId: 1, clientX: 90, clientY: 300});
 
+// <img> の load / error は addEventListener で張られる
+function fireImg(ev) {
+  for (const fn of elListeners[`simulator-img:${ev}`] || []) fn({});
+}
+
 console.log('\n6) streamUrl で img 直結に切り替わる');
 sent.length = 0;
 listeners['window:message']({data: {type: 'streamUrl', url: 'http://localhost:12200/stream?device=X'}});
 check('img.src が設定される', els['simulator-img'].src.includes('/stream?device=X'),
   els['simulator-img'].src);
 check('最初のフレームまで待機表示', !els.overlay.classList.contains('hidden'));
-check('canvas が隠れる', els['simulator-canvas'].style.display === 'none');
-// 最初のフレーム到達（<img> の onload 相当）
-els['simulator-img'].onload();
-check('onload で img が表示される', els['simulator-img'].style.display === 'block');
-check('onload でオーバーレイが消える', els.overlay.classList.contains('hidden'));
+// 最初のフレーム到達
+fireImg('load');
+check('load で img が表示される', els['simulator-img'].style.display === 'block');
+check('load でオーバーレイが消える', els.overlay.classList.contains('hidden'));
+// 直結中の error は接続断。フレーム個別配信の error は無視される（14b）
+fireImg('error');
+check('直結の error は接続断として出す',
+  !els.overlay.classList.contains('hidden') &&
+    els.overlay.classList.contains('busy') === false);
 
 console.log('\n7) 直結中も pointer が img の矩形で正規化される');
 sent.length = 0;
@@ -185,7 +188,7 @@ check('img.src がクリアされる', els['simulator-img'].src === '', els['sim
 
 console.log('\n8b) pauseStream は src だけ閉じる');
 listeners['window:message']({data: {type: 'streamUrl', url: 'http://localhost:12200/stream?device=X'}});
-els['simulator-img'].onload();
+fireImg('load');
 listeners['window:message']({data: {type: 'pauseStream'}});
 check('pauseStream で img.src がクリアされる', els['simulator-img'].src === '', els['simulator-img'].src);
 
@@ -312,7 +315,8 @@ listeners['btn-refresh:click']();
 check('Refresh が refresh を送る', sent.some((m) => m.type === 'refresh'));
 
 console.log('\n12) 接続ランプ');
-listeners['window:message']({data: {type: 'frame', data: new Uint8Array([1])}});
+listeners['window:message']({data: {type: 'frame', data: 'AQ=='}});
+fireImg('load'); // 実際に描けたときに接続とみなす
 check('接続中は緑（on）', els.lamp.classList.contains('on'));
 listeners['window:message']({data: {type: 'disconnected'}});
 check('切断で赤（on が外れる）', !els.lamp.classList.contains('on'));
@@ -347,44 +351,63 @@ check('OFF でも入力は送る',
   sent.filter((m) => m.type.startsWith('touch')).length === 3,
   JSON.stringify(sent.map((m) => m.type)));
 
-// renderFrame は非同期なので、フレーム毎に 1 tick 空けてキューを流し切る。
-const tick = () => new Promise((r) => setTimeout(r, 0));
+console.log('\n14) フレームの受け取り（base64 → data URL）');
 
-async function frameTests() {
-  console.log('\n14) フレームの受け取り（base64）');
+// 拡張ホストは Buffer.toString('base64') で送る。UTF-8 として不正なバイトを含む
+// JPEG でも、data URL に載る base64 が 1 文字も変わってはいけない。
+const original = Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x7f, 0x80, 0xc3, 0xff, 0xd9]);
+const b64 = original.toString('base64');
+listeners['window:message']({data: {type: 'frame', encoding: 'base64', data: b64}});
+check('data URL として <img> に渡す',
+  els['simulator-img'].src === 'data:image/jpeg;base64,' + b64,
+  els['simulator-img'].src);
+check('復号すると元のバイト列に戻る',
+  Buffer.from(els['simulator-img'].src.split(',')[1], 'base64').equals(original));
 
-  // 拡張ホストは Buffer.toString('base64') で送る。UTF-8 として不正なバイトを含む
-  // JPEG でも、復号後に 1 バイトも変わってはいけない。
-  const original = Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x7f, 0x80, 0xc3, 0xff, 0xd9]);
-  lastBlobBytes = null;
-  listeners['window:message']({
-    data: {type: 'frame', encoding: 'base64', data: original.toString('base64')},
-  });
-  await tick();
-  // VM サンドボックス側の Uint8Array なので instanceof は使えない
-  check('base64 文字列をバイト列へ復号する', ArrayBuffer.isView(lastBlobBytes),
-    String(lastBlobBytes && lastBlobBytes.constructor.name));
-  check('復号後のバイト列が完全に一致する',
-    lastBlobBytes && Buffer.from(lastBlobBytes).equals(original),
-    lastBlobBytes && Buffer.from(lastBlobBytes).toString('hex'));
+// 文字列以外（旧形式の残骸・壊れた通知）で src を壊さない
+const before = els['simulator-img'].src;
+listeners['window:message']({data: {type: 'frame', data: {type: 'Buffer', data: [1, 2, 3]}}});
+listeners['window:message']({data: {type: 'frame', data: null}});
+check('base64 文字列以外は無視する', els['simulator-img'].src === before,
+  els['simulator-img'].src);
 
-  // 旧形式（配列 / Buffer 風オブジェクト）も落とさない
-  lastBlobBytes = null;
-  listeners['window:message']({data: {type: 'frame', data: {type: 'Buffer', data: [1, 2, 3]}}});
-  await tick();
-  check('Buffer 風オブジェクトも受け取れる',
-    lastBlobBytes && Buffer.from(lastBlobBytes).equals(Buffer.from([1, 2, 3])),
-    lastBlobBytes && Buffer.from(lastBlobBytes).toString('hex'));
+console.log('\n14b) 個別フレームの error は無視する');
+// 直結ストリームと違い、1 枚壊れただけなので次のフレームで直る。
+// ここで警告を出すと毎秒 30 回の経路でオーバーレイが点滅する。
+listeners['window:message']({data: {type: 'frame', encoding: 'base64', data: b64}});
+fireImg('load');
+fireImg('error');
+check('オーバーレイを出さない', els.overlay.classList.contains('hidden'));
 
-  lastBlobBytes = null;
-  listeners['window:message']({data: {type: 'frame', data: new Uint8Array([9, 8])}});
-  await tick();
-  check('Uint8Array も受け取れる',
-    lastBlobBytes && Buffer.from(lastBlobBytes).equals(Buffer.from([9, 8])),
-    lastBlobBytes && Buffer.from(lastBlobBytes).toString('hex'));
-}
-
-frameTests().then(() => {
-  console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
-  process.exit(failures === 0 ? 0 : 1);
+console.log('\n15) 映像レートを受信/描画で並べる');
+listeners['window:message']({data: {type: 'frame', encoding: 'base64', data: b64}});
+fireImg('load');
+listeners['window:message']({
+  data: {
+    type: 'resources',
+    rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4,
+    fps: 28.5, kbps: 512,
+  },
 });
+check('受信 fps と帯域が出る', els.stats.innerHTML.includes('28.5/'), els.stats.innerHTML);
+check('KB/s が出る', els.stats.innerHTML.includes('512KB/s'), els.stats.innerHTML);
+check('メモリの単位が残る', els.stats.innerHTML.includes('4MB'), els.stats.innerHTML);
+// カウンタは読んだら 0 に戻る（貯めない）
+listeners['window:message']({
+  data: {
+    type: 'resources',
+    rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4,
+    fps: 0, kbps: 0,
+  },
+});
+check('描画カウンタは持ち越さない', els.stats.innerHTML.includes('0/0fps'),
+  els.stats.innerHTML);
+// 古い拡張ホスト（fps を送らない）でもメモリ表示は壊れない
+listeners['window:message']({
+  data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4},
+});
+check('fps が無ければ映像チップを出さない', !els.stats.innerHTML.includes('fps'),
+  els.stats.innerHTML);
+
+console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
+process.exit(failures === 0 ? 0 : 1);

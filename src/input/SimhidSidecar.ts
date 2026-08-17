@@ -42,6 +42,9 @@ export class SimhidSidecar {
   private restarts = 0;
   private disposed = false;
   private fatalReason: string | null = null;
+  /** stdin のバッファが埋まっている間 true。drain で戻る（sendNoWait 参照）。 */
+  private stdinSaturated = false;
+  private droppedNoWait = 0;
 
   /** 復帰不能になったときに呼ばれる（上位が WDA 経路へ降格する） */
   public onFatal?: (reason: string) => void;
@@ -75,6 +78,8 @@ export class SimhidSidecar {
       const proc = spawn(this.binaryPath, [], {stdio: ['pipe', 'pipe', 'pipe']});
       this.proc = proc;
       this.stdoutBuf = '';
+      // 前のプロセスの背圧を引き継がない（true のままだと以後 move を捨て続ける）
+      this.stdinSaturated = false;
 
       let settled = false;
       const readyTimer = setTimeout(() => {
@@ -242,10 +247,34 @@ export class SimhidSidecar {
     });
   }
 
-  /** 応答を待たない送信（高頻度の touchMove 用。stdin の順序は保たれる）。 */
+  /**
+   * 応答を待たない送信（高頻度の touchMove 用。stdin の順序は保たれる）。
+   *
+   * **詰まったら書かずに捨てる。** `write` が false を返したのに書き続けると、
+   * サイドカーが読まなくなった間 Node の内部キューが際限なく伸びる
+   * （CLAUDE.md「無制限に伸びるバッファ・キュー・Map を作らない」）。
+   * touchMove は 60Hz で届き、かつ**最新の座標だけが意味を持つ**ので、
+   * 捨てても軌跡は歪まない（サイドカー側も 16ms で coalescing している）。
+   * 捨てた数は `droppedNoWait` で数え、ログは高頻度パスなので出さない。
+   */
   sendNoWait(command: SidecarCommand): void {
     if (this.fatalReason || !this.proc?.stdin) return;
-    this.proc.stdin.write(JSON.stringify(command) + '\n');
+    if (this.stdinSaturated) {
+      this.droppedNoWait++;
+      return;
+    }
+    const ok = this.proc.stdin.write(JSON.stringify(command) + '\n');
+    if (ok) return;
+    // バッファが埋まった。drain まで新しい move を積まない
+    this.stdinSaturated = true;
+    this.proc.stdin.once('drain', () => {
+      this.stdinSaturated = false;
+    });
+  }
+
+  /** 背圧で捨てた `sendNoWait` の数（診断用。読むだけで減らさない）。 */
+  get droppedMoveCount(): number {
+    return this.droppedNoWait;
   }
 
   dispose(): void {

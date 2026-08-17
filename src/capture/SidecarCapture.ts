@@ -44,9 +44,9 @@ export class SidecarCapture implements CaptureStrategy {
     if (!this.deviceId) throw new Error('SidecarCapture: device 未設定');
     if (this.started) return;
     const config = this.getConfig();
-    // onFrame は高頻度パス。ここでログを出さない
-    this.sidecar.onFrame = (base64) =>
-      this.callback?.(Buffer.from(base64, 'base64'));
+    // onFrame は高頻度パス。ここでログを出さない。
+    // サイドカーが送ってくる base64 をそのまま流す（webview も base64 で受ける）。
+    this.sidecar.onFrame = (base64) => this.callback?.(base64);
     await this.sidecar.send({
       cmd: 'captureStart',
       device: this.deviceId,

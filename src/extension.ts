@@ -83,7 +83,8 @@ export function activate(context: vscode.ExtensionContext): void {
       Logger.refreshLevel();
       Logger.info('Configuration changed');
       if (provider) {
-        provider.onConfigurationChanged();
+        // 何が変わったかを渡す。取り込みに関係ない設定で画面を切らないため
+        provider.onConfigurationChanged(e);
       }
     }
   });
