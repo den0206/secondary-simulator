@@ -230,6 +230,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `keypress {key, special}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3） |
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
+| `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
 | `deviceChange {deviceId}` | 空文字ならキャプチャ停止。一覧から消えた選択もこれを送る |
 | `refresh` / `init` | デバイス一覧の再取得。`autoConnect` 状態も返す |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
