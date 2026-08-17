@@ -13,6 +13,7 @@ fi
 clang -fobjc-arc -O2 \
   -arch arm64 -arch x86_64 \
   -framework Foundation -framework CoreFoundation \
+  -framework CoreImage -framework CoreGraphics -framework ImageIO -framework IOSurface \
   -o native/simhid-server native/simhid-server.m
 
 lipo -info native/simhid-server

@@ -15,18 +15,24 @@
 //   keyDown/keyUp { usage }                      USB HID usage code
 //   modifier { bit, down }                       bit は 16..20
 //   text { value }                               ASCII 一括入力
+//   captureStart { fps?, maxWidth?, quality? }   画面バッファの JPEG 配信を開始
+//   captureStop                                  同 停止
 //   ping
 //
 // 送信（stdout）:
 //   応答: { "id": <num>, "ok": <bool>, "error": <str?>, "latencyMs": <num?> }
 //   通知: { "event": "ready"|"fatal"|"portLost"|"recovered", ... }
+//         { "event": "frame", "device": <udid>, "w": <num>, "h": <num>, "data": <base64 JPEG> }
 //
 // 全て非公開 API に依存。Xcode 更新で壊れうる（起動時にシンボル検査し fatal を出す）。
+#import <CoreImage/CoreImage.h>
 #import <Foundation/Foundation.h>
+#import <IOSurface/IOSurface.h>
 #import <dlfcn.h>
 #import <mach/mach_time.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <pthread.h>
 
 #pragma mark - 復元した private API（docs/ios-hid-injection.md 参照）
 
@@ -57,6 +63,10 @@ static SEL gInitSel, gSendSel;
 static id gDeviceSet;                         // SimDeviceSet
 static NSMutableDictionary *gStates;          // udid(小文字) → DeviceState
 static dispatch_queue_t gQueue;               // 全注入を直列化するシリアルキュー
+// 画面取り込みは入力と別系統にする。JPEG 変換（実測 2ms）で注入を待たせない。
+static dispatch_queue_t gCaptureQueue;
+// stdout は gQueue と gCaptureQueue の両方から書くので、行が混ざらないよう排他する。
+static pthread_mutex_t gOutMutex = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t gTimebaseNum = 1, gTimebaseDen = 1;
 
 static uint64_t nowNs(void) {
@@ -75,6 +85,20 @@ static uint64_t nowNs(void) {
 @property(nonatomic, assign) CGPoint pendingP1;
 @property(nonatomic, assign) CGPoint pendingP2;
 @property(nonatomic, strong) dispatch_source_t flushTimer;
+// 画面取り込み（captureStart で用意し、captureStop / プロセス終了まで持つ）
+@property(nonatomic, strong) id ioClient;            // 解放すると port が閉じるので保持する
+@property(nonatomic, strong) id displayDescriptor;   // SimDisplayIOSurfaceRenderable
+@property(nonatomic, strong) CIContext *ciContext;
+@property(nonatomic, strong) dispatch_source_t captureTimer;
+@property(nonatomic, assign) double jpegQuality;
+@property(nonatomic, assign) double maxWidth;
+@property(nonatomic, assign) uint32_t lastSeed;      // IOSurface の世代。同じなら送らない
+@property(nonatomic, assign) BOOL hasLastSeed;
+/**
+ * 直前に送った JPEG。seed は静止画面でも動くので、同一バイト列なら送らないための比較用。
+ * 保持は常に 1 枚ぶん（実測 640px/q60 で約 68KB）。
+ */
+@property(nonatomic, strong) NSData *lastJpeg;
 @end
 
 @implementation DeviceState
@@ -85,12 +109,16 @@ static BOOL sendToClient(DeviceState *st, void *msg);
 
 #pragma mark - 出力
 
-// stdout への書き込み。全て gQueue（または起動時のメインスレッド単独）から呼ぶので直列
-static void emitLine(NSDictionary *obj) {
+static NSData *lineData(NSDictionary *obj) {
   NSData *json = [NSJSONSerialization dataWithJSONObject:obj options:0 error:nil];
-  if (!json) return;
+  if (!json) return nil;
   NSMutableData *line = [json mutableCopy];
   [line appendBytes:"\n" length:1];
+  return line;
+}
+
+// gOutMutex を持った状態で呼ぶ
+static void writeAllLocked(NSData *line) {
   const uint8_t *p = line.bytes;
   size_t remaining = line.length;
   while (remaining > 0) {
@@ -99,6 +127,31 @@ static void emitLine(NSDictionary *obj) {
     p += w;
     remaining -= (size_t)w;
   }
+}
+
+// stdout への書き込み。gQueue と gCaptureQueue から呼ばれるので mutex で 1 行ずつに保つ。
+static void emitLine(NSDictionary *obj) {
+  NSData *line = lineData(obj);
+  if (!line) return;
+  pthread_mutex_lock(&gOutMutex);
+  writeAllLocked(line);
+  pthread_mutex_unlock(&gOutMutex);
+}
+
+/**
+ * フレーム専用の送信。**待たずに捨てる**。
+ *
+ * 親の読み出しが遅いと write がブロックする。そこで入力の応答が mutex 待ちに
+ * 入ると、映像の遅れが操作の遅れに化ける。フレームは捨ててよいので trylock にし、
+ * 送れたときだけ YES を返す（呼び出し側は送れた絵だけを「直前のフレーム」にする）。
+ */
+static BOOL emitFrameLine(NSDictionary *obj) {
+  NSData *line = lineData(obj);
+  if (!line) return NO;
+  if (pthread_mutex_trylock(&gOutMutex) != 0) return NO;
+  writeAllLocked(line);
+  pthread_mutex_unlock(&gOutMutex);
+  return YES;
 }
 
 static void emitEvent(NSString *name, NSDictionary *extra) {
@@ -195,6 +248,135 @@ static BOOL sendToClient(DeviceState *st, void *msg) {
   }
   free(msg);
   return ok;
+}
+
+#pragma mark - 画面取り込み（SimDisplayIOSurfaceRenderable）
+
+/**
+ * ディスプレイの descriptor を探す。
+ *
+ * WDA(XCTest) のスクリーンショットは「テスト対象アプリのウィンドウ」しか描かないため、
+ * ソフトウェアキーボードやステータスバーが落ちる（iOS 26 / WDA 10.2.4 で実測）。
+ * こちらは端末のフレームバッファそのものなので、画面に出ているものが全て入る。
+ *
+ * ROCK のリモートプロキシは respondsToSelector: に答えないので、クラス名に
+ * 埋め込まれたインタフェース名で判定する（`…-SimDisplayIOSurfaceRenderable-…`）。
+ */
+// マスク済み（角丸・ノッチが黒で抜かれる）を優先し、無ければ素のフレームバッファ。
+static id surfaceForDescriptor(id descriptor) {
+  id surf = ((id (*)(id, SEL))objc_msgSend)(
+      descriptor, sel_registerName("maskedFramebufferSurface"));
+  if (surf) return surf;
+  return ((id (*)(id, SEL))objc_msgSend)(descriptor, sel_registerName("framebufferSurface"));
+}
+
+static id displayDescriptorForDevice(id simDevice, id *ioClientOut) {
+  Class ioCls = objc_lookUpClass("SimDeviceIOClient");
+  if (!ioCls) return nil;
+  id client = ((id (*)(id, SEL, id, dispatch_queue_t, void (^)(NSError *)))objc_msgSend)(
+      [ioCls alloc], sel_registerName("initWithDevice:errorQueue:errorHandler:"),
+      simDevice, gCaptureQueue, ^(NSError *e) {
+        fprintf(stderr, "[simhid] io error: %s\n", e.description.UTF8String);
+      });
+  if (!client) return nil;
+  NSArray *ports = ((id (*)(id, SEL))objc_msgSend)(client, sel_registerName("ioPorts"));
+  for (id port in ports) {
+    if (![port respondsToSelector:sel_registerName("descriptor")]) continue;
+    id desc = ((id (*)(id, SEL))objc_msgSend)(port, sel_registerName("descriptor"));
+    if (!desc) continue;
+    if (![NSStringFromClass([desc class]) containsString:@"SimDisplayIOSurfaceRenderable"]) {
+      continue;
+    }
+    // 該当 descriptor は複数ある（外部ディスプレイ等）。実際に面を返すものだけ使う。
+    if (!surfaceForDescriptor(desc)) continue;
+    *ioClientOut = client;
+    return desc;
+  }
+  return nil;
+}
+
+// gCaptureQueue 上。1 フレーム取り込んで JPEG にし、frame 通知として送る。
+static void captureTick(DeviceState *st, NSString *udid) {
+  @autoreleasepool {
+    id surfObj = surfaceForDescriptor(st.displayDescriptor);
+    if (!surfObj) return;  // 画面が無い間（消灯・切替中）は黙って飛ばす
+    IOSurfaceRef surface = (__bridge IOSurfaceRef)surfObj;
+    uint32_t seed = IOSurfaceGetSeed(surface);
+    if (st.hasLastSeed && seed == st.lastSeed) return;  // 画面が変わっていない
+    st.lastSeed = seed;
+    st.hasLastSeed = YES;
+
+    CIImage *img = [CIImage imageWithIOSurface:surface];
+    CGFloat width = img.extent.size.width;
+    if (width < 1) return;
+    CGFloat scale = (st.maxWidth > 0 && width > st.maxWidth) ? st.maxWidth / width : 1.0;
+    CIImage *out = scale < 1.0
+        ? [img imageByApplyingTransform:CGAffineTransformMakeScale(scale, scale)]
+        : img;
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    NSData *jpeg = [st.ciContext
+        JPEGRepresentationOfImage:out
+                       colorSpace:cs
+                          options:@{(id)kCGImageDestinationLossyCompressionQuality:
+                                        @(st.jpegQuality)}];
+    CGColorSpaceRelease(cs);
+    if (!jpeg) return;
+    // 画面が止まっていても seed は動く。中身が同じなら送らない（帯域を 0 にする）
+    if (st.lastJpeg && [st.lastJpeg isEqualToData:jpeg]) return;
+    BOOL sent = emitFrameLine(@{
+      @"event": @"frame",
+      @"device": udid,
+      @"w": @((int)out.extent.size.width),
+      @"h": @((int)out.extent.size.height),
+      @"data": [jpeg base64EncodedStringWithOptions:0],
+    });
+    // 送れなかったぶんを「直前のフレーム」にすると、画面が止まったまま復帰しない
+    if (sent) st.lastJpeg = jpeg;
+  }
+}
+
+// gQueue 上。二重開始は no-op。
+static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double maxWidth,
+                         double quality, NSString **err) {
+  if (st.captureTimer) return YES;
+  if (!st.displayDescriptor) {
+    id client = nil;
+    id desc = displayDescriptorForDevice(st.simDevice, &client);
+    if (!desc) {
+      *err = @"ディスプレイの descriptor が見つからない";
+      return NO;
+    }
+    st.ioClient = client;
+    st.displayDescriptor = desc;
+  }
+  if (!st.ciContext) st.ciContext = [CIContext contextWithOptions:nil];
+  st.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
+  st.maxWidth = maxWidth;
+  st.hasLastSeed = NO;
+  st.lastJpeg = nil;
+
+  double hz = MIN(MAX(fps, 1.0), 60.0);
+  uint64_t interval = (uint64_t)(NSEC_PER_SEC / hz);
+  dispatch_source_t timer =
+      dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gCaptureQueue);
+  dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval,
+                            interval / 10);
+  __weak DeviceState *weakSt = st;
+  dispatch_source_set_event_handler(timer, ^{
+    DeviceState *s = weakSt;
+    if (s) captureTick(s, udid);
+  });
+  st.captureTimer = timer;
+  dispatch_resume(timer);
+  return YES;
+}
+
+static void stopCapture(DeviceState *st) {
+  if (!st.captureTimer) return;
+  dispatch_source_cancel(st.captureTimer);
+  st.captureTimer = nil;
+  st.hasLastSeed = NO;
+  st.lastJpeg = nil;
 }
 
 #pragma mark - 入力プリミティブ（全て gQueue 上）
@@ -347,6 +529,11 @@ static void handleCommand(NSDictionary *cmd) {
     uint32_t bit = (uint32_t)numAt(cmd, @"bit", 0);
     BOOL down = [cmd[@"down"] boolValue];
     ok = sendToClient(st, modMsg(bit, down ? 1 : 0));
+  } else if ([name isEqualToString:@"captureStart"]) {
+    ok = startCapture(st, udid, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
+                      numAt(cmd, @"quality", 0.6), &err);
+  } else if ([name isEqualToString:@"captureStop"]) {
+    stopCapture(st);
   } else if ([name isEqualToString:@"text"]) {
     NSString *value = cmd[@"value"];
     if (![value isKindOfClass:NSString.class]) { ok = NO; err = @"value がない"; }
@@ -450,6 +637,8 @@ int main(int argc, const char *argv[]) {
 
     gStates = [NSMutableDictionary dictionary];
     gQueue = dispatch_queue_create("com.secondary-simulator.simhid", DISPATCH_QUEUE_SERIAL);
+    gCaptureQueue =
+        dispatch_queue_create("com.secondary-simulator.simhid.capture", DISPATCH_QUEUE_SERIAL);
 
     NSString *reason = nil;
     if (!setup(&reason)) {
