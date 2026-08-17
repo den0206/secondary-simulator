@@ -30,3 +30,5 @@ media/demo.gif
 !README_JP.md
 !CHANGELOG.md
 !LICENSE.md
+# 同梱する mobilecli は AGPL-3.0。全文と入手先の同梱が再配布の条件なので外さない。
+!THIRD-PARTY-NOTICES.md
