@@ -10,7 +10,10 @@ const container = document.getElementById('simulator-container');
 const touchOverlay = document.getElementById('touch-overlay');
 const octx = touchOverlay.getContext('2d');
 const deviceSelect = document.getElementById('device');
-const resourcesEl = document.getElementById('resources');
+// フッターは「入力経路（#mode）」と「リソース（#stats）」の 2 つに分かれている。
+// #stats だけ innerHTML で作り直すので、#mode の表示はそれに巻き込まれない。
+const statsEl = document.getElementById('stats');
+const modeEl = document.getElementById('mode');
 const lamp = document.getElementById('lamp');
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -204,28 +207,43 @@ function clearTrail() {
 
 // ---- キーボード --------------------------------------------------------------
 
+// 修飾キー付き（Cmd+A / Ctrl+C など）は組み合わせとして送る。Shift 単独は文字自体が
+// 大文字で届くので組み合わせにはせず、そのままテキストとして送る。
+// 送り先は HID 経路のみ（WDA の device.io.text は修飾キーを扱えない）。
+function modifiersOf(e) {
+  if (!(e.metaKey || e.ctrlKey || e.altKey)) return undefined;
+  const mods = [];
+  if (e.metaKey) mods.push('command');
+  if (e.ctrlKey) mods.push('control');
+  if (e.altKey) mods.push('option');
+  if (e.shiftKey) mods.push('shift');
+  return mods;
+}
+
 document.addEventListener('keydown', (e) => {
   // デバイス未選択（オーバーレイ表示中）ならキー入力を送らない
   if (!overlay.classList.contains('hidden')) return;
   if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
 
+  const modifiers = modifiersOf(e);
+
   if (e.key === 'Backspace') {
-    post('keypress', {key: 'delete', special: true});
+    post('keypress', {key: 'delete', special: true, modifiers});
     e.preventDefault();
     return;
   }
   if (e.key === 'Enter') {
-    post('keypress', {key: 'return', special: true});
+    post('keypress', {key: 'return', special: true, modifiers});
     e.preventDefault();
     return;
   }
   if (e.key === 'Escape') {
-    post('keypress', {key: 'escape', special: true});
+    post('keypress', {key: 'escape', special: true, modifiers});
     e.preventDefault();
     return;
   }
   if (e.key.length === 1) {
-    post('keypress', {key: e.key});
+    post('keypress', {key: e.key, modifiers});
     e.preventDefault();
   }
 });
@@ -493,10 +511,17 @@ window.addEventListener('message', (event) => {
       setOverlayVisible(false);
       break;
 
+    // 入力経路（HID 直接注入 / WDA 経由）。降格すると無音で遅くなるので見えるようにする。
+    // 文字列は拡張ホスト由来なので textContent で入れる（innerHTML にしない）。
+    case 'mode':
+      modeEl.textContent = message.text || '';
+      modeEl.style.display = message.text ? '' : 'none';
+      break;
+
     case 'resources': {
       // 値は拡張ホストが作った数値のみ。<b> ラベル付きのチップに並べる。
       const chip = (label, mb) => `<span class="chip"><b>${label}</b> ${mb}MB</span>`;
-      resourcesEl.innerHTML =
+      statsEl.innerHTML =
         chip('ホスト', message.rssMb) +
         chip('heap', message.heapUsedMb) +
         chip('子プロセス', message.childrenMb) +
@@ -505,10 +530,6 @@ window.addEventListener('message', (event) => {
         chip('拡張', message.storageMb);
       break;
     }
-
-    case 'status':
-      // 互換モード等の状態表示（オーバーレイは触らない）
-      break;
 
     case 'error':
       cleanup();
