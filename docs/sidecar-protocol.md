@@ -244,7 +244,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `autoConnect` | 設定値。Auto ボタンと揃える |
 | `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ canvas フレーム（`data` は base64 文字列） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
-| `resources` | RSS / heap / 子プロセス / ストレージ（約 30 秒ごと） |
+| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ（約 30 秒ごと。WDA や npm キャッシュは含まない） |
 | `disconnected` / `status` | 切断と互換モード表示 |
 
 旧メッセージ（`tap` / `swipe` / `longPress`）は webview から送らない。WDA 側の tap/gesture は Controller が `touch*` から作る。
