@@ -2,7 +2,13 @@ import * as fs from 'node:fs';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
 import {HidSidecarBackend} from './HidSidecarBackend';
-import {HidUsage, InputBackend} from './InputBackend';
+import {
+  HidModifier,
+  HidUsage,
+  InputBackend,
+  MODIFIER_BITS,
+  usageForAsciiChar,
+} from './InputBackend';
 import {SimhidSidecar} from './SimhidSidecar';
 import {WdaBackend} from './WdaBackend';
 
@@ -127,7 +133,20 @@ export class SimulatorInputController {
     return this.primary.touch2Up(x, y, x2, y2);
   }
 
-  async keypress(key: string, special?: boolean): Promise<void> {
+  /**
+   * キー入力。`modifiers` に Cmd/Ctrl/Option/Shift が入っていれば組み合わせとして送る
+   * （Cmd+A / Cmd+C など）。修飾キーを扱えるのは HID 経路だけ。
+   */
+  async keypress(
+    key: string,
+    special?: boolean,
+    modifiers?: readonly string[]
+  ): Promise<void> {
+    const bits = SimulatorInputController.modifierBits(modifiers);
+    if (bits.length > 0) {
+      await this.keyCombo(key, special, bits);
+      return;
+    }
     if (special) {
       const usage = SimulatorInputController.specialUsage(key);
       if (usage !== undefined) {
@@ -140,6 +159,76 @@ export class SimulatorInputController {
     }
     // 通常文字はテキストとして送る（ASCII/非ASCII の振り分けは text() が行う）
     await this.text(key);
+  }
+
+  /** 修飾キー名を bit へ。未知の名前は捨て、同じ bit は 1 つに畳む。 */
+  private static modifierBits(names?: readonly string[]): number[] {
+    if (!names || names.length === 0) return [];
+    const bits: number[] = [];
+    for (const name of names) {
+      const bit = MODIFIER_BITS[name];
+      // 二重に押すと「押した数」と「離した数」が合わなくなる
+      if (bit !== undefined && !bits.includes(bit)) bits.push(bit);
+    }
+    return bits;
+  }
+
+  /**
+   * 修飾キー付きの組み合わせを送る。
+   *
+   * `text` コマンドは使えない（Shift の捨てイベントを先に送るため、Cmd 押下中だと
+   * 別の組み合わせが成立する。InputBackend.usageForAsciiChar のコメント参照）ので、
+   * usage を自前で引いて keyDown/keyUp を組む。
+   *
+   * WDA（`device.io.text`）は修飾キーを扱えないため、HID 経路のときだけ送る。
+   */
+  private async keyCombo(
+    key: string,
+    special: boolean | undefined,
+    bits: number[]
+  ): Promise<void> {
+    const backend = this.keyBackend();
+    if (backend.kind !== 'hid') {
+      Logger.warn(
+        `修飾キー付きの入力は HID 経路でしか送れない（無視: ${key}）。` +
+          'secondarySimulator.keyInput を hid にすると送れる。'
+      );
+      return;
+    }
+
+    let usage: number | undefined;
+    if (special) {
+      usage = SimulatorInputController.specialUsage(key);
+    } else {
+      const ascii = usageForAsciiChar(key);
+      usage = ascii?.usage;
+      // 大文字などシフトが要る文字は、指定が無くても Shift を足す
+      if (ascii?.shift && !bits.includes(HidModifier.Shift)) {
+        bits = [...bits, HidModifier.Shift];
+      }
+    }
+    if (usage === undefined) {
+      Logger.warn(`HID の usage に対応しないキーなので送らない: ${key}`);
+      return;
+    }
+
+    // 押した修飾キーは必ず離す。途中で失敗しても押しっぱなしを残さない
+    // （残ると以降の入力が全て Cmd 付きとして扱われる）。
+    const pressed: number[] = [];
+    try {
+      for (const bit of bits) {
+        await backend.modifier(bit, true);
+        pressed.push(bit);
+      }
+      await backend.key(usage, true);
+      await sleep(10);
+      await backend.key(usage, false);
+    } finally {
+      for (const bit of pressed.reverse()) {
+        // 1 つ失敗しても残りの解放は続ける
+        await backend.modifier(bit, false).catch(() => {});
+      }
+    }
   }
 
   private static specialUsage(key: string): number | undefined {
