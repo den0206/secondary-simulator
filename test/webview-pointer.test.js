@@ -413,6 +413,16 @@ listeners['window:message']({
 });
 check('描画カウンタは持ち越さない', els.stats.innerHTML.includes('0/0fps'),
   els.stats.innerHTML);
+// 直結中は受信側を測れないので、描画 fps だけを出す
+listeners['window:message']({data: {type: 'frame', encoding: 'base64', data: b64}});
+fireImg('load');
+listeners['window:message']({
+  data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4, direct: true},
+});
+check('直結では「直結」と描画 fps だけ', els.stats.innerHTML.includes('fps 直結'),
+  els.stats.innerHTML);
+check('直結では帯域を出さない', !els.stats.innerHTML.includes('KB/s'), els.stats.innerHTML);
+
 // 古い拡張ホスト（fps を送らない）でもメモリ表示は壊れない
 listeners['window:message']({
   data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4},

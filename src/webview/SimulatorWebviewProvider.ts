@@ -51,6 +51,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private frameCount = 0;
   private frameBytes = 0;
   private lastStatsAtMs = Date.now();
+  /**
+   * 直結表示中か。フレームが拡張ホストを通らないので、**受信 fps と帯域は測れない**。
+   * 測れないものを 0 と出すと「止まっている」と誤解されるため、webview 側へ伝えて
+   * 描画 fps だけを出させる。
+   */
+  private directStreaming = false;
   /** 非表示のまま残した入力コントローラを解放するまでの猶予。 */
   private inputReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly INPUT_RELEASE_MS = 120_000;
@@ -269,7 +275,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     ].filter((p): p is number => typeof p === 'number');
     try {
       const stats = await collectResourceStats(this.extensionUri.fsPath, pids);
-      this.postMessage({type: 'resources', ...stats, ...rate});
+      // 直結中はフレームを見ていないので、受信側の数字を出さない（0 と嘘をつかない）
+      this.postMessage(
+        this.directStreaming
+          ? {type: 'resources', ...stats, direct: true}
+          : {type: 'resources', ...stats, ...rate}
+      );
     } catch (error) {
       Logger.warn(`リソース統計の取得に失敗: ${(error as Error).message}`);
     }
@@ -609,6 +620,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       try {
         const proxy = await this.ensureProxy();
         const url = proxy.streamUrl(deviceId);
+        this.directStreaming = true;
         this.postMessage({type: 'streamUrl', url});
         Logger.info(`Started direct MJPEG stream for device: ${device.name}`);
 
@@ -644,9 +656,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (this.currentCapture instanceof SidecarCapture) {
       this.currentCapture.onStreamChange = (url) => {
         if (!url) return;
-        this.allowStreamPort(this.currentCapture instanceof SidecarCapture
-          ? this.currentCapture.port
-          : 0);
+        this.allowStreamPort(
+          this.currentCapture instanceof SidecarCapture ? this.currentCapture.port : 0
+        );
+        this.directStreaming = true;
         this.postMessage({type: 'streamUrl', url});
       };
     }
@@ -992,6 +1005,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.currentCapture.dispose();
       this.currentCapture = null;
     }
+    this.directStreaming = false;
     if (!options?.keepInput) {
       this.clearInputReleaseTimer();
       if (this.inputController) {
