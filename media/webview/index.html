@@ -46,7 +46,10 @@
     </div>
   </div>
 
-  <div class="resources" id="resources" title="30秒ごとに更新。拡張ホストは他拡張と共有のプロセス。拡張ディレクトリは同梱物のサイズで、実行中に増えることはない（この拡張は永続ストレージを持たない）。mobilecli が入れる WebDriverAgent はこの数字に含まれない。">計測中…</div>
+  <div class="resources">
+    <span class="chip mode" id="mode" style="display: none;" title="入力経路。HID は端末へ直接注入（速い）、WDA は mobilecli 経由（互換）。"></span>
+    <span id="stats" title="30秒ごとに更新。拡張ホストは他拡張と共有のプロセス。拡張ディレクトリは同梱物のサイズで、実行中に増えることはない（この拡張は永続ストレージを持たない）。mobilecli が入れる WebDriverAgent はこの数字に含まれない。">計測中…</span>
+  </div>
 
   <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
 </body>

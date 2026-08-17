@@ -382,11 +382,22 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+/* #stats の中の chip も .resources の flex 項目として並べる（gap と折返しを共有）。 */
+#stats {
+  display: contents;
+}
+
 .chip {
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--ss-soft);
   font-variant-numeric: tabular-nums;
+}
+
+/* 入力経路のチップ。数字ではないので少し目立たせる。 */
+.chip.mode {
+  color: var(--vscode-foreground);
+  background: var(--vscode-badge-background, var(--ss-soft));
 }
 
 .chip b {

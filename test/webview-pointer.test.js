@@ -41,6 +41,7 @@ function makeEl(id, opts = {}) {
     width: 300,
     height: 600,
     innerHTML: '',
+    textContent: '',
     src: '',
   };
   return el;
@@ -58,6 +59,8 @@ const els = {
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-trail': makeEl('btn-trail'),
   lamp: makeEl('lamp'),
+  stats: makeEl('stats'),
+  mode: makeEl('mode'),
 };
 
 const sandbox = {
@@ -194,6 +197,65 @@ check('キー入力が抑止される', sent.length === 0, JSON.stringify(sent))
 els.overlay.classList.add('hidden'); // 非表示（デバイス選択中）
 listeners['document:keydown']({key: 'a', preventDefault() {}});
 check('選択中はキー入力を送る', sent.some((m) => m.type === 'keypress' && m.key === 'a'));
+
+console.log('\n9b) 修飾キー付きは組み合わせとして送る');
+sent.length = 0;
+listeners['document:keydown']({key: 'a', metaKey: true, preventDefault() {}});
+check(
+  'Cmd+A は modifiers 付きで送る',
+  sent.some(
+    (m) =>
+      m.type === 'keypress' &&
+      m.key === 'a' &&
+      JSON.stringify(m.modifiers) === JSON.stringify(['command'])
+  ),
+  JSON.stringify(sent)
+);
+sent.length = 0;
+listeners['document:keydown']({
+  key: 'C',
+  metaKey: true,
+  shiftKey: true,
+  preventDefault() {},
+});
+check(
+  'Cmd+Shift+C は両方入る',
+  sent.some(
+    (m) => JSON.stringify(m.modifiers) === JSON.stringify(['command', 'shift'])
+  ),
+  JSON.stringify(sent)
+);
+sent.length = 0;
+listeners['document:keydown']({key: 'A', shiftKey: true, preventDefault() {}});
+check(
+  'Shift 単独は組み合わせにしない（文字が大文字で届く）',
+  sent.some((m) => m.key === 'A' && m.modifiers === undefined),
+  JSON.stringify(sent)
+);
+sent.length = 0;
+listeners['document:keydown']({key: 'Backspace', altKey: true, preventDefault() {}});
+check(
+  '特殊キーにも modifiers が付く',
+  sent.some(
+    (m) =>
+      m.key === 'delete' &&
+      m.special === true &&
+      JSON.stringify(m.modifiers) === JSON.stringify(['option'])
+  ),
+  JSON.stringify(sent)
+);
+
+console.log('\n9c) 入力経路のチップ');
+listeners['window:message']({data: {type: 'mode', text: '互換モード (WDA)'}});
+check('mode の文言を出す', els.mode.textContent === '互換モード (WDA)', els.mode.textContent);
+check('表示される', els.mode.style.display === '', els.mode.style.display);
+listeners['window:message']({data: {type: 'mode', text: null}});
+check('未接続では隠す', els.mode.style.display === 'none', els.mode.style.display);
+listeners['window:message']({
+  data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4},
+});
+check('リソース更新は #stats だけを書き換える', els.mode.style.display === 'none');
+check('リソースが #stats に入る', els.stats.innerHTML.includes('4MB'), els.stats.innerHTML);
 
 console.log('\n10) Back ボタンは Android のときだけ押せる');
 listeners['window:message']({
