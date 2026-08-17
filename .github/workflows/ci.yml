@@ -9,6 +9,10 @@ on:
   pull_request:
     branches:
       - main
+  # push が無い週でも Xcode 更新の破壊に気づくため（xcode-canary 用）
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 jobs:
   # ネイティブサイドカー(clang / Objective-C)と VSIX の梱包に macOS が要るため
@@ -45,6 +49,9 @@ jobs:
           lipo -info native/simhid-server | grep -q 'x86_64 arm64' \
             || { echo "::error::simhid-server が universal binary ではありません"; exit 1; }
 
+      - name: Xcode 私有 API チェック
+        run: sh scripts/check-xcode-hid.sh
+
       - name: Package VSIX
         run: npm run package
 
@@ -53,6 +60,23 @@ jobs:
           name: vsix-package
           path: vsix/*.vsix
           retention-days: 7
+
+  # build-and-test は macos-14 固定なので、新しい Xcode を積んだイメージでは回らない。
+  # こちらは macos-latest（＝より新しい Xcode）で私有 API の解決だけを確認する。
+  # 週次 cron で回るので、push が無い週の Xcode 更新にも気づける。
+  xcode-canary:
+    name: Xcode canary (private API)
+    runs-on: macos-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build simhid-server
+        run: npm run build:native
+
+      - name: Xcode 私有 API チェック
+        run: sh scripts/check-xcode-hid.sh
 
   # Release の "Sync version to main" が落ちると package.json が古いまま残る。
   # ここが赤くなることで気づける。
