@@ -51,6 +51,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private lastDevicesSignature = '';
   /** ステータスバーへ流す接続状態。webview を作り直したときの再送にも使う。 */
   private status: DeviceStatus = {state: 'disconnected'};
+  /**
+   * `bootAndConnect` が対象 UDID の Booted を待っているあいだだけセットする。
+   * この間 `refreshDevices` → `autoConnect` が別の起動済み端末へ先に繋ぐのを防ぐ。
+   */
+  private bootWaitDeviceId: string | null = null;
 
   /**
    * @param onStatusChange ステータスバーの更新先。webview の外に出す唯一の状態。
@@ -187,6 +192,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   /** 起動中のデバイスがあれば繋ぐ。Auto が OFF なら繋がない。 */
   private async autoConnect(): Promise<void> {
+    // boot 待ち中は対象 UDID 以外へ繋がない（別の Booted 端末への横取り防止）
+    if (this.bootWaitDeviceId) return;
     const device = pickAutoConnectDevice(this.devices, {
       enabled: this.isAutoConnectEnabled(),
       currentDeviceId: this.currentDeviceId,
@@ -739,45 +746,49 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const name =
       this.devices.find((d) => d.id === deviceId)?.name ?? deviceId;
 
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Secondary Simulator: ${name} を起動しています…`,
-        cancellable: false,
-      },
-      async () => {
-        try {
-          await this.mobileCliClient!.boot(deviceId);
-        } catch (error) {
-          Logger.error('デバイスの起動に失敗', error as Error);
-          void vscode.window.showErrorMessage(
-            `Secondary Simulator: ${name} を起動できませんでした — ${
-              (error as Error).message
-            }`
-          );
-          return;
-        }
-
-        // 起動要求が通っても一覧に載るまで間がある。上限付きで待つ。
-        for (let i = 0; i < SimulatorWebviewProvider.BOOT_POLL_TRIES; i++) {
-          await this.refreshDevices();
-          // refreshDevices の中の自動接続が先に繋いでいたら、繋ぎ直さない
-          if (this.currentDeviceId === deviceId) return;
-          if (
-            this.devices.find((d) => d.id === deviceId)?.state === 'Booted'
-          ) {
-            await this.selectDevice(deviceId);
+    // ポーリング中の refreshDevices → autoConnect が別端末へ繋ぐのを止める
+    this.bootWaitDeviceId = deviceId;
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Secondary Simulator: ${name} を起動しています…`,
+          cancellable: false,
+        },
+        async () => {
+          try {
+            await this.mobileCliClient!.boot(deviceId);
+          } catch (error) {
+            Logger.error('デバイスの起動に失敗', error as Error);
+            void vscode.window.showErrorMessage(
+              `Secondary Simulator: ${name} を起動できませんでした — ${
+                (error as Error).message
+              }`
+            );
             return;
           }
-          await new Promise((r) =>
-            setTimeout(r, SimulatorWebviewProvider.BOOT_POLL_INTERVAL_MS)
+
+          // 起動要求が通っても一覧に載るまで間がある。上限付きで待つ。
+          for (let i = 0; i < SimulatorWebviewProvider.BOOT_POLL_TRIES; i++) {
+            await this.refreshDevices();
+            if (
+              this.devices.find((d) => d.id === deviceId)?.state === 'Booted'
+            ) {
+              await this.selectDevice(deviceId);
+              return;
+            }
+            await new Promise((r) =>
+              setTimeout(r, SimulatorWebviewProvider.BOOT_POLL_INTERVAL_MS)
+            );
+          }
+          void vscode.window.showWarningMessage(
+            `Secondary Simulator: ${name} の起動を待ちましたが Booted になりませんでした。一覧を更新して選び直してください。`
           );
         }
-        void vscode.window.showWarningMessage(
-          `Secondary Simulator: ${name} の起動を待ちましたが Booted になりませんでした。一覧を更新して選び直してください。`
-        );
-      }
-    );
+      );
+    } finally {
+      this.bootWaitDeviceId = null;
+    }
   }
 
   /**
