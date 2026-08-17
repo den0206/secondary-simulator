@@ -91,7 +91,7 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 ## ⌨️ Commands
 
 Open the command palette (`Cmd+Shift+P`) and filter by **Secondary Simulator:**.
-Screenshot, refresh, and logs are also available as icons in the view title bar.
+Screenshot, refresh, and logs (show / clear) are also available as icons in the view title bar.
 
 | Command | Description |
 |---|---|
