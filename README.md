@@ -89,13 +89,14 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Press and hold**: long press
    - **Home**: control below the preview
    - **Back**: Android only (disabled on iOS)
+   - **Shot**: save a screenshot of the connected device
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
 
 ## ⌨️ Commands
 
 Open the command palette (`Cmd+Shift+P`) and filter by **Secondary Simulator:**.
-Screenshot, refresh, and logs (show / clear) are also available as icons in the view title bar.
+Refresh and logs (show / clear) are also available as icons in the view title bar. Screenshot is the **Shot** button below the preview (or the command palette).
 
 | Command | Description |
 |---|---|
