@@ -95,11 +95,6 @@
     "menus": {
       "view/title": [
         {
-          "command": "simulator.screenshot",
-          "when": "view == simulatorView",
-          "group": "navigation@1"
-        },
-        {
           "command": "simulator.refresh",
           "when": "view == simulatorView",
           "group": "navigation@2"
