@@ -33,6 +33,8 @@
 - `Secondary Simulator: Select Device` を QuickPick 化（従来はビューへフォーカスするだけだった）
 - スクリーンショット / 再取得 / ログをビュータイトルのアイコンに追加
 - `docs/project-review.md` — 全体精査の記録と未対応の提案
+- `THIRD-PARTY-NOTICES.md` — 同梱 `@mobilenext/mobilecli` 0.1.64（AGPL-3.0）のライセンス全文と入手先を VSIX に同梱
+- README / README_JP の License 節に mobilecli の AGPL 告知を追記
 
 ### 変更
 

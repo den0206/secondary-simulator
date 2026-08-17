@@ -238,6 +238,11 @@ npm run clean      # 生成物の削除
 
 [MIT](LICENSE.md)
 
+VSIX には `@mobilenext/mobilecli` 0.1.64 を同梱しており、こちらは **AGPL-3.0** です
+（npm のメタデータは MIT ですが、該当タグの upstream `LICENSE` は AGPL-3.0）。
+別プロセスとして起動するだけで、改変せずそのまま同梱しています。全文と入手先は
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
+
 ## 🤝 コントリビューション
 
 コントリビューションを歓迎します。PR は `feature/**` または `fix/**` ブランチから作成してください（CI が自動で走ります）。

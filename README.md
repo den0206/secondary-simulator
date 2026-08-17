@@ -232,6 +232,12 @@ Notes:
 
 [MIT](LICENSE.md)
 
+The VSIX bundles `@mobilenext/mobilecli` 0.1.64, which is licensed under **AGPL-3.0**
+(the npm metadata says MIT, but the upstream `LICENSE` at that tag does not).
+It runs as a separate process and is shipped unmodified. See
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for the full text and where to
+get its source.
+
 ## 🤝 Contributing
 
 Contributions are welcome. Please open pull requests from a `feature/**` or `fix/**` branch so CI runs automatically.
