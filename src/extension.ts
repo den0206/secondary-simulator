@@ -37,6 +37,11 @@ export function activate(context: vscode.ExtensionContext): void {
       Logger.show();
     }),
 
+    vscode.commands.registerCommand('simulator.clearLogs', () => {
+      Logger.clear();
+      Logger.info('ログを消去しました');
+    }),
+
     vscode.commands.registerCommand('simulator.home', async () => {
       if (provider) {
         await provider.pressHome();

@@ -12,7 +12,13 @@ export interface ResourceStats {
   heapUsedMb: number;
   /** 子プロセス（mobilecli / simhid-server）の RSS 合計 MB */
   childrenMb: number;
-  /** 拡張ディレクトリのサイズ MB */
+  /**
+   * 拡張ディレクトリのサイズ MB。
+   *
+   * この拡張は永続ストレージを持たない（CLAUDE.md）ので、これは同梱物のサイズであり
+   * 実行中に増えない。mobilecli が入れる WebDriverAgent や、npx フォールバック時の
+   * npm キャッシュは拡張ディレクトリの外なので**含まれない**。
+   */
   storageMb: number;
 }
 

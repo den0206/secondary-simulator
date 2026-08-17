@@ -18,6 +18,7 @@
 - mobilecli / simhid-server が SIGTERM を無視した場合に孤児として残る問題を修正
 - webview が取りこぼした pointerId を保持し続けていた問題を修正
 - オーバーレイの DOM をフレーム毎に書き換えていたのをやめた
+- フッターの「ストレージ」表示が拡張ディレクトリしか測っていなかったため「拡張ディレクトリ」へ表記を改めた
 
 ### 追加
 
@@ -28,6 +29,7 @@
   HID のキーはハードウェアキーボード扱いになり、iOS がソフトウェアキーボードを出さない
 - `Secondary Simulator: Save Screenshot` — 接続中デバイスの画面を保存する
 - `Secondary Simulator: Show Logs` — 出力チャンネルを開く
+- `Secondary Simulator: Clear Logs` — 出力チャンネルを空にする（VS Code は全文をメモリに持ち、行数の上限を設けられないため）
 - `Secondary Simulator: Select Device` を QuickPick 化（従来はビューへフォーカスするだけだった）
 - スクリーンショット / 再取得 / ログをビュータイトルのアイコンに追加
 - `docs/project-review.md` — 全体精査の記録と未対応の提案
