@@ -78,6 +78,31 @@ export class MobileCliClient {
     );
   }
 
+  /**
+   * 停止中のデバイスを起動する。シミュレータの起動は数十秒かかることがあるので
+   * 既定のタイムアウトを長めに取る。
+   */
+  async boot(deviceId: string, timeoutMs = 120_000): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest(
+      'device.boot',
+      {deviceId},
+      timeoutMs
+    );
+  }
+
+  /** ディープリンク／URL をデバイスで開く（`xcrun simctl openurl` 相当）。 */
+  async openUrl(
+    deviceId: string,
+    url: string,
+    timeoutMs = 30_000
+  ): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest(
+      'device.url',
+      {deviceId, url},
+      timeoutMs
+    );
+  }
+
   // 入力操作
   async tap(deviceId: string, x: number, y: number): Promise<void> {
     return this.jsonRpcClient.sendJsonRpcRequest('device.io.tap', {

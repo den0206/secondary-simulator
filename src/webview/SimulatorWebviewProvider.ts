@@ -15,6 +15,7 @@ import {WdaSettings} from '../capture/WdaSettings';
 import {SimulatorInputController} from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {Device, DeviceType} from '../simulator/types';
+import {DeviceStatus, renderStatus} from '../ui/DeviceStatusBar';
 import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
@@ -43,13 +44,31 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   // 未接続のあいだだけ回すデバイス探索。接続したら止める。
   private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly AUTO_CONNECT_INTERVAL_MS = 5_000;
+  // device.boot 後に Booted を待つ上限（2 秒 × 45 = 90 秒）
+  private static readonly BOOT_POLL_TRIES = 45;
+  private static readonly BOOT_POLL_INTERVAL_MS = 2_000;
   /** 直近に webview へ送ったデバイス一覧の署名。同じなら送らない（5秒ごとの再描画を避ける） */
   private lastDevicesSignature = '';
+  /** ステータスバーへ流す接続状態。webview を作り直したときの再送にも使う。 */
+  private status: DeviceStatus = {state: 'disconnected'};
 
-  constructor(extensionUri: vscode.Uri) {
+  /**
+   * @param onStatusChange ステータスバーの更新先。webview の外に出す唯一の状態。
+   */
+  constructor(
+    extensionUri: vscode.Uri,
+    private readonly onStatusChange?: (status: DeviceStatus) => void
+  ) {
     this.extensionUri = extensionUri;
     // mobilecliサーバーを初期化（必須）
     this.mobileCliServer = new MobileCliServer();
+  }
+
+  /** 接続状態を 1 か所で更新する（ステータスバーと webview のフッターが揃う）。 */
+  private setStatus(status: DeviceStatus): void {
+    this.status = status;
+    this.onStatusChange?.(status);
+    this.postMessage({type: 'mode', text: renderStatus(status).mode});
   }
 
   async resolveWebviewView(
@@ -130,6 +149,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.startStatsTimer();
     // HTML を作り直したので、一覧が同じでも webview へ送り直す
     this.lastDevicesSignature = '';
+    this.postMessage({type: 'mode', text: renderStatus(this.status).mode});
     this.refreshDevices();
   }
 
@@ -271,7 +291,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           );
           await this.handleKeypress(
             message.key as string,
-            message.special as boolean
+            message.special as boolean,
+            message.modifiers as string[] | undefined
           );
           break;
 
@@ -363,10 +384,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       if (signature !== this.lastDevicesSignature) {
         this.lastDevicesSignature = signature;
         this.postMessage({type: 'devices', devices: this.devices});
-        this.postMessage({
-          type: 'status',
-          text: `${this.devices.length} devices found`,
-        });
       }
       await this.autoConnect();
     } catch (error) {
@@ -384,6 +401,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       // 選択中のデバイスが一覧から消えたとき。明示的な切断ではないので自動接続は残す。
       this.stopCapture();
       this.currentDeviceId = null;
+      this.setStatus({state: 'disconnected'});
       this.syncAutoConnectTimer();
       return;
     }
@@ -413,6 +431,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     // WDA 起動待ちで最初のフレームまで数秒かかる。待たせている理由を出す。
     this.postMessage({type: 'connecting', name: device.name});
+    this.setStatus({state: 'connecting', name: device.name});
     this.currentDeviceId = deviceId;
 
     // Get device info and send screen size to webview (mobiledeck-style)
@@ -458,10 +477,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             .getConfiguration('secondarySimulator')
             .get<string>('keyInput', 'hid') === 'wda',
         onBackendChange: (kind) => {
-          this.postMessage({
-            type: 'status',
-            text: kind === 'hid' ? '高速モード (HID)' : '互換モード (WDA)',
-          });
+          this.setStatus({state: 'connected', name: device.name, backend: kind});
           // HID が死ぬとサイドカー取り込みも止まる。映像だけ WDA へ切り替える。
           // startCaptureForDevice は呼ぶな — コントローラを作り直して HID を再試行し、
           // fatal が続くと spawn ループになる。
@@ -479,6 +495,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         );
       }
       this.inputController = controller;
+      // init が onBackendChange を呼べずに終わっても「接続中」で止めない
+      this.setStatus({
+        state: 'connected',
+        name: device.name,
+        backend: controller.backendKind,
+      });
     }
 
     await this.startDisplayForDevice(deviceId, device);
@@ -658,12 +680,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     else await this.inputController.touchUp(cx, cy);
   }
 
-  private async handleKeypress(key: string, special?: boolean): Promise<void> {
+  private async handleKeypress(
+    key: string,
+    special?: boolean,
+    modifiers?: string[]
+  ): Promise<void> {
     if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot send key: no device selected');
       return;
     }
-    await this.inputController.keypress(key, special);
+    await this.inputController.keypress(key, special, modifiers);
   }
 
   async pressHome(): Promise<void> {
@@ -689,6 +715,94 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   getCurrentDeviceId(): string | null {
     return this.currentDeviceId;
+  }
+
+  /**
+   * 停止中のデバイスを起動して接続する。
+   *
+   * 以前は「起動していません」で終わりだったので、シミュレータを自分で立ち上げて
+   * から戻ってくる必要があった（docs/project-review.md §5.4）。
+   *
+   * `device.boot` の応答は起動要求の受理までしか保証しないため、一覧に `Booted`
+   * として現れるまで待つ。無限には待たない。
+   */
+  async bootAndConnect(deviceId: string): Promise<void> {
+    if (!this.mobileCliClient) {
+      await this.refreshDevices();
+    }
+    if (!this.mobileCliClient) {
+      void vscode.window.showErrorMessage(
+        'Secondary Simulator: mobilecli を初期化できませんでした。'
+      );
+      return;
+    }
+    const name =
+      this.devices.find((d) => d.id === deviceId)?.name ?? deviceId;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Secondary Simulator: ${name} を起動しています…`,
+        cancellable: false,
+      },
+      async () => {
+        try {
+          await this.mobileCliClient!.boot(deviceId);
+        } catch (error) {
+          Logger.error('デバイスの起動に失敗', error as Error);
+          void vscode.window.showErrorMessage(
+            `Secondary Simulator: ${name} を起動できませんでした — ${
+              (error as Error).message
+            }`
+          );
+          return;
+        }
+
+        // 起動要求が通っても一覧に載るまで間がある。上限付きで待つ。
+        for (let i = 0; i < SimulatorWebviewProvider.BOOT_POLL_TRIES; i++) {
+          await this.refreshDevices();
+          // refreshDevices の中の自動接続が先に繋いでいたら、繋ぎ直さない
+          if (this.currentDeviceId === deviceId) return;
+          if (
+            this.devices.find((d) => d.id === deviceId)?.state === 'Booted'
+          ) {
+            await this.selectDevice(deviceId);
+            return;
+          }
+          await new Promise((r) =>
+            setTimeout(r, SimulatorWebviewProvider.BOOT_POLL_INTERVAL_MS)
+          );
+        }
+        void vscode.window.showWarningMessage(
+          `Secondary Simulator: ${name} の起動を待ちましたが Booted になりませんでした。一覧を更新して選び直してください。`
+        );
+      }
+    );
+  }
+
+  /**
+   * 接続中のデバイスでディープリンク／URL を開く。
+   * アプリ開発の反復で、シミュレータへ切り替えずに遷移を試せるようにする。
+   */
+  async openUrl(url: string): Promise<void> {
+    const deviceId = this.currentDeviceId;
+    if (!deviceId || !this.mobileCliClient) {
+      void vscode.window.showWarningMessage(
+        'Secondary Simulator: デバイスに接続してから URL を開いてください。'
+      );
+      return;
+    }
+    try {
+      await this.mobileCliClient.openUrl(deviceId, url);
+      Logger.info(`URL を開いた: ${url}`);
+    } catch (error) {
+      Logger.error('URL を開けなかった', error as Error);
+      void vscode.window.showErrorMessage(
+        `Secondary Simulator: URL を開けませんでした — ${
+          (error as Error).message
+        }`
+      );
+    }
   }
 
   /**
@@ -781,6 +895,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private async disconnect(): Promise<void> {
     this.stopCapture();
     this.currentDeviceId = null;
+    this.setStatus({state: 'disconnected'});
     this.postMessage({type: 'disconnected'});
     Logger.info('Device disconnected');
     // 押した直後に繋ぎ直さないよう自動接続を切る。表示（Auto スイッチ）も OFF に揃う。
@@ -869,6 +984,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.mjpegProxy = null;
     this.mobileCliServer.stopServer();
     this.view = undefined;
+    // view を落としてから。破棄済みの webview へ postMessage しない。
+    this.setStatus({state: 'disconnected'});
     this.currentDeviceId = null;
     this.devices = [];
     this.screenSize = null;
