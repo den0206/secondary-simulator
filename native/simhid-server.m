@@ -3,6 +3,7 @@
 //   ビルド: clang -fobjc-arc -O2 -framework Foundation -framework CoreFoundation \
 //              -o simhid-server simhid-server.m
 //   実行:   simhid-server            （UDID はコマンドごとに指定。全デバイス1プロセス）
+//           simhid-server --check    （私有 API が解決できるかだけ確認して終了。0=OK）
 //
 // プロトコル: stdin/stdout に JSON Lines（1行=1メッセージ、UTF-8、\n 区切り）。
 //   詳細は docs/sidecar-protocol.md、HID 注入の仕様は docs/ios-hid-injection.md を参照。
@@ -561,8 +562,8 @@ static NSString *developerDir(void) {
       stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
 }
 
-// 成功なら YES。失敗時は理由を *reason に入れて NO
-static BOOL setup(NSString **reason) {
+// 私有フレームワークと Indigo シンボルだけ解決する（--check 用）
+static BOOL setupSymbols(NSString **reason) {
   NSString *dev = developerDir();
   if (!dev.length) { *reason = @"xcode-select -p に失敗"; return NO; }
 
@@ -588,7 +589,14 @@ static BOOL setup(NSString **reason) {
   if (!gHidCls) { *reason = @"HID クライアントクラスが見つからない"; return NO; }
   gInitSel = sel_registerName("initWithDevice:error:");
   gSendSel = sel_registerName("sendWithMessage:freeWhenDone:completionQueue:completion:");
+  return YES;
+}
 
+// 成功なら YES。失敗時は理由を *reason に入れて NO
+static BOOL setup(NSString **reason) {
+  if (!setupSymbols(reason)) return NO;
+
+  NSString *dev = developerDir();
   NSError *err = nil;
   id ctx = ((id (*)(Class, SEL, id, NSError **))objc_msgSend)(
       objc_lookUpClass("SimServiceContext"),
@@ -630,6 +638,18 @@ static void readLoop(void) {
 
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
+    // --check: 私有 API の解決可否だけを見て終わる。Xcode 更新で壊れたことを
+    // CI が先に踏むための入口（ユーザーの実機より先に気づくのが目的）。
+    if (argc > 1 && strcmp(argv[1], "--check") == 0) {
+      NSString *why = nil;
+      if (!setupSymbols(&why)) {
+        fprintf(stderr, "[simhid] check NG: %s\n", why.UTF8String ?: "不明");
+        return 1;
+      }
+      fprintf(stdout, "[simhid] check OK\n");
+      return 0;
+    }
+
     mach_timebase_info_data_t tb;
     mach_timebase_info(&tb);
     gTimebaseNum = tb.numer;
