@@ -51,6 +51,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private frameCount = 0;
   private frameBytes = 0;
   private lastStatsAtMs = Date.now();
+  /** 非表示のまま残した入力コントローラを解放するまでの猶予。 */
+  private inputReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly INPUT_RELEASE_MS = 120_000;
   // 未接続のあいだだけ回すデバイス探索。接続したら止める。
   private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly AUTO_CONNECT_INTERVAL_MS = 5_000;
@@ -155,7 +158,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           void this.refreshDevices();
         }
       } else {
-        this.stopCapture();
+        // 表示だけ止め、入力（サイドカープロセスと HID クライアント）は残す。
+        // タブを行き来するたびに作り直すと ready 待ちのぶん復帰が遅い。
+        // ただし畳んだまま放置される場合があるので、時間で解放する。
+        this.stopCapture({keepInput: true});
+        this.armInputRelease();
         this.stopStatsTimer();
       }
       this.syncAutoConnectTimer();
@@ -463,12 +470,28 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     deviceId: string,
     device: Device
   ): Promise<void> {
-    this.stopCapture();
+    // 同じデバイスへ繋ぎ直すなら入力はそのまま使う（再表示・設定変更で作り直さない）。
+    // 判定は currentDeviceId を書き換える前に行う。
+    const reuseInput =
+      this.inputController !== null && this.currentDeviceId === deviceId;
+    this.stopCapture({keepInput: reuseInput});
+    this.clearInputReleaseTimer();
 
     // WDA 起動待ちで最初のフレームまで数秒かかる。待たせている理由を出す。
     this.postMessage({type: 'connecting', name: device.name});
     this.setStatus({state: 'connecting', name: device.name});
     this.currentDeviceId = deviceId;
+
+    if (reuseInput) {
+      // 画面サイズも取得済み。device.info の往復（実測 280ms）を省く。
+      this.setStatus({
+        state: 'connected',
+        name: device.name,
+        backend: this.inputController!.backendKind,
+      });
+      await this.startDisplayForDevice(deviceId, device);
+      return;
+    }
 
     // Get device info and send screen size to webview (mobiledeck-style)
     if (this.mobileCliClient) {
@@ -918,17 +941,50 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     return folder ? folder.uri : vscode.Uri.file(os.homedir());
   }
 
-  private stopCapture(): void {
+  /**
+   * @param options.keepInput 入力コントローラ（＝サイドカープロセス）を残す。
+   *   非表示や同じデバイスへの繋ぎ直しで、`ready` 待ちと HID クライアント生成を
+   *   やり直さないため（docs/sync-enhancement.md §2.9）。
+   */
+  private stopCapture(options?: {keepInput?: boolean}): void {
     if (this.currentCapture) {
       this.currentCapture.dispose();
       this.currentCapture = null;
     }
-    if (this.inputController) {
-      this.inputController.dispose();
-      this.inputController = null;
+    if (!options?.keepInput) {
+      this.clearInputReleaseTimer();
+      if (this.inputController) {
+        this.inputController.dispose();
+        this.inputController = null;
+      }
     }
     // 直結 <img> の GET を閉じ、非表示中も MJPEG を流し続けない
     this.postMessage({type: 'pauseStream'});
+  }
+
+  /**
+   * 非表示のまま放置されたら入力コントローラを解放する。
+   * 使い回しは「すぐ戻ってくる」場合のためのもので、畳んだままの子プロセスを
+   * 抱え続ける理由は無い（CLAUDE.md「確保したものは必ず捨てる」）。
+   */
+  private armInputRelease(): void {
+    this.clearInputReleaseTimer();
+    if (!this.inputController) return;
+    this.inputReleaseTimer = setTimeout(() => {
+      this.inputReleaseTimer = null;
+      if (this.view?.visible) return; // その間に戻ってきた
+      Logger.info('非表示が続いたため入力コントローラを解放する');
+      this.inputController?.dispose();
+      this.inputController = null;
+    }, SimulatorWebviewProvider.INPUT_RELEASE_MS);
+    // 解放待ちで拡張ホストの終了を遅らせない
+    this.inputReleaseTimer.unref?.();
+  }
+
+  private clearInputReleaseTimer(): void {
+    if (!this.inputReleaseTimer) return;
+    clearTimeout(this.inputReleaseTimer);
+    this.inputReleaseTimer = null;
   }
 
   /** 同梱の simhid-server バイナリのパス。存在しなければ WDA フォールバックになる。 */
