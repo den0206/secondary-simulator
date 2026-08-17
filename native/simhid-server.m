@@ -16,9 +16,13 @@
 //   keyDown/keyUp { usage }                      USB HID usage code
 //   modifier { bit, down }                       bit は 16..20
 //   text { value }                               ASCII 一括入力
-//   captureStart { fps?, maxWidth?, quality? }   画面バッファの JPEG 配信を開始
+//   captureStart { fps?, maxWidth?, quality?, sink?, mode? }
+//                                                画面バッファの JPEG 配信を開始
+//                                                sink: "stdout"(既定) | "http"
+//                                                mode: "auto"(既定・変更通知) | "poll"
 //   captureConfig { fps?, maxWidth?, quality? }  配信中の設定を張り直さずに変える
 //   captureStop                                  同 停止
+//   captureServe { enable, port?, token? }       フレームの HTTP 配信（device 不要）
 //   ping
 //
 // 送信（stdout）:
@@ -32,11 +36,20 @@
 #import <CoreImage/CoreImage.h>
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurface.h>
+#import <arpa/inet.h>
 #import <dlfcn.h>
+#import <errno.h>
 #import <mach/mach_time.h>
+#import <netinet/in.h>
+#import <netinet/tcp.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <pthread.h>
+#import <signal.h>
+#import <string.h>
+#import <sys/socket.h>
+#import <time.h>
+#import <unistd.h>
 
 #pragma mark - 復元した private API（docs/ios-hid-injection.md 参照）
 
@@ -96,6 +109,8 @@ static uint64_t nowNs(void) {
 @property(nonatomic, strong) dispatch_source_t captureTimer;
 @property(nonatomic, assign) double jpegQuality;
 @property(nonatomic, assign) double maxWidth;
+/** 設定された上限 fps。ポーリング間隔とプッシュ時のレート制限に使う。 */
+@property(nonatomic, assign) double fps;
 @property(nonatomic, assign) uint32_t lastSeed;      // IOSurface の世代。同じなら送らない
 @property(nonatomic, assign) BOOL hasLastSeed;
 /**
@@ -115,6 +130,32 @@ static uint64_t nowNs(void) {
 @property(nonatomic, assign) uint32_t frameCount;
 /** 連続して面が取れなかった tick 数。続くと descriptor を取り直す。 */
 @property(nonatomic, assign) uint32_t noSurfaceTicks;
+
+// ---- フレームの配信先（docs/sync-enhancement.md §3.2 B-1）----
+/**
+ * `stdout`（JSON Lines の base64）か `http`（loopback の multipart）か。
+ * http のときフレームは stdout を通らないので、**映像の背圧が入力の応答を
+ * 巻き込まない**（§2.4）。
+ */
+@property(nonatomic, assign) BOOL sinkHttp;
+/**
+ * HTTP クライアントへ渡す最新の JPEG と、その世代。
+ * **gFrameMutex を持っている間だけ触る**（取り込みキューと接続ごとのスレッドが共有する）。
+ */
+@property(nonatomic, strong) NSData *httpFrame;
+@property(nonatomic, assign) uint64_t httpFrameGen;
+
+// ---- プッシュ型の取り込み（docs/sync-enhancement.md §3.1）----
+/** 変更通知が使えているか。登録に失敗したら NO のままポーリングで回す。 */
+@property(nonatomic, assign) BOOL pushMode;
+@property(nonatomic, strong) NSUUID *pushUUID;
+@property(nonatomic, assign) uint64_t lastPushNs;
+@property(nonatomic, assign) uint64_t minPushIntervalNs;
+/** レート制限で送らなかった変更が残っているか。境界で 1 回流す。 */
+@property(nonatomic, assign) BOOL pushPending;
+@property(nonatomic, assign) BOOL pushScheduled;
+/** 変更通知が来ないのに画面が変わっていた回数。続くとポーリングへ戻す。 */
+@property(nonatomic, assign) uint32_t pushMissed;
 @end
 
 @implementation DeviceState
@@ -184,6 +225,291 @@ static void respond(NSNumber *reqId, BOOL ok, NSString *error, double latencyMs)
   if (error) d[@"error"] = error;
   if (latencyMs >= 0) d[@"latencyMs"] = @(latencyMs);
   emitLine(d);
+}
+
+#pragma mark - フレームの HTTP 直結配信（docs/sync-enhancement.md §3.2）
+
+/**
+ * webview の `<img>` へ multipart/x-mixed-replace を直接返す loopback サーバ。
+ *
+ * **なぜ stdout ではなく HTTP か。** stdout は入力の応答と共用で、しかも
+ * ブロッキングな fd なので、親の読み出しが遅れるとフレームの write が
+ * mutex を握ったまま止まり、入力の応答まで巻き込む（§2.4）。フレームを
+ * 別経路にすると、この結合が設計から消える。あわせて base64 と JSON と
+ * postMessage が丸ごと不要になり、multipart の復号は Chromium がやる。
+ *
+ * **安全側の決めごと**
+ * - 127.0.0.1 でだけ待ち受ける（外部からは届かない）
+ * - 起動毎のトークンを URL に要求する。合わないものは 404 で落とす
+ *   （UDID は `xcrun simctl list` で誰でも読めるので、秘密にならない）
+ * - ポートとトークンは**親が決めて渡す**。CSP は範囲で許可されているため、
+ *   親が空きを探して順に試すのが一番単純（MjpegProxy と同じ形）
+ */
+
+static int gServeSocket = -1;
+static NSString *gServeToken = nil;
+/** 停止・再開を跨いで生き残ったスレッドを止めるための世代。 */
+static uint64_t gServeEpoch = 0;
+// httpFrame / httpFrameGen / gServeEpoch を守る。条件変数で新しいフレームを配る。
+static pthread_mutex_t gFrameMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gFrameCond = PTHREAD_COND_INITIALIZER;
+
+static const char *kBoundary = "simhidframe";
+/** 接続スレッドが停止指示を確認しに起きる間隔（静止画面では書くものが無いため）。 */
+static const long kClientWaitSec = 2;
+
+/** 最新フレームを差し替えて待っている接続を起こす。取り込み側は**待たない**。 */
+static void publishFrame(DeviceState *st, NSData *jpeg) {
+  pthread_mutex_lock(&gFrameMutex);
+  st.httpFrame = jpeg;
+  st.httpFrameGen++;
+  pthread_cond_broadcast(&gFrameCond);
+  pthread_mutex_unlock(&gFrameMutex);
+}
+
+/** 長さが同じで内容も同じか。早期 return しない（トークンの推測を助けない）。 */
+static BOOL tokenEquals(const char *given, size_t givenLen, NSString *expected) {
+  if (!expected) return NO;
+  const char *exp = expected.UTF8String;
+  size_t expLen = strlen(exp);
+  if (givenLen != expLen) return NO;
+  unsigned char diff = 0;
+  for (size_t i = 0; i < expLen; i++) diff |= (unsigned char)(given[i] ^ exp[i]);
+  return diff == 0;
+}
+
+static BOOL writeAllFd(int fd, const void *bytes, size_t len) {
+  const uint8_t *p = bytes;
+  while (len > 0) {
+    ssize_t w = write(fd, p, len);
+    if (w <= 0) {
+      if (w < 0 && errno == EINTR) continue;
+      return NO;
+    }
+    p += w;
+    len -= (size_t)w;
+  }
+  return YES;
+}
+
+/** クエリ文字列から key の値を取り出す（malloc せず範囲を返す）。 */
+static const char *queryValue(const char *query, const char *key, size_t *outLen) {
+  size_t keyLen = strlen(key);
+  const char *p = query;
+  while (p && *p) {
+    const char *amp = strchr(p, '&');
+    size_t segLen = amp ? (size_t)(amp - p) : strlen(p);
+    if (segLen > keyLen + 1 && strncmp(p, key, keyLen) == 0 && p[keyLen] == '=') {
+      *outLen = segLen - keyLen - 1;
+      return p + keyLen + 1;
+    }
+    p = amp ? amp + 1 : NULL;
+  }
+  *outLen = 0;
+  return NULL;
+}
+
+typedef struct {
+  int fd;
+  uint64_t epoch;
+} ClientArg;
+
+static void *clientThread(void *arg) {
+  ClientArg *carg = (ClientArg *)arg;
+  int fd = carg->fd;
+  uint64_t epoch = carg->epoch;
+  free(carg);
+
+  @autoreleasepool {
+    // ---- リクエストを読む（ヘッダ終端まで。上限付き）----
+    char req[4096];
+    size_t used = 0;
+    BOOL complete = NO;
+    while (used < sizeof(req) - 1) {
+      ssize_t n = read(fd, req + used, sizeof(req) - 1 - used);
+      if (n <= 0) break;
+      used += (size_t)n;
+      req[used] = '\0';
+      if (strstr(req, "\r\n\r\n")) { complete = YES; break; }
+    }
+    if (!complete) { close(fd); return NULL; }
+
+    // ---- "GET /stream?device=…&t=… HTTP/1.1" を分解する ----
+    static const char *kNotFound =
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    if (strncmp(req, "GET /stream?", 12) != 0) {
+      writeAllFd(fd, kNotFound, strlen(kNotFound));
+      close(fd);
+      return NULL;
+    }
+    char *query = req + 12;
+    char *sp = strchr(query, ' ');
+    if (!sp) { close(fd); return NULL; }
+    *sp = '\0';
+
+    size_t tokLen = 0, devLen = 0;
+    const char *tok = queryValue(query, "t", &tokLen);
+    const char *dev = queryValue(query, "device", &devLen);
+    // gServeToken は停止時に nil になる。ARC の解放と読みが競らないよう写しを取る
+    pthread_mutex_lock(&gFrameMutex);
+    NSString *expected = gServeToken;
+    pthread_mutex_unlock(&gFrameMutex);
+    // 経路とトークンが揃わないものは、存在自体を伏せて 404 で落とす
+    if (!tok || !dev || !tokenEquals(tok, tokLen, expected)) {
+      writeAllFd(fd, kNotFound, strlen(kNotFound));
+      close(fd);
+      return NULL;
+    }
+    NSString *udid = [[NSString alloc] initWithBytes:dev
+                                              length:devLen
+                                            encoding:NSUTF8StringEncoding];
+    __block DeviceState *st = nil;
+    if (udid) {
+      // gStates は gQueue の持ち物。取り出しだけ同期する
+      NSString *key = udid.lowercaseString;
+      dispatch_sync(gQueue, ^{ st = gStates[key]; });
+    }
+    if (!st) {
+      writeAllFd(fd, kNotFound, strlen(kNotFound));
+      close(fd);
+      return NULL;
+    }
+
+    // ---- multipart を流し始める ----
+    char header[512];
+    int headerLen = snprintf(header, sizeof(header),
+                             "HTTP/1.1 200 OK\r\n"
+                             "Content-Type: multipart/x-mixed-replace; boundary=%s\r\n"
+                             "Cache-Control: no-cache, private\r\n"
+                             "Pragma: no-cache\r\n"
+                             "Connection: close\r\n\r\n",
+                             kBoundary);
+    if (!writeAllFd(fd, header, (size_t)headerLen)) { close(fd); return NULL; }
+
+    uint64_t seen = 0;
+    for (;;) {
+      NSData *frame = nil;
+      pthread_mutex_lock(&gFrameMutex);
+      while (st.httpFrameGen == seen && gServeEpoch == epoch) {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += kClientWaitSec;
+        pthread_cond_timedwait(&gFrameCond, &gFrameMutex, &ts);
+      }
+      if (gServeEpoch != epoch) { pthread_mutex_unlock(&gFrameMutex); break; }
+      // ARC が retain するので、ロックの外へ持ち出して書いてよい
+      frame = st.httpFrame;
+      seen = st.httpFrameGen;
+      pthread_mutex_unlock(&gFrameMutex);
+      if (!frame.length) continue;
+
+      @autoreleasepool {
+        char part[256];
+        int partLen = snprintf(part, sizeof(part),
+                               "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %zu\r\n\r\n",
+                               kBoundary, (size_t)frame.length);
+        if (!writeAllFd(fd, part, (size_t)partLen)) break;
+        if (!writeAllFd(fd, frame.bytes, frame.length)) break;
+        if (!writeAllFd(fd, "\r\n", 2)) break;
+      }
+    }
+    close(fd);
+  }
+  return NULL;
+}
+
+static void *acceptThread(void *arg) {
+  uint64_t epoch = (uint64_t)(uintptr_t)arg;
+  for (;;) {
+    int listenFd = gServeSocket;
+    if (listenFd < 0 || gServeEpoch != epoch) break;
+    int fd = accept(listenFd, NULL, NULL);
+    if (fd < 0) {
+      if (errno == EINTR) continue;
+      break;  // ソケットが閉じられた
+    }
+    if (gServeEpoch != epoch) { close(fd); break; }
+    // 接続が閉じたあとの write で落ちない（SIGPIPE は main でも無視している）
+    int on = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+
+    ClientArg *carg = calloc(1, sizeof(ClientArg));
+    if (!carg) { close(fd); continue; }
+    carg->fd = fd;
+    carg->epoch = epoch;
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, clientThread, carg) != 0) {
+      free(carg);
+      close(fd);
+      continue;
+    }
+    pthread_detach(tid);
+  }
+  return NULL;
+}
+
+/** 待ち受けを止める。接続中のスレッドは世代が変わったことで抜ける。 */
+static void stopServe(void) {
+  pthread_mutex_lock(&gFrameMutex);
+  gServeEpoch++;
+  pthread_cond_broadcast(&gFrameCond);
+  pthread_mutex_unlock(&gFrameMutex);
+  int fd = gServeSocket;
+  gServeSocket = -1;
+  if (fd >= 0) {
+    shutdown(fd, SHUT_RDWR);
+    close(fd);
+  }
+  pthread_mutex_lock(&gFrameMutex);
+  gServeToken = nil;
+  pthread_mutex_unlock(&gFrameMutex);
+}
+
+/** 指定ポートで待ち受ける。埋まっていれば NO（親が次のポートを試す）。 */
+static BOOL startServe(int port, NSString *token, NSString **err) {
+  stopServe();
+  if (port <= 0 || port > 65535 || token.length == 0) {
+    *err = @"ポートかトークンが不正";
+    return NO;
+  }
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) { *err = @"socket を作れない"; return NO; }
+  int on = 1;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons((uint16_t)port);
+  // 127.0.0.1 限定。0.0.0.0 にすると同じネットワークの誰でも画面を覗ける
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+    close(fd);
+    *err = @"ポートが使えない";
+    return NO;
+  }
+  if (listen(fd, 4) != 0) {
+    close(fd);
+    *err = @"listen に失敗";
+    return NO;
+  }
+
+  gServeSocket = fd;
+  pthread_mutex_lock(&gFrameMutex);
+  gServeToken = [token copy];
+  uint64_t epoch = ++gServeEpoch;
+  pthread_mutex_unlock(&gFrameMutex);
+
+  pthread_t tid;
+  if (pthread_create(&tid, NULL, acceptThread, (void *)(uintptr_t)epoch) != 0) {
+    stopServe();
+    *err = @"accept スレッドを作れない";
+    return NO;
+  }
+  pthread_detach(tid);
+  fprintf(stderr, "[simhid] フレーム配信を開始: 127.0.0.1:%d\n", port);
+  return YES;
 }
 
 #pragma mark - HID クライアント
@@ -315,6 +641,20 @@ static id displayDescriptorForDevice(id simDevice, id *ioClientOut) {
 static const uint64_t kAliveIntervalNs = 2000000000ULL;  // 2s
 // 面が取れないまま何 tick 続いたら descriptor を取り直すか（約2秒相当を上限とする）
 static const uint32_t kReacquireAfterTicks = 60;
+/**
+ * プッシュ型のときのタイマ間隔。フレームは変更通知が運ぶので、
+ * ここは生存通知と descriptor の取り直しのためだけに回る。
+ */
+static const uint64_t kPushTickIntervalNs = 500000000ULL;  // 500ms
+/** 変更通知が来ないのに画面が変わっていた回数の許容。超えたらポーリングへ戻す。 */
+static const uint32_t kPushMissTolerance = 2;
+/** 変更通知を使うか（captureStart の mode で決まる。既定は使う）。 */
+static BOOL gPushEnabled = YES;
+
+static void captureFrame(DeviceState *st, NSString *udid);
+static BOOL registerPush(DeviceState *st, NSString *udid);
+static void unregisterPush(DeviceState *st);
+static void applyCaptureTimerInterval(DeviceState *st);
 
 static void emitAlive(DeviceState *st, NSString *udid) {
   if (emitFrameLine(@{
@@ -331,29 +671,20 @@ static void emitAlive(DeviceState *st, NSString *udid) {
   st.lastAliveNs = nowNs();
 }
 
-// gCaptureQueue 上。1 フレーム取り込んで JPEG にし、frame 通知として送る。
-static void captureTick(DeviceState *st, NSString *udid) {
+/**
+ * gCaptureQueue 上。1 枚取り込んで JPEG にし、配信先へ渡す。
+ *
+ * 呼び出し元は 2 つある。
+ * - ポーリング（`captureTick`）: fps のタイマから
+ * - プッシュ（`onDamage`）: ディスプレイの変更通知から（§3.1）
+ *
+ * 面が取れなかったときの取り直しと生存通知は `captureTick` の責務にしてある
+ * （変更通知は「画面が変わったとき」しか来ないので、死活の判定には使えない）。
+ */
+static void captureFrame(DeviceState *st, NSString *udid) {
   @autoreleasepool {
-    st.tickCount++;
-    if (nowNs() - st.lastAliveNs >= kAliveIntervalNs) emitAlive(st, udid);
-
     id surfObj = surfaceForDescriptor(st.displayDescriptor);
-    if (!surfObj) {
-      // 画面が無い間（消灯・切替中）は黙って飛ばす。ただし**戻ってこない**場合がある
-      // ―― シミュレータを再起動すると descriptor が古くなり、以後ずっと nil を返す。
-      // 一定回数続いたら取り直す（docs/sync-enhancement.md §2.5）。
-      if (++st.noSurfaceTicks < kReacquireAfterTicks) return;
-      st.noSurfaceTicks = 0;
-      id client = nil;
-      id desc = displayDescriptorForDevice(st.simDevice, &client);
-      if (!desc) return;  // まだ駄目。次の周期でまた試す
-      fprintf(stderr, "[simhid] display descriptor を取り直した\n");
-      st.ioClient = client;  // 旧 client は ARC が解放する（port も閉じる）
-      st.displayDescriptor = desc;
-      st.hasLastSeed = NO;
-      st.lastJpeg = nil;
-      return;
-    }
+    if (!surfObj) return;  // 取り直しは captureTick が見る
     st.noSurfaceTicks = 0;
     IOSurfaceRef surface = (__bridge IOSurfaceRef)surfObj;
     uint32_t seed = IOSurfaceGetSeed(surface);
@@ -378,6 +709,14 @@ static void captureTick(DeviceState *st, NSString *udid) {
     if (!jpeg) return;
     // 画面が止まっていても seed は動く。中身が同じなら送らない（帯域を 0 にする）
     if (st.lastJpeg && [st.lastJpeg isEqualToData:jpeg]) return;
+
+    if (st.sinkHttp) {
+      // HTTP 直結。差し替えるだけで、接続の書き込みは待たない
+      publishFrame(st, jpeg);
+      st.lastJpeg = jpeg;
+      st.frameCount++;
+      return;
+    }
     BOOL sent = emitFrameLine(@{
       @"event": @"frame",
       @"device": udid,
@@ -393,9 +732,182 @@ static void captureTick(DeviceState *st, NSString *udid) {
   }
 }
 
+/**
+ * gCaptureQueue 上。生存通知・descriptor の取り直し・（ポーリング時は）取り込み。
+ *
+ * プッシュ型のときも**このタイマは止めない**。変更通知は画面が変わったときしか
+ * 来ないので、生存通知と取り直しの担い手が要る。そのぶん間隔は寝かせてある。
+ */
+static void captureTick(DeviceState *st, NSString *udid) {
+  @autoreleasepool {
+    st.tickCount++;
+    if (nowNs() - st.lastAliveNs >= kAliveIntervalNs) emitAlive(st, udid);
+
+    id surfObj = surfaceForDescriptor(st.displayDescriptor);
+    if (!surfObj) {
+      // 画面が無い間（消灯・切替中）は黙って飛ばす。ただし**戻ってこない**場合がある
+      // ―― シミュレータを再起動すると descriptor が古くなり、以後ずっと nil を返す。
+      // 一定回数続いたら取り直す（docs/sync-enhancement.md §2.5）。
+      if (++st.noSurfaceTicks < kReacquireAfterTicks) return;
+      st.noSurfaceTicks = 0;
+      id client = nil;
+      id desc = displayDescriptorForDevice(st.simDevice, &client);
+      if (!desc) return;  // まだ駄目。次の周期でまた試す
+      fprintf(stderr, "[simhid] display descriptor を取り直した\n");
+      unregisterPush(st);
+      st.ioClient = client;  // 旧 client は ARC が解放する（port も閉じる）
+      st.displayDescriptor = desc;
+      st.hasLastSeed = NO;
+      st.lastJpeg = nil;
+      registerPush(st, udid);  // 取り直した面へ張り直す（失敗したらポーリングのまま）
+      return;
+    }
+    st.noSurfaceTicks = 0;
+
+    if (!st.pushMode) {
+      captureFrame(st, udid);
+      return;
+    }
+
+    // ---- プッシュ型の自己点検 ----
+    // 変更通知が来ていないのに画面が変わっているなら、通知が機能していない。
+    // 黙って固まるより、ポーリングへ戻したほうがよい（§3.1 の注意点）。
+    IOSurfaceRef surface = (__bridge IOSurfaceRef)surfObj;
+    if (st.hasLastSeed && IOSurfaceGetSeed(surface) != st.lastSeed) {
+      if (++st.pushMissed >= kPushMissTolerance) {
+        fprintf(stderr, "[simhid] 変更通知が届かないためポーリングへ戻す\n");
+        unregisterPush(st);
+        applyCaptureTimerInterval(st);
+      }
+      captureFrame(st, udid);  // 取りこぼしはその場で埋める
+      return;
+    }
+    st.pushMissed = 0;
+  }
+}
+
+#pragma mark - プッシュ型の取り込み（変更通知）
+
+/**
+ * ディスプレイの変更通知でフレームを撮る（docs/sync-enhancement.md §3.1）。
+ *
+ * ポーリングだと「画面が変わってから次の tick まで」平均 16.7ms が構造的に乗る。
+ * `SimDisplayIOSurfaceRenderable` はダメージ矩形と面の差し替えを通知できるので、
+ * 変わった瞬間に撮れる。idb（`FBSimulatorControl/Framebuffer/FBFramebuffer.m`）が
+ * 同じ 2 つのセレクタを使っている。
+ *
+ * **私有 API なので壊れうる。** 次の 3 段構えにしてある。
+ * 1. `respondsToSelector:` で存在を確かめてから登録する
+ * 2. **コールバックの引数を一切参照しない**（ブロックの型が違っても踏み抜かない）
+ * 3. 通知が来ないのに画面が変わっていたら、ポーリングへ自動で戻す（`captureTick`）
+ */
+
+/** gCaptureQueue 上。レート制限つきで 1 枚撮る。 */
+static void pushCapture(DeviceState *st, NSString *udid) {
+  uint64_t now = nowNs();
+  uint64_t minInterval = st.minPushIntervalNs;
+  if (now - st.lastPushNs >= minInterval) {
+    st.lastPushNs = now;
+    st.pushPending = NO;
+    captureFrame(st, udid);
+    return;
+  }
+  // 上限より速い通知。最後の 1 回を落とさないよう、境界で流す予約だけ入れる
+  st.pushPending = YES;
+  if (st.pushScheduled) return;
+  st.pushScheduled = YES;
+  uint64_t delay = minInterval - (now - st.lastPushNs);
+  __weak DeviceState *weakSt = st;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)delay), gCaptureQueue, ^{
+    DeviceState *s = weakSt;
+    if (!s) return;
+    s.pushScheduled = NO;
+    if (!s.pushPending || !s.pushMode) return;
+    s.pushPending = NO;
+    s.lastPushNs = nowNs();
+    captureFrame(s, udid);
+  });
+}
+
+static BOOL registerPush(DeviceState *st, NSString *udid) {
+  if (!gPushEnabled || st.pushMode || !st.displayDescriptor) return NO;
+  id desc = st.displayDescriptor;
+  SEL damageSel = sel_registerName("registerCallbackWithUUID:damageRectanglesCallback:");
+  SEL surfaceSel = sel_registerName("registerCallbackWithUUID:ioSurfaceChangeCallback:");
+  // ROCK のリモートプロキシは respondsToSelector: に答えない。答えないものは
+  // 「無い」とみなしてポーリングのままにする（誤って呼ぶより安全側）。
+  if (![desc respondsToSelector:damageSel] || ![desc respondsToSelector:surfaceSel]) {
+    return NO;
+  }
+
+  NSUUID *uuid = [NSUUID UUID];
+  NSString *dev = [udid copy];
+  __weak DeviceState *weakSt = st;
+
+  // 引数は受け取るが**触らない**。撮り直しは常に現在の面を読み直して行う。
+  void (^damageCb)(id) = ^(id ignored) {
+    DeviceState *s = weakSt;
+    if (!s) return;
+    dispatch_async(gCaptureQueue, ^{
+      if (s.pushMode) pushCapture(s, dev);
+    });
+  };
+  // 面そのものが差し替わった（回転・解像度変更）。比較対象を落として 1 枚出す
+  void (^surfaceCb)(id) = ^(id ignored) {
+    DeviceState *s = weakSt;
+    if (!s) return;
+    dispatch_async(gCaptureQueue, ^{
+      s.hasLastSeed = NO;
+      s.lastJpeg = nil;
+      if (s.pushMode) pushCapture(s, dev);
+    });
+  };
+
+  ((void (*)(id, SEL, id, id))objc_msgSend)(desc, surfaceSel, uuid, surfaceCb);
+  ((void (*)(id, SEL, id, id))objc_msgSend)(desc, damageSel, uuid, damageCb);
+
+  st.pushUUID = uuid;
+  st.pushMode = YES;
+  st.pushMissed = 0;
+  st.pushPending = NO;
+  st.lastPushNs = 0;
+  fprintf(stderr, "[simhid] 変更通知で取り込む（プッシュ型）\n");
+  return YES;
+}
+
+static void unregisterPush(DeviceState *st) {
+  if (!st.pushMode) return;
+  st.pushMode = NO;
+  st.pushPending = NO;
+  id desc = st.displayDescriptor;
+  NSUUID *uuid = st.pushUUID;
+  st.pushUUID = nil;
+  if (!desc || !uuid) return;
+  // 登録したものは必ず外す（CLAUDE.md「確保したものは必ず捨てる」）
+  SEL u1 = sel_registerName("unregisterIOSurfaceChangeCallbackWithUUID:");
+  SEL u2 = sel_registerName("unregisterDamageRectanglesCallbackWithUUID:");
+  if ([desc respondsToSelector:u1]) {
+    ((void (*)(id, SEL, id))objc_msgSend)(desc, u1, uuid);
+  }
+  if ([desc respondsToSelector:u2]) {
+    ((void (*)(id, SEL, id))objc_msgSend)(desc, u2, uuid);
+  }
+}
+
+/** タイマの間隔を今のモードに合わせる。プッシュ時は生存通知のぶんだけ回す。 */
+static void applyCaptureTimerInterval(DeviceState *st) {
+  if (!st.captureTimer) return;
+  double hz = MIN(MAX(st.fps, 1.0), 60.0);
+  uint64_t frameInterval = (uint64_t)(NSEC_PER_SEC / hz);
+  st.minPushIntervalNs = frameInterval;
+  uint64_t interval = st.pushMode ? kPushTickIntervalNs : frameInterval;
+  dispatch_source_set_timer(st.captureTimer, dispatch_time(DISPATCH_TIME_NOW, 0), interval,
+                            interval / 10);
+}
+
 // gQueue 上。二重開始は no-op。
 static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double maxWidth,
-                         double quality, NSString **err) {
+                         double quality, BOOL sinkHttp, NSString **err) {
   if (st.captureTimer) return YES;
   if (!st.displayDescriptor) {
     id client = nil;
@@ -410,15 +922,13 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
   if (!st.ciContext) st.ciContext = [CIContext contextWithOptions:nil];
   st.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
   st.maxWidth = maxWidth;
+  st.fps = fps;
+  st.sinkHttp = sinkHttp;
   st.hasLastSeed = NO;
   st.lastJpeg = nil;
 
-  double hz = MIN(MAX(fps, 1.0), 60.0);
-  uint64_t interval = (uint64_t)(NSEC_PER_SEC / hz);
   dispatch_source_t timer =
       dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gCaptureQueue);
-  dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval,
-                            interval / 10);
   __weak DeviceState *weakSt = st;
   dispatch_source_set_event_handler(timer, ^{
     DeviceState *s = weakSt;
@@ -429,6 +939,9 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
   st.tickCount = 0;
   st.frameCount = 0;
   st.noSurfaceTicks = 0;
+  // 変更通知が使えるなら使う。使えなければポーリングのまま（間隔はモードで決まる）
+  registerPush(st, udid);
+  applyCaptureTimerInterval(st);
   dispatch_resume(timer);
   return YES;
 }
@@ -460,20 +973,21 @@ static BOOL configureCapture(DeviceState *st, double fps, double maxWidth, doubl
     // （seed も JPEG も同じなので捨てられる）。比較対象を落として1枚出させる。
     s.hasLastSeed = NO;
     s.lastJpeg = nil;
-    double hz = MIN(MAX(fps, 1.0), 60.0);
-    uint64_t interval = (uint64_t)(NSEC_PER_SEC / hz);
-    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval,
-                              interval / 10);
+    s.fps = fps;
+    applyCaptureTimerInterval(s);
   });
   return YES;
 }
 
 static void stopCapture(DeviceState *st) {
   if (!st.captureTimer) return;
+  unregisterPush(st);
   dispatch_source_cancel(st.captureTimer);
   st.captureTimer = nil;
   st.hasLastSeed = NO;
   st.lastJpeg = nil;
+  // 待っている接続を起こす（最新フレームを抱えたままにしない）
+  publishFrame(st, nil);
 }
 
 #pragma mark - 入力プリミティブ（全て gQueue 上）
@@ -576,6 +1090,21 @@ static void handleCommand(NSDictionary *cmd) {
 
   if ([name isEqualToString:@"ping"]) { respond(reqId, YES, nil, -1); return; }
 
+  // フレームの HTTP 配信。デバイスに紐づかない（1 サーバで全デバイスを捌く）。
+  // ポートとトークンは親が決めて渡す（CSP は範囲で許可されるため、空き探しは親の仕事）。
+  if ([name isEqualToString:@"captureServe"]) {
+    NSString *serveErr = nil;
+    if ([cmd[@"enable"] boolValue]) {
+      NSString *token = [cmd[@"token"] isKindOfClass:NSString.class] ? cmd[@"token"] : nil;
+      BOOL ok = startServe((int)numAt(cmd, @"port", 0), token, &serveErr);
+      respond(reqId, ok, serveErr, -1);
+    } else {
+      stopServe();
+      respond(reqId, YES, nil, -1);
+    }
+    return;
+  }
+
   NSString *udid = cmd[@"device"];
   if (![udid isKindOfClass:NSString.class]) { respond(reqId, NO, @"device がない", -1); return; }
   DeviceState *st = stateForDevice(udid);
@@ -627,8 +1156,14 @@ static void handleCommand(NSDictionary *cmd) {
     BOOL down = [cmd[@"down"] boolValue];
     ok = sendToClient(st, modMsg(bit, down ? 1 : 0));
   } else if ([name isEqualToString:@"captureStart"]) {
+    // mode: "auto"（既定・変更通知を試す）/ "poll"（ポーリングに固定）
+    id modeVal = cmd[@"mode"];
+    if ([modeVal isKindOfClass:NSString.class]) {
+      gPushEnabled = ![modeVal isEqualToString:@"poll"];
+    }
     ok = startCapture(st, udid, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
-                      numAt(cmd, @"quality", 0.6), &err);
+                      numAt(cmd, @"quality", 0.6),
+                      [cmd[@"sink"] isEqual:@"http"], &err);
   } else if ([name isEqualToString:@"captureConfig"]) {
     ok = configureCapture(st, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
                           numAt(cmd, @"quality", 0.6), &err);
@@ -748,6 +1283,9 @@ int main(int argc, const char *argv[]) {
       fprintf(stdout, "[simhid] check OK\n");
       return 0;
     }
+
+    // 接続が閉じた後の write でプロセスごと落ちない（配信用ソケットは SO_NOSIGPIPE も張る）
+    signal(SIGPIPE, SIG_IGN);
 
     mach_timebase_info_data_t tb;
     mach_timebase_info(&tb);

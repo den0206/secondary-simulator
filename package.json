@@ -128,7 +128,7 @@
         "secondarySimulator.directStream": {
           "type": "boolean",
           "default": false,
-          "description": "表示を webview 直結 MJPEG（<img>）にする。フレームが拡張ホストを経由せず、Chromium がネイティブ復号する。実験的。"
+          "description": "表示を webview 直結にする。フレームが拡張ホストを経由せず、Chromium がネイティブ復号する。iOS Simulator のサイドカー取り込みではサイドカーが 127.0.0.1 で直接配信し、それ以外は mobilecli の MJPEG を中継する。実験的。"
         },
         "secondarySimulator.streamScale": {
           "type": "number",
@@ -183,6 +183,19 @@
           "minimum": 160,
           "maximum": 2048,
           "description": "iOS: サイドカー取り込みで送る JPEG の幅の上限（px）。実際の幅はサイドバーの表示幅（× devicePixelRatio）に追従し、この値で頭打ちになる。上げると鮮明になり帯域も増える。"
+        },
+        "secondarySimulator.captureMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "poll"
+          ],
+          "enumDescriptions": [
+            "ディスプレイの変更通知が使えるなら使う（画面が変わった瞬間に撮るので、ポーリング由来の平均 16.7ms が消える）。使えない・届かない場合はポーリングへ自動で戻る。",
+            "常にポーリングで撮る。変更通知は非公開 API なので、Xcode 更新で不調なときはこちらに固定する。"
+          ],
+          "default": "auto",
+          "description": "iOS: サイドカー取り込みの駆動方法。"
         },
         "secondarySimulator.logLevel": {
           "type": "string",

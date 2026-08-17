@@ -370,6 +370,23 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       .get<boolean>('directStream', false);
   }
 
+  /**
+   * サイドカーの配信ポートを webview から見えるようにする。
+   *
+   * `portMapping` はリモート開発（Remote SSH / Codespaces）で localhost 直結を
+   * 成立させるために要る。http のみ対応なので、直結を WebSocket ではなく
+   * multipart にしてある（docs/sync-enhancement.md §3.2）。
+   */
+  private allowStreamPort(port: number): void {
+    if (!port || !this.view) return;
+    const current = this.view.webview.options.portMapping ?? [];
+    if (current.some((m) => m.webviewPort === port)) return;
+    this.view.webview.options = {
+      ...this.view.webview.options,
+      portMapping: [...current, {webviewPort: port, extensionHostPort: port}],
+    };
+  }
+
   // MJPEG 直結プロキシを起動して返す（未起動なら起動）
   private async ensureProxy(): Promise<MjpegProxy> {
     if (this.mjpegProxy?.isRunning()) return this.mjpegProxy;
@@ -584,8 +601,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     deviceId: string,
     device: Device
   ): Promise<void> {
-    // 直結ストリーム（Phase 2）: フレームは webview の <img> が直接受ける。
-    // サイドカー取り込みが使えるときは、そちらが優先（WDA 経路にはキーボードが写らない）
+    // 直結ストリーム: フレームは webview の <img> が直接受ける。
+    // サイドカー取り込みのときはサイドカー自身が配信するので、この分岐は
+    // WDA/mobilecli 経路（MjpegProxy）専用。取り込み元と転送は独立に選べる
+    // （docs/sync-enhancement.md §2.1）。
     if (this.isDirectStreamEnabled() && !this.sidecarCaptureAvailable()) {
       try {
         const proxy = await this.ensureProxy();
@@ -619,6 +638,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     this.currentCapture.setDevice(deviceId);
+
+    // サイドカーの直結配信。フレームは拡張ホストを通らないので onFrame は呼ばれない。
+    // 張り直しでポートが変わることがあるため、開始のたびに URL を送り直す。
+    if (this.currentCapture instanceof SidecarCapture) {
+      this.currentCapture.onStreamChange = (url) => {
+        if (!url) return;
+        this.allowStreamPort(this.currentCapture instanceof SidecarCapture
+          ? this.currentCapture.port
+          : 0);
+        this.postMessage({type: 'streamUrl', url});
+      };
+    }
+
     this.currentCapture.onFrame((frameBase64) => {
       // 高頻度パス（毎秒 20〜30 回）。ログも変換も挟まない。
       // base64 の文字列で渡す。Uint8Array のまま postMessage すると、シリアライザ次第で
@@ -661,15 +693,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       ? this.inputController?.activeSidecar
       : null;
     if (sidecar) {
-      this.currentCapture = new SidecarCapture(sidecar, () => {
-        const cfg = vscode.workspace.getConfiguration('secondarySimulator');
-        return {
-          fps: cfg.get<number>('captureFps', 30),
-          maxWidth: cfg.get<number>('captureMaxWidth', 640),
-          // streamQuality は 1-100、サイドカーは 0.1-1.0
-          quality: cfg.get<number>('streamQuality', 80) / 100,
-        };
-      });
+      const cfg = vscode.workspace.getConfiguration('secondarySimulator');
+      this.currentCapture = new SidecarCapture(
+        sidecar,
+        () => {
+          const c = vscode.workspace.getConfiguration('secondarySimulator');
+          return {
+            fps: c.get<number>('captureFps', 30),
+            maxWidth: c.get<number>('captureMaxWidth', 640),
+            // streamQuality は 1-100、サイドカーは 0.1-1.0
+            quality: c.get<number>('streamQuality', 80) / 100,
+          };
+        },
+        {
+          // 直結はサイドカー自身が配信する。拡張ホストはフレームに触らない
+          sink: this.isDirectStreamEnabled() ? 'http' : 'stdout',
+          mode: cfg.get<string>('captureMode', 'auto') === 'poll' ? 'poll' : 'auto',
+        }
+      );
       Logger.info('Using sidecar framebuffer capture');
       return;
     }
@@ -1033,15 +1074,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     );
     // 直結ストリームは preferredPort から最大 20 ポートを試すため、範囲を CSP に含める
     // （HTML 生成後にプロキシが別ポートで起動しても img-src で止まらないようにする）
-    const base = SimulatorWebviewProvider.PROXY_BASE_PORT;
-    const proxyOrigins = Array.from(
-      {length: MjpegProxy.MAX_PORT_TRIES},
-      (_, i) => ` http://localhost:${base + i}`
-    ).join('');
-    const extra = proxyPort
-      ? ` http://localhost:${proxyPort}`
-      : this.isDirectStreamEnabled()
-        ? proxyOrigins
+    const range = (base: number, count: number) =>
+      Array.from({length: count}, (_, i) => ` http://localhost:${base + i}`).join('');
+    const proxyOrigins = range(
+      SimulatorWebviewProvider.PROXY_BASE_PORT,
+      MjpegProxy.MAX_PORT_TRIES
+    );
+    // サイドカーの直結配信も同じ理由で範囲を許可する（開始時にポートが未定のため）
+    const sidecarOrigins = range(
+      SidecarCapture.STREAM_BASE_PORT,
+      SidecarCapture.MAX_PORT_TRIES
+    );
+    const extra = this.isDirectStreamEnabled()
+      ? proxyOrigins + sidecarOrigins
+      : proxyPort
+        ? ` http://localhost:${proxyPort}`
         : '';
     const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:${extra}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
 

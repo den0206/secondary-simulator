@@ -91,9 +91,10 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `keyDown`/`keyUp` | `usage`（USB HID usage code） | 単一キー |
 | `modifier` | `bit`（16..20）, `down`（bool） | 修飾キー |
 | `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解） |
-| `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6) | 画面バッファの JPEG 配信を開始（§3.5） |
-| `captureConfig` | 同上 | 配信中の設定を**張り直さずに**変える（§3.5） |
+| `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6), `sink?`(`stdout`), `mode?`(`auto`) | 画面バッファの JPEG 配信を開始（§3.5） |
+| `captureConfig` | `fps?`, `maxWidth?`, `quality?` | 配信中の設定を**張り直さずに**変える（§3.5） |
 | `captureStop` | — | 同 停止 |
+| `captureServe` | `enable`, `port?`, `token?` | フレームの HTTP 直結配信（§3.6）。**`device` を取らない** |
 | `ping` | — | 生存確認 |
 
 **設計方針: サイドカーは「薄い」。** down/move/up の粒度でそのまま HID に流し、
@@ -159,6 +160,50 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 `captureConfig` は取り込みキュー上で値だけ差し替え、次の tick から効く
 （幅や品質が変わっても静止画面だと同じ JPEG になって捨てられるため、
 比較対象をその場で落として 1 枚出させる）。
+
+### 3.6 フレームの HTTP 直結配信（`captureServe` / `sink: "http"`）
+
+`sink` が `http` のとき、フレームは stdout を通らない。サイドカーが
+127.0.0.1 で `multipart/x-mixed-replace` を配信し、webview の `<img>` が直接受ける。
+
+**なぜ分けるか。** stdout は入力の応答と共用で、しかもブロッキングな fd なので、
+親の読み出しが遅れるとフレームの `write` が mutex を握ったまま止まり、
+**入力の応答まで巻き込む**（docs/sync-enhancement.md §2.4）。経路を分けると
+この結合が設計から消える。あわせて base64・JSON・postMessage が不要になり、
+multipart の復号は Chromium がやる。
+
+- **ポートとトークンは拡張ホストが決めて渡す。** CSP は HTML 生成時に
+  `12220`〜`12239` を範囲で許可しており、サイドカーに選ばせると範囲外を掴みうる。
+  埋まっていれば `ポートが使えない` で応答し、拡張ホストが次を試す（`MjpegProxy` と同じ形）。
+- **127.0.0.1 でだけ待ち受け、トークンが合わないものは 404 で落とす**（存在自体を伏せる）。
+  UDID は `xcrun simctl list` で誰でも読めるので、秘密にならない。
+- 取り込み側は**待たない**。最新フレームを差し替えて条件変数で起こすだけで、
+  接続ごとのスレッドが自分のペースで書く（遅いクライアントは自然にフレームを落とす）。
+- 配信を張れなかった場合、拡張ホストは `sink: "stdout"` で開始し直す。
+
+### 3.7 プッシュ型の取り込み（`mode: "auto"`）
+
+`mode` が `auto`（既定）のとき、`SimDisplayIOSurfaceRenderable` の
+**変更通知**にコールバックを登録して、画面が変わった瞬間に撮る
+（`registerCallbackWithUUID:damageRectanglesCallback:` と
+`…ioSurfaceChangeCallback:`。idb の `FBFramebuffer` が同じ 2 つを使う）。
+ポーリングだと平均 16.7ms のサンプリング遅延が構造的に乗るため、ここが
+glass-to-glass で一番削れる（docs/sync-enhancement.md §2.2 / §3.1）。
+
+**私有 API なので壊れうる。3 段構えで守る。**
+
+1. `respondsToSelector:` で存在を確かめてから登録する（答えないものは使わない）
+2. **コールバックの引数を一切参照しない**。ブロックの型が違っても踏み抜かないよう、
+   通知は「変わった」という合図としてだけ扱い、面は毎回読み直す
+3. 通知が来ないのに画面が変わっていたら（`IOSurfaceGetSeed` で自己点検）、
+   2 回続いた時点で**ポーリングへ自動で戻す**
+
+プッシュ型でもタイマは止めない。変更通知は画面が変わったときしか来ないので、
+生存通知（§3.5）と descriptor の取り直しの担い手が要る。そのぶん間隔は
+500ms へ寝かせる。フレームのレート制限は `fps` を上限として別に効かせ、
+上限を超えた通知は最後の 1 回だけ境界で流す（`touchMove` の coalescing と同じ考え方）。
+
+`mode: "poll"` で従来どおりのポーリングに固定できる（`secondarySimulator.captureMode`）。
 
 ---
 
