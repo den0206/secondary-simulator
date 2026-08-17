@@ -285,6 +285,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.pressBack();
           break;
 
+        case 'screenshot':
+          await this.saveScreenshot();
+          break;
+
         case 'disconnect':
           Logger.info('Disconnect requested');
           await this.disconnect();

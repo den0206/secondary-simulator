@@ -252,6 +252,9 @@ document
 document
   .getElementById('btn-refresh')
   .addEventListener('click', () => post('refresh'));
+document
+  .getElementById('btn-shot')
+  .addEventListener('click', () => post('screenshot'));
 
 // タップのリップルとドラッグ軌跡の表示切替。状態は webview の state に残す。
 const btnTrail = document.getElementById('btn-trail');
