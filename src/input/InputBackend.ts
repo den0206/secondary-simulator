@@ -55,3 +55,47 @@ export const HidModifier = {
   Option: 19,
   Command: 20,
 } as const;
+
+/** webview から届く修飾キー名 → bit。未知の名前は無視する。 */
+export const MODIFIER_BITS: Readonly<Record<string, number>> = {
+  shift: HidModifier.Shift,
+  control: HidModifier.Control,
+  option: HidModifier.Option,
+  command: HidModifier.Command,
+};
+
+/**
+ * ASCII 1 文字 → USB HID usage code。対応しない文字は undefined。
+ *
+ * `native/simhid-server.m` の `usageForChar` と同じ表を持つ。表を二重に持つのは、
+ * **修飾キー付きの組み合わせ（Cmd+A 等）に `text` コマンドを使えない**ため。
+ * `text` はバースト先頭の取りこぼし対策として Shift の捨てイベントを先に送るので、
+ * Cmd を押したまま呼ぶと Cmd+Shift の組み合わせが成立してしまう。
+ * 組み合わせは keyDown/keyUp で送る必要があり、usage は拡張ホスト側で決める。
+ */
+export function usageForAsciiChar(
+  ch: string
+): {usage: number; shift: boolean} | undefined {
+  if (ch.length !== 1) return undefined;
+  const c = ch.charCodeAt(0);
+  const A = 'A'.charCodeAt(0);
+  const a = 'a'.charCodeAt(0);
+  if (c >= a && c <= a + 25) return {usage: 4 + (c - a), shift: false};
+  if (c >= A && c <= A + 25) return {usage: 4 + (c - A), shift: true};
+  if (ch >= '1' && ch <= '9') {
+    return {usage: 0x1e + (c - '1'.charCodeAt(0)), shift: false};
+  }
+  const fixed: Record<string, number> = {
+    '0': 0x27,
+    ' ': 0x2c,
+    '\n': 0x28,
+    '\t': 0x2b,
+    '-': 0x2d,
+    '.': 0x37,
+    ',': 0x36,
+    '/': 0x38,
+    ';': 0x33,
+  };
+  const usage = fixed[ch];
+  return usage === undefined ? undefined : {usage, shift: false};
+}
