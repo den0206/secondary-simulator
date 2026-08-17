@@ -13,7 +13,7 @@
 A VS Code / Cursor extension that shows iOS Simulators and Android Emulators in the sidebar and lets you drive them in real time.
 
 <p align="center">
-  <img src="media/demo.gif" width="400" alt="Driving an iOS Simulator from the sidebar">
+  <img src="media/demo.gif" width="1200" alt="Driving an iOS Simulator from the sidebar">
 </p>
 
 ## 🎯 Overview
@@ -72,7 +72,7 @@ npm run build
 - **`secondarySimulator.captureSource`**: `auto` (default) grabs the iOS Simulator's framebuffer through the HID sidecar — the software keyboard and status bar are included; `wda` keeps the old mobilecli/WDA MJPEG stream, which only renders the app's own window. Falls back to WDA automatically when the sidecar is unavailable.
 - **`secondarySimulator.captureFps`**: cap for sidecar capture (default: 30). Unchanged frames are not sent.
 - **`secondarySimulator.captureMaxWidth`**: JPEG width sent by the sidecar, in px (default: 640)
-- **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a *hardware* keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
+- **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a _hardware_ keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
 
 There are no gesture threshold settings: tap, swipe, and long press are all recognized on the device side.
 
@@ -98,15 +98,15 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 Open the command palette (`Cmd+Shift+P`) and filter by **Secondary Simulator:**.
 Refresh and logs (show / clear) are also available as icons in the view title bar. Screenshot is the **Shot** button below the preview (or the command palette).
 
-| Command | Description |
-|---|---|
-| `Select Device` | Pick a device from a list and connect |
-| `Save Screenshot` | Save the connected device's screen to a file |
-| `Press Home` | Home button (`Cmd+Shift+H`) |
-| `Press Back` | Back button, Android only (`Cmd+Shift+B`) |
-| `Refresh Device List` | Re-fetch the device list (`Cmd+Shift+R`) |
-| `Show Logs` | Open the Secondary Simulator output channel |
-| `Clear Logs` | Empty the output channel (VS Code keeps its full text in memory) |
+| Command               | Description                                                      |
+| --------------------- | ---------------------------------------------------------------- |
+| `Select Device`       | Pick a device from a list and connect                            |
+| `Save Screenshot`     | Save the connected device's screen to a file                     |
+| `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
+| `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
+| `Refresh Device List` | Re-fetch the device list (`Cmd+Shift+R`)                         |
+| `Show Logs`           | Open the Secondary Simulator output channel                      |
+| `Clear Logs`          | Empty the output channel (VS Code keeps its full text in memory) |
 
 Key bindings apply only while the sidebar view has focus.
 

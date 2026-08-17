@@ -13,7 +13,7 @@
 VSCode / Cursor 拡張機能として、iOS/Androidシミュレータとエミュレータをサイドバーに表示し、リアルタイムで操作できる機能を提供します。
 
 <p align="center">
-  <img src="media/demo.gif" width="400" alt="サイドバーから iOS Simulator を操作する様子">
+  <img src="media/demo.gif" width="1200" alt="サイドバーから iOS Simulator を操作する様子">
 </p>
 
 ## 🎯 概要
@@ -100,15 +100,15 @@ VSCodeの設定で以下のオプションを調整できます：
 コマンドパレット（`Cmd+Shift+P`）から **Secondary Simulator:** で絞り込めます。
 再取得・ログ（表示 / 消去）はビュータイトルのアイコンからも実行できます。スクリーンショットはプレビュー下の **Shot**（またはコマンドパレット）です。
 
-| コマンド | 説明 |
-|---|---|
-| `Select Device` | 一覧から選んで接続する |
-| `Save Screenshot` | 接続中のデバイスの画面を保存する |
-| `Press Home` | Home ボタン（`Cmd+Shift+H`） |
-| `Press Back` | Back ボタン・Android のみ（`Cmd+Shift+B`） |
-| `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`） |
-| `Show Logs` | 出力パネルの Secondary Simulator を開く |
-| `Clear Logs` | 出力チャンネルを空にする（VS Code が全文をメモリに持つため） |
+| コマンド              | 説明                                                         |
+| --------------------- | ------------------------------------------------------------ |
+| `Select Device`       | 一覧から選んで接続する                                       |
+| `Save Screenshot`     | 接続中のデバイスの画面を保存する                             |
+| `Press Home`          | Home ボタン（`Cmd+Shift+H`）                                 |
+| `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
+| `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`）                    |
+| `Show Logs`           | 出力パネルの Secondary Simulator を開く                      |
+| `Clear Logs`          | 出力チャンネルを空にする（VS Code が全文をメモリに持つため） |
 
 キーバインドはサイドバーにフォーカスがあるときだけ効きます。
 
