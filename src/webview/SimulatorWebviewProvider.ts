@@ -10,6 +10,7 @@ import {
   decodeScreenshotResult,
   defaultScreenshotName,
 } from '../capture/Screenshot';
+import {SidecarCapture} from '../capture/SidecarCapture';
 import {WdaSettings} from '../capture/WdaSettings';
 import {SimulatorInputController} from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
@@ -447,11 +448,23 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         mobileCliClient: this.mobileCliClient,
         getScreenSize: () => this.screenSize,
         sidecarBinaryPath: this.resolveSidecarPath(),
+        // 設定を毎回読む（切り替えに再接続を要らなくする）
+        preferWdaKeys: () =>
+          vscode.workspace
+            .getConfiguration('secondarySimulator')
+            .get<string>('keyInput', 'hid') === 'wda',
         onBackendChange: (kind) => {
           this.postMessage({
             type: 'status',
             text: kind === 'hid' ? '高速モード (HID)' : '互換モード (WDA)',
           });
+          // HID が死ぬとサイドカー取り込みも止まる。映像だけ WDA へ切り替える。
+          // startCaptureForDevice は呼ぶな — コントローラを作り直して HID を再試行し、
+          // fatal が続くと spawn ループになる。
+          if (kind === 'wda' && this.currentCapture instanceof SidecarCapture) {
+            Logger.warn('サイドカー取り込みを終了し WDA 経路へ切り替える');
+            void this.fallbackSidecarCaptureToWda(deviceId, device);
+          }
         },
       });
       try {
@@ -464,8 +477,31 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.inputController = controller;
     }
 
-    // 直結ストリーム（Phase 2）: フレームは webview の <img> が直接受ける
-    if (this.isDirectStreamEnabled()) {
+    await this.startDisplayForDevice(deviceId, device);
+  }
+
+  /**
+   * HID 降格後に映像だけ WDA へ付け替える。入力コントローラは触らない
+   * （dispose → 再 init すると HID を再試行して fatal ループになる）。
+   */
+  private async fallbackSidecarCaptureToWda(
+    deviceId: string,
+    device: Device
+  ): Promise<void> {
+    if (!(this.currentCapture instanceof SidecarCapture)) return;
+    this.currentCapture.dispose();
+    this.currentCapture = null;
+    await this.startDisplayForDevice(deviceId, device);
+  }
+
+  /** 直結 MJPEG または canvas キャプチャを開始する（入力コントローラは前提として用意済み）。 */
+  private async startDisplayForDevice(
+    deviceId: string,
+    device: Device
+  ): Promise<void> {
+    // 直結ストリーム（Phase 2）: フレームは webview の <img> が直接受ける。
+    // サイドカー取り込みが使えるときは、そちらが優先（WDA 経路にはキーボードが写らない）
+    if (this.isDirectStreamEnabled() && !this.sidecarCaptureAvailable()) {
       try {
         const proxy = await this.ensureProxy();
         const url = proxy.streamUrl(deviceId);
@@ -518,7 +554,38 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * サイドカーの画面取り込みを使えるか。
+   * HID 経路が生きている iOS Simulator のときだけ（設定で WDA に固定できる）。
+   */
+  private sidecarCaptureAvailable(): boolean {
+    if (!this.inputController?.activeSidecar) return false;
+    return (
+      vscode.workspace
+        .getConfiguration('secondarySimulator')
+        .get<string>('captureSource', 'auto') !== 'wda'
+    );
+  }
+
   private async createCaptureInstance(): Promise<void> {
+    // フレームバッファ直取り。WDA 経路と違いソフトウェアキーボードも写る
+    const sidecar = this.sidecarCaptureAvailable()
+      ? this.inputController?.activeSidecar
+      : null;
+    if (sidecar) {
+      this.currentCapture = new SidecarCapture(sidecar, () => {
+        const cfg = vscode.workspace.getConfiguration('secondarySimulator');
+        return {
+          fps: cfg.get<number>('captureFps', 30),
+          maxWidth: cfg.get<number>('captureMaxWidth', 640),
+          // streamQuality は 1-100、サイドカーは 0.1-1.0
+          quality: cfg.get<number>('streamQuality', 80) / 100,
+        };
+      });
+      Logger.info('Using sidecar framebuffer capture');
+      return;
+    }
+
     try {
       // mobilecliサーバーを起動
       if (!this.mobileCliServer.isServerRunning()) {
