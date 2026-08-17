@@ -175,14 +175,14 @@
           "default": 30,
           "minimum": 1,
           "maximum": 60,
-          "description": "iOS: サイドカー取り込みの上限 fps。画面が変わらないフレームは送られない。"
+          "description": "iOS: サイドカー取り込みの通常時 fps。画面が変わらないフレームは送られない。操作中（指を置いている間）は最大 2 倍・60fps まで自動で上がる。"
         },
         "secondarySimulator.captureMaxWidth": {
           "type": "number",
           "default": 640,
           "minimum": 160,
           "maximum": 2048,
-          "description": "iOS: サイドカー取り込みで送る JPEG の最大幅（px）。大きくすると鮮明になり帯域も増える。"
+          "description": "iOS: サイドカー取り込みで送る JPEG の幅の上限（px）。実際の幅はサイドバーの表示幅（× devicePixelRatio）に追従し、この値で頭打ちになる。上げると鮮明になり帯域も増える。"
         },
         "secondarySimulator.logLevel": {
           "type": "string",

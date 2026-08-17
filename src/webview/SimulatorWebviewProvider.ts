@@ -300,6 +300,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.selectDevice(message.deviceId as string);
           break;
 
+        // 表示中の実ピクセル幅。サイドバーの幅に合わせて取り込みの幅を決める。
+        case 'viewport':
+          if (this.currentCapture instanceof SidecarCapture) {
+            this.currentCapture.setViewportWidth(message.width as number);
+          }
+          break;
+
         // Phase 1: 生ポインタイベント。タップ/スワイプ/ロングプレスの判定は端末に委ねる。
         case 'touchDown':
         case 'touch2Down':
@@ -691,6 +698,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const x = message.x as number;
     const y = message.y as number;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    // 押している間だけ取り込みを速くする。move では呼ばない（60Hz で届くため）。
+    if (phase !== 'move' && this.currentCapture instanceof SidecarCapture) {
+      this.currentCapture.setInteracting(phase === 'down');
+    }
     const cx = this.clamp01(x);
     const cy = this.clamp01(y);
 

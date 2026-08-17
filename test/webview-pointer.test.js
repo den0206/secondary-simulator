@@ -8,6 +8,8 @@ const SRC = path.join(__dirname, '..', 'media', 'webview', 'main.js');
 
 const sent = [];
 let webviewState; // vscode.getState/setState の保存先
+let resizeCallback = null; // ResizeObserver に渡された callback
+let resizeObserved = null; // observe された要素
 const listeners = {}; // "elementId:event" -> handler
 // 要素に addEventListener で張られたハンドラ（同じイベントに複数張れる）
 const elListeners = {}; // "elementId:event" -> [handler]
@@ -81,8 +83,15 @@ const sandbox = {
   },
   window: {
     addEventListener(ev, fn) { listeners[`window:${ev}`] = fn; },
+    devicePixelRatio: 2,
   },
   getComputedStyle: () => ({getPropertyValue: () => '#007acc'}),
+  // 表示幅の通知に使う。observe された対象と callback を覚えておく
+  ResizeObserver: class {
+    constructor(cb) { resizeCallback = cb; }
+    observe(el) { resizeObserved = el; }
+    disconnect() {}
+  },
   requestAnimationFrame: (fn) => { fn(); return 1; },
   cancelAnimationFrame: () => {},
   setTimeout, clearTimeout, performance, Date,
@@ -408,6 +417,21 @@ listeners['window:message']({
 });
 check('fps が無ければ映像チップを出さない', !els.stats.innerHTML.includes('fps'),
   els.stats.innerHTML);
+
+console.log('\n16) 表示幅をホストへ伝える');
+check('コンテナを observe する（img は最初のフレームまで幅 0）',
+  resizeObserved === els['simulator-container'],
+  resizeObserved && resizeObserved.id);
+sent.length = 0;
+resizeCallback();
+// スタブの rect は幅 300、devicePixelRatio は 2
+check('CSS 幅 × DPR を送る',
+  sent.some((m) => m.type === 'viewport' && m.width === 600),
+  JSON.stringify(sent));
+sent.length = 0;
+resizeCallback();
+check('同じ幅では送り直さない', !sent.some((m) => m.type === 'viewport'),
+  JSON.stringify(sent));
 
 console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
 process.exit(failures === 0 ? 0 : 1);
