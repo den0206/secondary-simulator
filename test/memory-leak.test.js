@@ -295,7 +295,11 @@ const fakeClient = () => {
       'utf8'
     );
     check('webview の pointer 保持に上限がある', /MAX_POINTERS\s*=\s*\d+/.test(main));
-    check('webview のフレームキューに上限がある', /MAX_FRAME_QUEUE\s*=\s*\d+/.test(main));
+    // フレームは <img> へ直接渡すので、webview 側にキューを持たない
+    // （溜める入れ物が無ければ上限も要らない。間引きは Chromium がやる）。
+    check('webview がフレームを溜め込まない', !/frameQueue/.test(main));
+    // 描画カウンタは集計の度に 0 へ戻す。読み捨てないと増える一方になる。
+    check('描画カウンタを 0 に戻す', /paintedFrames\s*=\s*0/.test(main));
   }
 
   assert.strictEqual(failures, 0, `${failures} 件のテストが失敗`);

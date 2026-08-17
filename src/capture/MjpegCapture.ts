@@ -319,12 +319,20 @@ export class MjpegCapture implements CaptureStrategy {
     }
   }
 
-  // MJPEG から受け取った JPEG をそのままコールバックへ渡す（再エンコードしない）
+  // MJPEG から受け取った JPEG を base64 にしてコールバックへ渡す。
+  // webview は base64 で受けるので、変換が要るのはこの経路だけ（CaptureStrategy 参照）。
   private displayMjpegImage(imageData: Uint8Array): void {
     // 1 枚でも届けば復帰したとみなす
     this.reconnectAttempts = 0;
     this.armStallTimer();
-    this.frameCallback?.(imageData);
+    if (!this.frameCallback) return;
+    this.frameCallback(
+      Buffer.from(
+        imageData.buffer,
+        imageData.byteOffset,
+        imageData.byteLength
+      ).toString('base64')
+    );
   }
 
   /**
