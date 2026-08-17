@@ -64,6 +64,12 @@
         "icon": "$(device-camera)"
       },
       {
+        "command": "simulator.openUrl",
+        "title": "Open URL on Device",
+        "category": "Secondary Simulator",
+        "icon": "$(link)"
+      },
+      {
         "command": "simulator.home",
         "title": "Press Home",
         "category": "Secondary Simulator"
@@ -177,6 +183,25 @@
           "minimum": 160,
           "maximum": 2048,
           "description": "iOS: サイドカー取り込みで送る JPEG の最大幅（px）。大きくすると鮮明になり帯域も増える。"
+        },
+        "secondarySimulator.logLevel": {
+          "type": "string",
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "enumDescriptions": [
+            "何も出力しない。",
+            "エラーのみ。",
+            "エラーと警告。",
+            "通常の動作ログまで（既定）。",
+            "受信メッセージなども含む詳細ログ。調査時だけ使う。"
+          ],
+          "default": "info",
+          "description": "出力チャンネル \"Secondary Simulator\" へ書くログの詳しさ。VS Code は出力チャンネルの全文をメモリに保持し古い行を捨てられないので、常用は info 以下にする。"
         }
       }
     },
@@ -208,7 +233,7 @@
     "build:native": "sh scripts/build-native.sh",
     "build": "npm run compile && npm run build:native",
     "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
-    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js && node test/mjpeg-parser.test.js && node test/mjpeg-proxy.test.js && node test/screenshot.test.js && node test/key-input-route.test.js && node test/logger.test.js && node test/memory-leak.test.js",
+    "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },
