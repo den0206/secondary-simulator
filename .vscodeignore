@@ -22,7 +22,7 @@ node_modules/**
 !node_modules/@mobilenext/mobilecli/package.json
 !node_modules/@mobilenext/mobilecli/index.js
 !node_modules/@mobilenext/mobilecli/bin/mobilecli-darwin-*
-# README からは絶対 URL (raw.githubusercontent) で参照するので VSIX に入れない。
+# GitHub README はリポジトリ内の相対パスで参照。VSIX サイズ削減のため demo.gif だけ同梱しない。
 media/demo.gif
 
 *.md
