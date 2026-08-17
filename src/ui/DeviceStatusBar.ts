@@ -1,0 +1,88 @@
+import * as vscode from 'vscode';
+
+/**
+ * 接続状態。`backend` は入力経路（HID 直接注入か WDA 経由か）。
+ * HID→WDA の降格は無音で起きるため、どちらで動いているかを見えるようにする。
+ */
+export type DeviceStatus =
+  | {state: 'disconnected'}
+  | {state: 'connecting'; name: string}
+  | {state: 'connected'; name: string; backend: 'hid' | 'wda'};
+
+export interface StatusView {
+  /** ステータスバーの表示文字列。null なら隠す。 */
+  text: string | null;
+  tooltip: string;
+  /** webview のフッターへ出す短いラベル。null なら出さない。 */
+  mode: string | null;
+}
+
+/** 入力経路の呼び名。webview とステータスバーで同じ言葉を使う。 */
+const BACKEND_LABEL = {
+  hid: '高速モード (HID)',
+  wda: '互換モード (WDA)',
+} as const;
+
+/**
+ * 表示文字列を組み立てる（vscode に触らない純粋関数。テストはここを見る）。
+ *
+ * 未接続のときは何も出さない。常駐する情報ではないので、繋がっている間だけ
+ * ステータスバーに席を取る。
+ */
+export function renderStatus(status: DeviceStatus): StatusView {
+  switch (status.state) {
+    case 'connecting':
+      return {
+        text: `$(sync~spin) ${status.name}`,
+        tooltip: `Secondary Simulator: ${status.name} へ接続中`,
+        mode: null,
+      };
+    case 'connected': {
+      const label = BACKEND_LABEL[status.backend];
+      return {
+        text: `$(device-mobile) ${status.name} · ${status.backend.toUpperCase()}`,
+        tooltip:
+          `Secondary Simulator: ${status.name} に接続中（${label}）\n` +
+          (status.backend === 'hid'
+            ? 'タッチとキーを HID で直接注入している。'
+            : 'mobilecli/WDA 経由。HID が使えないか、降格した状態。'),
+        mode: label,
+      };
+    }
+    case 'disconnected':
+      return {text: null, tooltip: '', mode: null};
+  }
+}
+
+/**
+ * 接続中のデバイスと入力経路をステータスバーに出す。
+ *
+ * 押すとデバイス選択（`simulator.selectDevice`）へ飛ぶ。
+ */
+export class DeviceStatusBar {
+  private readonly item: vscode.StatusBarItem;
+
+  constructor() {
+    this.item = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Right,
+      100
+    );
+    this.item.command = 'simulator.selectDevice';
+    this.item.name = 'Secondary Simulator';
+  }
+
+  update(status: DeviceStatus): void {
+    const view = renderStatus(status);
+    if (view.text === null) {
+      this.item.hide();
+      return;
+    }
+    this.item.text = view.text;
+    this.item.tooltip = view.tooltip;
+    this.item.show();
+  }
+
+  dispose(): void {
+    this.item.dispose();
+  }
+}
