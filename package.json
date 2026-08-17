@@ -131,6 +131,46 @@
           "minimum": 1,
           "maximum": 100,
           "description": "iOS: MJPEG の JPEG 品質（1-100）。streamScale と併用して帯域を調整する。"
+        },
+        "secondarySimulator.keyInput": {
+          "type": "string",
+          "enum": [
+            "hid",
+            "wda"
+          ],
+          "enumDescriptions": [
+            "HID 直接注入（速い）。シミュレータはハードウェアキーボード扱いになり、ソフトウェアキーボードが表示されない。",
+            "WDA 経由（1文字あたり約 370ms）。ソフトウェアキーボードが表示されたままになり、端末側の入力ソース（英字/かな）にも左右されない。"
+          ],
+          "default": "hid",
+          "description": "iOS: キーボード入力の経路。タッチは常に HID のまま。サイドバーにソフトウェアキーボードを映したいときは wda にする。"
+        },
+        "secondarySimulator.captureSource": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "wda"
+          ],
+          "enumDescriptions": [
+            "iOS Simulator で HID サイドカーが使えるなら端末のフレームバッファを直接取り込む。ソフトウェアキーボードやステータスバーも写る。",
+            "従来どおり mobilecli/WDA の MJPEG を使う。WDA のスクリーンショットはアプリのウィンドウしか描かないため、ソフトウェアキーボードは写らない。"
+          ],
+          "default": "auto",
+          "description": "iOS: 画面の取り込み元。auto は HID サイドカーがあればフレームバッファ直取り、無ければ WDA へ降格する。"
+        },
+        "secondarySimulator.captureFps": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "iOS: サイドカー取り込みの上限 fps。画面が変わらないフレームは送られない。"
+        },
+        "secondarySimulator.captureMaxWidth": {
+          "type": "number",
+          "default": 640,
+          "minimum": 160,
+          "maximum": 2048,
+          "description": "iOS: サイドカー取り込みで送る JPEG の最大幅（px）。大きくすると鮮明になり帯域も増える。"
         }
       }
     },
@@ -162,7 +202,7 @@
     "build:native": "sh scripts/build-native.sh",
     "build": "npm run compile && npm run build:native",
     "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
-    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js && node test/mjpeg-parser.test.js && node test/mjpeg-proxy.test.js && node test/screenshot.test.js && node test/memory-leak.test.js",
+    "test": "npm run compile && node test/webview-pointer.test.js && node test/sidecar-protocol.test.js && node test/resource-stats.test.js && node test/auto-connect.test.js && node test/mjpeg-parser.test.js && node test/mjpeg-proxy.test.js && node test/screenshot.test.js && node test/key-input-route.test.js && node test/memory-leak.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },
