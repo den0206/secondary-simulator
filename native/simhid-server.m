@@ -156,6 +156,8 @@ static uint64_t nowNs(void) {
 @property(nonatomic, assign) BOOL pushScheduled;
 /** 変更通知が来ないのに画面が変わっていた回数。続くとポーリングへ戻す。 */
 @property(nonatomic, assign) uint32_t pushMissed;
+/** 直近にフレームを出した時刻。プッシュ型の自己点検に使う。 */
+@property(nonatomic, assign) uint64_t lastFrameNs;
 @end
 
 @implementation DeviceState
@@ -309,6 +311,15 @@ static const char *queryValue(const char *query, const char *key, size_t *outLen
   return NULL;
 }
 
+/** 相手が接続を閉じたか（読めるものが無いだけなら NO）。 */
+static BOOL peerClosed(int fd) {
+  char probe;
+  ssize_t n = recv(fd, &probe, 1, MSG_PEEK | MSG_DONTWAIT);
+  if (n == 0) return YES;                       // FIN を受けている
+  if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return NO;
+  return n < 0;                                 // それ以外のエラーも畳む
+}
+
 typedef struct {
   int fd;
   uint64_t epoch;
@@ -390,13 +401,20 @@ static void *clientThread(void *arg) {
     for (;;) {
       NSData *frame = nil;
       pthread_mutex_lock(&gFrameMutex);
-      while (st.httpFrameGen == seen && gServeEpoch == epoch) {
+      if (st.httpFrameGen == seen && gServeEpoch == epoch) {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += kClientWaitSec;
         pthread_cond_timedwait(&gFrameCond, &gFrameMutex, &ts);
       }
       if (gServeEpoch != epoch) { pthread_mutex_unlock(&gFrameMutex); break; }
+      if (st.httpFrameGen == seen) {
+        pthread_mutex_unlock(&gFrameMutex);
+        // 画面が静止していると書くものが無く、相手が消えたことに気づけない。
+        // 待ちが空振りしたときだけ覗いて、閉じられていたらスレッドを畳む。
+        if (peerClosed(fd)) break;
+        continue;
+      }
       // ARC が retain するので、ロックの外へ持ち出して書いてよい
       frame = st.httpFrame;
       seen = st.httpFrameGen;
@@ -646,8 +664,13 @@ static const uint32_t kReacquireAfterTicks = 60;
  * ここは生存通知と descriptor の取り直しのためだけに回る。
  */
 static const uint64_t kPushTickIntervalNs = 500000000ULL;  // 500ms
-/** 変更通知が来ないのに画面が変わっていた回数の許容。超えたらポーリングへ戻す。 */
+/** 変更通知が来ないのに絵が変わっていた回数の許容。超えたらポーリングへ戻す。 */
 static const uint32_t kPushMissTolerance = 2;
+/**
+ * プッシュ型で「しばらくフレームが出ていない」とみなす時間。
+ * これを超えたときだけ自己点検で 1 枚撮る（＝静止中は毎秒 2 枚が上限のコスト）。
+ */
+static const uint64_t kPushProbeIdleNs = 1000000000ULL;  // 1s
 /** 変更通知を使うか（captureStart の mode で決まる。既定は使う）。 */
 static BOOL gPushEnabled = YES;
 
@@ -715,6 +738,7 @@ static void captureFrame(DeviceState *st, NSString *udid) {
       publishFrame(st, jpeg);
       st.lastJpeg = jpeg;
       st.frameCount++;
+      st.lastFrameNs = nowNs();
       return;
     }
     BOOL sent = emitFrameLine(@{
@@ -728,6 +752,7 @@ static void captureFrame(DeviceState *st, NSString *udid) {
     if (sent) {
       st.lastJpeg = jpeg;
       st.frameCount++;
+      st.lastFrameNs = nowNs();
     }
   }
 }
@@ -770,19 +795,29 @@ static void captureTick(DeviceState *st, NSString *udid) {
     }
 
     // ---- プッシュ型の自己点検 ----
-    // 変更通知が来ていないのに画面が変わっているなら、通知が機能していない。
-    // 黙って固まるより、ポーリングへ戻したほうがよい（§3.1 の注意点）。
-    IOSurfaceRef surface = (__bridge IOSurfaceRef)surfObj;
-    if (st.hasLastSeed && IOSurfaceGetSeed(surface) != st.lastSeed) {
-      if (++st.pushMissed >= kPushMissTolerance) {
-        fprintf(stderr, "[simhid] 変更通知が届かないためポーリングへ戻す\n");
-        unregisterPush(st);
-        applyCaptureTimerInterval(st);
-      }
-      captureFrame(st, udid);  // 取りこぼしはその場で埋める
+    // 通知が来ないまま絵が変わっていたら、通知が機能していない。黙って固まるより
+    // ポーリングへ戻したほうがよい（§3.1 の注意点）。
+    //
+    // **seed では判定できない。** IOSurfaceGetSeed は中身が同じでも動くので、
+    // 静止画面でも「変わった」に見えてしまう（この誤検知を避けるために
+    // captureFrame は JPEG のバイト列で重複を落としている）。そこで、しばらく
+    // フレームが出ていないときだけ実際に 1 枚撮ってみて、**出たかどうか**で見る。
+    // 通知が効いていれば絵が動いている間はフレームが流れるので、ここには来ない。
+    if (nowNs() - st.lastFrameNs < kPushProbeIdleNs) {
+      st.pushMissed = 0;
       return;
     }
-    st.pushMissed = 0;
+    uint64_t before = st.lastFrameNs;
+    captureFrame(st, udid);  // 取りこぼしがあればこれで埋まる
+    if (st.lastFrameNs == before) {
+      st.pushMissed = 0;  // 本当に画面が止まっていただけ
+      return;
+    }
+    if (++st.pushMissed >= kPushMissTolerance) {
+      fprintf(stderr, "[simhid] 変更通知が届かないためポーリングへ戻す\n");
+      unregisterPush(st);
+      applyCaptureTimerInterval(st);
+    }
   }
 }
 

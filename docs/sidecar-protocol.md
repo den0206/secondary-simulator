@@ -360,7 +360,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `autoConnect` | 設定値。Auto ボタンと揃える |
 | `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ 個別フレーム（`data` は base64 文字列）。どちらも同じ `<img>` に出す（frame は data URL） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
-| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム） |
+| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム）。**直結中は `direct: true` だけを送る** — フレームが拡張ホストを通らないので受信側は測れず、0 と出すと誤解される |
 | `mode` | 入力経路のラベル（`高速モード (HID)` / `互換モード (WDA)`）。`null` で隠す。フッターの `#mode` とステータスバーが同じ文字列を使う |
 | `disconnected` | 切断 |
 

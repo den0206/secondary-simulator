@@ -490,8 +490,11 @@ window.addEventListener('message', (event) => {
       // 受信（拡張ホストが数えた fps）と描画（この webview が描けた数）を並べる。
       // 差がそのまま落としたフレームで、同期の質はここに出る。
       const painted = takePaintedFps();
-      const rate =
-        message.fps === undefined
+      // 直結中はフレームが拡張ホストを通らないので、受信 fps と帯域は測れない。
+      // 描画側の数字だけを出す（測れないものを 0 と出さない）。
+      const rate = message.direct
+        ? chip('映像', `${painted}fps 直結`)
+        : message.fps === undefined
           ? ''
           : chip('映像', `${message.fps}/${painted}fps ${message.kbps}KB/s`);
       statsEl.innerHTML =
