@@ -17,6 +17,13 @@ export interface ControllerOptions {
   sidecarBinaryPath: string;
   /** バックエンドが切り替わったとき（初期選択・降格）に呼ばれる。status 表示用。 */
   onBackendChange?: (kind: 'hid' | 'wda') => void;
+  /**
+   * キーボード入力だけ WDA 経路にするか（タッチは HID のまま）。
+   * HID のキー注入はシミュレータに「ハードウェアキーボード」として入るため、
+   * iOS がソフトウェアキーボードを出さなくなる。出したいときはこちらを true にする。
+   * 設定を即時反映させるため、値ではなく関数で受ける。
+   */
+  preferWdaKeys?: () => boolean;
 }
 
 /**
@@ -88,6 +95,16 @@ export class SimulatorInputController {
     return this.sidecar?.pid;
   }
 
+  /** HID 経路が生きているときだけ非 null。画面取り込み（SidecarCapture）が使う。 */
+  get activeSidecar(): SimhidSidecar | null {
+    return this.primary.kind === 'hid' ? this.sidecar : null;
+  }
+
+  /** キー・テキストの送り先。設定が WDA 指定なら HID を使っていても WDA へ回す。 */
+  private keyBackend(): InputBackend {
+    return this.opts.preferWdaKeys?.() ? this.wdaFallback : this.primary;
+  }
+
   // ---- 生ポインタ（Phase 1: webview の pointerdown/move/up をそのまま流す）----
   // これにより HID 経路ではドラッグに画面が追従する（タップ/スワイプ判定は端末が行う）。
 
@@ -114,9 +131,10 @@ export class SimulatorInputController {
     if (special) {
       const usage = SimulatorInputController.specialUsage(key);
       if (usage !== undefined) {
-        await this.primary.key(usage, true);
+        const backend = this.keyBackend();
+        await backend.key(usage, true);
         await sleep(10);
-        await this.primary.key(usage, false);
+        await backend.key(usage, false);
         return;
       }
     }
@@ -142,8 +160,9 @@ export class SimulatorInputController {
    * （docs/sidecar-protocol.md §10.3）。WDA が主経路なら全て WDA。
    */
   async text(value: string): Promise<void> {
-    if (this.primary.kind === 'wda') {
-      await this.primary.text(value);
+    const backend = this.keyBackend();
+    if (backend.kind === 'wda') {
+      await backend.text(value);
       return;
     }
     // ASCII 連続部分と非 ASCII 部分に分割し、順に送る
@@ -151,7 +170,7 @@ export class SimulatorInputController {
     let bufIsAscii = SimulatorInputController.isAscii(value[0] ?? 'a');
     const flush = async () => {
       if (!buf) return;
-      if (bufIsAscii) await this.primary.text(buf);
+      if (bufIsAscii) await backend.text(buf);
       else await this.wdaFallback.text(buf);
       buf = '';
     };

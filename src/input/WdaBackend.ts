@@ -134,6 +134,8 @@ export class WdaBackend implements InputBackend {
       [HidUsage.Enter]: '\n',
       [HidUsage.Space]: ' ',
       [HidUsage.Tab]: '\t',
+      // XCTest の typeText は \b を delete キーとして解釈する
+      [HidUsage.Backspace]: '\b',
     };
     const ch = map[usage];
     if (ch) await this.client.inputText(this.deviceId, ch);
