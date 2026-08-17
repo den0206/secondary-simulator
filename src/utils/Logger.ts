@@ -1,39 +1,94 @@
 import * as vscode from 'vscode';
 
+export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
+
+/** 数が大きいほど詳しい。閾値以下のものだけを書き出す。 */
+const SEVERITY: Record<LogLevel, number> = {
+  off: 0,
+  error: 1,
+  warn: 2,
+  info: 3,
+  debug: 4,
+};
+
+const DEFAULT_LEVEL: LogLevel = 'info';
+
 export class Logger {
   private static outputChannel: vscode.OutputChannel | null = null;
+  /**
+   * 設定の写し。log() は高頻度パス（メッセージ受信ごと）から呼ばれるので、
+   * 毎回 getConfiguration せずここを見る。設定変更時に refreshLevel() で更新する。
+   */
+  private static currentLevel: LogLevel = DEFAULT_LEVEL;
 
   static initialize(): void {
     if (!Logger.outputChannel) {
-      Logger.outputChannel = vscode.window.createOutputChannel('Secondary Simulator');
+      Logger.outputChannel = vscode.window.createOutputChannel(
+        'Secondary Simulator'
+      );
     }
+    Logger.refreshLevel();
+  }
+
+  /**
+   * `secondarySimulator.logLevel` を読み直す。設定変更時に extension.ts が呼ぶ。
+   *
+   * OutputChannel は VS Code が全文をメモリに持ち、古い行を捨てる API が無い
+   * （docs/project-review.md §3.5.7）。書く量を絞れるのがこの設定の役目で、
+   * 既定を info にして debug を落とすのが効き所。
+   */
+  static refreshLevel(): void {
+    const configured = vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .get<string>('logLevel', DEFAULT_LEVEL);
+    Logger.currentLevel = Logger.normalizeLevel(configured);
+  }
+
+  static get level(): LogLevel {
+    return Logger.currentLevel;
+  }
+
+  /** 未知の値は既定へ倒す（設定を手書きされても落ちないように）。 */
+  private static normalizeLevel(value: string | undefined): LogLevel {
+    return value !== undefined && value in SEVERITY
+      ? (value as LogLevel)
+      : DEFAULT_LEVEL;
   }
 
   static info(message: string): void {
-    Logger.log('INFO', message);
+    Logger.log('info', message);
   }
 
   static warn(message: string): void {
-    Logger.log('WARN', message);
+    Logger.log('warn', message);
   }
 
   static error(message: string, error?: Error): void {
-    Logger.log('ERROR', message);
+    Logger.log('error', message);
     if (error) {
-      Logger.log('ERROR', error.stack || error.message);
+      Logger.log('error', error.stack || error.message);
     }
   }
 
   static debug(message: string): void {
-    Logger.log('DEBUG', message);
+    Logger.log('debug', message);
   }
 
-  private static log(level: string, message: string): void {
+  /** 書き出すかどうか。呼び出し側が文字列を組み立てる前に判定したいとき用。 */
+  static isEnabled(level: LogLevel): boolean {
+    return SEVERITY[level] <= SEVERITY[Logger.currentLevel];
+  }
+
+  private static log(level: Exclude<LogLevel, 'off'>, message: string): void {
+    // 閾値の判定を先に済ませる。off のときは OutputChannel すら作らない。
+    if (!Logger.isEnabled(level)) return;
     if (!Logger.outputChannel) {
       Logger.initialize();
     }
     const timestamp = new Date().toISOString();
-    Logger.outputChannel!.appendLine(`[${timestamp}] [${level}] ${message}`);
+    Logger.outputChannel!.appendLine(
+      `[${timestamp}] [${level.toUpperCase()}] ${message}`
+    );
   }
 
   static show(): void {
@@ -54,5 +109,6 @@ export class Logger {
   static dispose(): void {
     Logger.outputChannel?.dispose();
     Logger.outputChannel = null;
+    Logger.currentLevel = DEFAULT_LEVEL;
   }
 }
