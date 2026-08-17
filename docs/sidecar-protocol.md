@@ -305,8 +305,9 @@ iOS Simulator ではデバイス一覧取得等で mobilecli を常に併用し�
 全コマンドが `device` を含む前提（§3.1）はこのため。
 
 ### 10.5 降格の可視化 → **控えめに可視化する（確定）**
-HID→WDA へ降格したら、既存の `postMessage({type:'status', text})` の仕組みで
-webview に控えめに表示（例: 「互換モード（WDA）」）し、`Logger` に理由を残す。
+HID→WDA へ降格したら、`postMessage({type:'mode', text})` で webview フッターの
+`#mode` に表示し（例: 「互換モード（WDA）」）、同じ文字列をステータスバー
+（`DeviceStatusBar` / `renderStatus`）にも出す。`Logger` に理由を残す。
 常時バナーは出さない。降格は稀かつ「なぜ遅いか」を開発者が知りたい情報なので、状態表示に留める。
 
 ---
