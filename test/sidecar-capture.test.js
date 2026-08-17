@@ -45,6 +45,18 @@ function makeCapture(config, options) {
   return {sidecar, capture};
 }
 
+/** captureServe で指定ポートが埋まっている状況を作る。 */
+function refusePorts(sidecar, ports) {
+  const send = sidecar.send.bind(sidecar);
+  sidecar.send = (cmd) => {
+    if (cmd.cmd === 'captureServe' && cmd.enable && ports.includes(cmd.port)) {
+      sidecar.sent.push(cmd);
+      return Promise.reject(new Error('ポートが使えない'));
+    }
+    return send(cmd);
+  };
+}
+
 (async () => {
   console.log('1) 開始時に設定を載せて captureStart を送る');
   {
@@ -168,6 +180,95 @@ function makeCapture(config, options) {
       String(sidecar.count('captureStart')));
     check('onFrame の紐付けを外す', sidecar.onFrame === undefined);
     check('onCaptureAlive の紐付けを外す', sidecar.onCaptureAlive === undefined);
+  }
+
+  console.log('\n8) 直結配信（sink: http）');
+  {
+    const {sidecar, capture} = makeCapture({}, {sink: 'http'});
+    let url = null;
+    capture.onStreamChange = (u) => (url = u);
+    await capture.start();
+
+    const serve = sidecar.last('captureServe');
+    check('captureServe を先に送る', !!serve && serve.enable === true);
+    check('ポートは拡張ホストが決める（CSP の範囲の先頭）', serve.port === 12220,
+      String(serve && serve.port));
+    check('トークンを渡す', typeof serve.token === 'string' && serve.token.length >= 32,
+      String(serve && serve.token));
+    check('captureServe は captureStart より前',
+      sidecar.sent.findIndex((c) => c.cmd === 'captureServe') <
+        sidecar.sent.findIndex((c) => c.cmd === 'captureStart'));
+
+    const start = sidecar.last('captureStart');
+    check('captureStart に sink=http が載る', start.sink === 'http', JSON.stringify(start));
+    check('URL が通知される', typeof url === 'string' && url.includes('127.0.0.1') === false);
+    check('URL に device とトークンが載る',
+      url.includes('device=UDID') && url.includes(`t=${serve.token}`), url);
+    check('localhost で組み立てる（portMapping が効く形）',
+      url.startsWith('http://localhost:12220/stream?'), url);
+
+    // 停止で待ち受けも畳む（サイドカーは使い回されるので開けっ放しにしない）
+    capture.stop();
+    const off = sidecar.last('captureServe');
+    check('stop で配信を止める', off.enable === false, JSON.stringify(off));
+    capture.dispose();
+  }
+
+  console.log('\n8b) トークンはインスタンス毎に変わる');
+  {
+    const a = makeCapture({}, {sink: 'http'});
+    const b = makeCapture({}, {sink: 'http'});
+    await a.capture.start();
+    await b.capture.start();
+    const ta = a.sidecar.last('captureServe').token;
+    const tb = b.sidecar.last('captureServe').token;
+    check('別インスタンスで別のトークン', ta !== tb, `${ta} / ${tb}`);
+    a.capture.dispose();
+    b.capture.dispose();
+  }
+
+  console.log('\n9) 埋まっているポートは次を試す');
+  {
+    const {sidecar, capture} = makeCapture({}, {sink: 'http'});
+    refusePorts(sidecar, [12220, 12221]);
+    let url = null;
+    capture.onStreamChange = (u) => (url = u);
+    await capture.start();
+    check('空くまで順に試す', url && url.includes(':12222/'), String(url));
+    check('captureStart は 1 回だけ', sidecar.count('captureStart') === 1);
+    capture.dispose();
+  }
+
+  console.log('\n10) 配信を張れなければ stdout へ降りる');
+  {
+    const {sidecar, capture} = makeCapture({}, {sink: 'http'});
+    // 全ポート埋まり
+    refusePorts(sidecar, Array.from({length: 20}, (_, i) => 12220 + i));
+    let url = null;
+    capture.onStreamChange = (u) => (url = u);
+    const got = [];
+    capture.onFrame((f) => got.push(f));
+    await capture.start();
+    check('取り込み自体は始まる', sidecar.count('captureStart') === 1);
+    check('sink が stdout に落ちる', sidecar.last('captureStart').sink === 'stdout',
+      JSON.stringify(sidecar.last('captureStart')));
+    check('URL は通知しない', url === null, String(url));
+    sidecar.onFrame('QUJD');
+    check('stdout 経由でフレームが届く', got.length === 1, String(got.length));
+    capture.dispose();
+  }
+
+  console.log('\n11) 取り込みの駆動方法を渡す');
+  {
+    const {sidecar, capture} = makeCapture({}, {mode: 'poll'});
+    await capture.start();
+    check('mode=poll を伝える', sidecar.last('captureStart').mode === 'poll');
+    capture.dispose();
+    const auto = makeCapture({}, {});
+    await auto.capture.start();
+    check('既定は auto（変更通知を試す）',
+      auto.sidecar.last('captureStart').mode === 'auto');
+    auto.capture.dispose();
   }
 
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);

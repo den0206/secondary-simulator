@@ -1,3 +1,4 @@
+import {randomBytes} from 'node:crypto';
 import {SimhidSidecar} from '../input/SimhidSidecar';
 import {Logger} from '../utils/Logger';
 import {CaptureStrategy, FrameCallback} from './CaptureStrategy';
@@ -19,7 +20,13 @@ export interface SidecarCaptureConfig {
  * ソフトウェアキーボードやステータスバーが写らない（docs/ios-hid-injection.md §6）。
  * こちらは端末のフレームバッファなので、画面に出ているものが全て入る。
  *
- * サイドカーは 1 プロセスで入力と共用する。フレームは base64 JPEG の JSON Lines で届く。
+ * サイドカーは 1 プロセスで入力と共用する。
+ *
+ * フレームの受け取り方は 2 通りある（`sink`）。
+ * - `stdout`（既定）: base64 JPEG の JSON Lines。`onFrame` へ流す
+ * - `http`: サイドカーが loopback で multipart を配信し、webview の `<img>` が直接受ける。
+ *   フレームが拡張ホストを通らないので、**映像の背圧が入力の応答を巻き込まない**
+ *   （docs/sync-enhancement.md §2.4 / §3.2）。URL は `streamUrl` で取る
  *
  * 取り込みの粗さは固定ではなく、**表示中の幅と操作の有無に追従させる**
  * （docs/sync-enhancement.md §3.4）。設定値は上限として扱う。
@@ -32,6 +39,12 @@ export class SidecarCapture implements CaptureStrategy {
   private static readonly STALL_TIMEOUT_MS = 10_000;
   /** 指を離してから通常の fps へ戻すまで。慣性スクロールのぶん少し待つ。 */
   private static readonly INTERACTION_TAIL_MS = 700;
+  /**
+   * サイドカーの HTTP 配信が使うポートの先頭と試行数。
+   * `MjpegProxy` と同じく、CSP には範囲で許可を出しておく必要がある。
+   */
+  static readonly STREAM_BASE_PORT = 12220;
+  static readonly MAX_PORT_TRIES = 20;
 
   private deviceId = '';
   private callback: FrameCallback | null = null;
@@ -52,14 +65,49 @@ export class SidecarCapture implements CaptureStrategy {
 
   /** 停止とみなすまでの時間。既定は STALL_TIMEOUT_MS（テストから縮められる）。 */
   private readonly stallTimeoutMs: number;
+  /** フレームの受け取り方。`http` なら `onFrame` は呼ばれず `streamUrl` に URL が入る。 */
+  private readonly sink: 'stdout' | 'http';
+  /** 取り込みの駆動。`auto` は変更通知を試し、駄目ならサイドカーがポーリングへ戻す。 */
+  private readonly mode: 'auto' | 'poll';
+  /** 起動毎に変わる。webview へ渡す URL 以外からは配信させない。 */
+  private readonly token = randomBytes(24).toString('hex');
+  private servePort = 0;
 
   constructor(
     private readonly sidecar: SimhidSidecar,
     private readonly getConfig: () => SidecarCaptureConfig,
-    options?: {stallTimeoutMs?: number}
+    options?: {
+      stallTimeoutMs?: number;
+      sink?: 'stdout' | 'http';
+      mode?: 'auto' | 'poll';
+    }
   ) {
     this.stallTimeoutMs = options?.stallTimeoutMs ?? SidecarCapture.STALL_TIMEOUT_MS;
+    this.sink = options?.sink ?? 'stdout';
+    this.mode = options?.mode ?? 'auto';
   }
+
+  /**
+   * webview の `<img>` に渡す URL。`sink` が `http` で、配信が始まっているときだけ。
+   * トークンはここでしか漏れない。
+   */
+  streamUrl(): string | null {
+    if (this.sink !== 'http' || !this.servePort) return null;
+    return `http://localhost:${this.servePort}/stream?device=${encodeURIComponent(
+      this.deviceId
+    )}&t=${this.token}`;
+  }
+
+  /** 実際に使っている配信ポート（portMapping 用）。未起動なら 0。 */
+  get port(): number {
+    return this.servePort;
+  }
+
+  /**
+   * 直結配信の URL が決まった／変わったときに呼ばれる。
+   * 停止検出で張り直すとポートが変わりうるので、webview へ送り直す口が要る。
+   */
+  onStreamChange?: (url: string | null) => void;
 
   setDevice(deviceId: string): void {
     if (deviceId === this.deviceId) return;
@@ -75,6 +123,15 @@ export class SidecarCapture implements CaptureStrategy {
     if (!this.deviceId) throw new Error('SidecarCapture: device 未設定');
     if (this.started) return;
     const config = this.effective();
+
+    // 直結配信は取り込みより先に立てる（最初のフレームを取りこぼさない）
+    let sink: 'stdout' | 'http' = this.sink;
+    if (sink === 'http' && !(await this.ensureServing())) {
+      // 空きポートが無い等。stdout 経路なら動くので、そちらへ降りる
+      Logger.warn('サイドカーの直結配信を開始できないため stdout 経路で続ける');
+      sink = 'stdout';
+    }
+
     // onFrame / onCaptureAlive は高頻度パス。ここでログを出さない。
     // サイドカーが送ってくる base64 をそのまま流す（webview も base64 で受ける）。
     this.sidecar.onFrame = (base64) => {
@@ -91,12 +148,49 @@ export class SidecarCapture implements CaptureStrategy {
       fps: config.fps,
       maxWidth: config.maxWidth,
       quality: config.quality,
+      sink,
+      mode: this.mode,
     });
     this.started = true;
     this.applied = config;
     Logger.info(
-      `サイドカーの画面取り込みを開始: ${config.maxWidth}px / ${config.fps}fps`
+      `サイドカーの画面取り込みを開始: ${config.maxWidth}px / ${config.fps}fps` +
+        (sink === 'http' ? `（直結 :${this.servePort}）` : '')
     );
+    // 張り直しでポートが変わることがあるので、開始のたびに知らせる
+    if (sink === 'http') this.onStreamChange?.(this.streamUrl());
+  }
+
+  /**
+   * サイドカーに loopback 配信を張らせる。空きポートを順に試す。
+   *
+   * ポートは**拡張ホストが決めて渡す**。CSP は HTML 生成時に範囲で許可しており
+   * （`MjpegProxy` と同じ形）、サイドカーに選ばせると範囲外を掴みうるため。
+   */
+  private async ensureServing(): Promise<boolean> {
+    if (this.servePort) return true;
+    const base = SidecarCapture.STREAM_BASE_PORT;
+    for (let i = 0; i < SidecarCapture.MAX_PORT_TRIES; i++) {
+      const port = base + i;
+      try {
+        await this.sidecar.send({
+          cmd: 'captureServe',
+          enable: true,
+          port,
+          token: this.token,
+        });
+        this.servePort = port;
+        return true;
+      } catch (error) {
+        // 使用中なら次のポート。それ以外（古いサイドカーで未対応など）は諦める
+        const message = (error as Error).message;
+        if (!message.includes('ポートが使えない')) {
+          Logger.warn(`サイドカーの配信を開始できない: ${message}`);
+          return false;
+        }
+      }
+    }
+    return false;
   }
 
   stop(): void {
@@ -111,6 +205,11 @@ export class SidecarCapture implements CaptureStrategy {
     this.sidecar
       .send({cmd: 'captureStop', device: this.deviceId})
       .catch(() => {});
+    if (this.servePort) {
+      // 待ち受けも畳む。サイドカーは使い回されるので、開けっ放しにしない
+      this.servePort = 0;
+      this.sidecar.send({cmd: 'captureServe', enable: false}).catch(() => {});
+    }
   }
 
   /** 設定が変わったときに呼ばれる。張り直さずに差分だけ送る。 */
@@ -230,5 +329,6 @@ export class SidecarCapture implements CaptureStrategy {
   dispose(): void {
     this.stop();
     this.callback = null;
+    this.onStreamChange = undefined;
   }
 }
