@@ -259,6 +259,15 @@ static pthread_cond_t gFrameCond = PTHREAD_COND_INITIALIZER;
 static const char *kBoundary = "simhidframe";
 /** 接続スレッドが停止指示を確認しに起きる間隔（静止画面では書くものが無いため）。 */
 static const long kClientWaitSec = 2;
+/**
+ * 同時接続の上限。webview の `<img>` は 1 本しか張らないので、これで十分足りる。
+ * 上限が無いと、同じマシンの任意プロセスが接続を積むだけでスレッドを使い切れる
+ * （トークンが無いと絵は取れないが、スレッドは掴める）。
+ */
+static const int kMaxClients = 8;
+/** ヘッダを読み切るまでの上限。無いと何も送らない接続がスレッドを占有し続ける。 */
+static const int kHeaderTimeoutSec = 5;
+static int gClientCount = 0;  // gFrameMutex で守る
 
 /** 最新フレームを差し替えて待っている接続を起こす。取り込み側は**待たない**。 */
 static void publishFrame(DeviceState *st, NSData *jpeg) {
@@ -320,6 +329,13 @@ static BOOL peerClosed(int fd) {
   return n < 0;                                 // それ以外のエラーも畳む
 }
 
+/** 接続枠を返す。clientThread の出口で必ず 1 回だけ呼ぶ。 */
+static void releaseClientSlot(void) {
+  pthread_mutex_lock(&gFrameMutex);
+  if (gClientCount > 0) gClientCount--;
+  pthread_mutex_unlock(&gFrameMutex);
+}
+
 typedef struct {
   int fd;
   uint64_t epoch;
@@ -332,6 +348,10 @@ static void *clientThread(void *arg) {
   free(carg);
 
   @autoreleasepool {
+    // 読み取りに上限を設ける（何も送らない相手にスレッドを握らせない）
+    struct timeval tv = {.tv_sec = kHeaderTimeoutSec, .tv_usec = 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     // ---- リクエストを読む（ヘッダ終端まで。上限付き）----
     char req[4096];
     size_t used = 0;
@@ -343,7 +363,7 @@ static void *clientThread(void *arg) {
       req[used] = '\0';
       if (strstr(req, "\r\n\r\n")) { complete = YES; break; }
     }
-    if (!complete) { close(fd); return NULL; }
+    if (!complete) { close(fd); releaseClientSlot(); return NULL; }
 
     // ---- "GET /stream?device=…&t=… HTTP/1.1" を分解する ----
     static const char *kNotFound =
@@ -351,11 +371,12 @@ static void *clientThread(void *arg) {
     if (strncmp(req, "GET /stream?", 12) != 0) {
       writeAllFd(fd, kNotFound, strlen(kNotFound));
       close(fd);
+      releaseClientSlot();
       return NULL;
     }
     char *query = req + 12;
     char *sp = strchr(query, ' ');
-    if (!sp) { close(fd); return NULL; }
+    if (!sp) { close(fd); releaseClientSlot(); return NULL; }
     *sp = '\0';
 
     size_t tokLen = 0, devLen = 0;
@@ -369,6 +390,7 @@ static void *clientThread(void *arg) {
     if (!tok || !dev || !tokenEquals(tok, tokLen, expected)) {
       writeAllFd(fd, kNotFound, strlen(kNotFound));
       close(fd);
+      releaseClientSlot();
       return NULL;
     }
     NSString *udid = [[NSString alloc] initWithBytes:dev
@@ -383,6 +405,7 @@ static void *clientThread(void *arg) {
     if (!st) {
       writeAllFd(fd, kNotFound, strlen(kNotFound));
       close(fd);
+      releaseClientSlot();
       return NULL;
     }
 
@@ -395,7 +418,11 @@ static void *clientThread(void *arg) {
                              "Pragma: no-cache\r\n"
                              "Connection: close\r\n\r\n",
                              kBoundary);
-    if (!writeAllFd(fd, header, (size_t)headerLen)) { close(fd); return NULL; }
+    if (!writeAllFd(fd, header, (size_t)headerLen)) {
+      close(fd);
+      releaseClientSlot();
+      return NULL;
+    }
 
     uint64_t seen = 0;
     for (;;) {
@@ -432,6 +459,7 @@ static void *clientThread(void *arg) {
       }
     }
     close(fd);
+    releaseClientSlot();
   }
   return NULL;
 }
@@ -452,13 +480,21 @@ static void *acceptThread(void *arg) {
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
 
+    // 上限を超える接続は即座に閉じる（スレッドを作らない）
+    pthread_mutex_lock(&gFrameMutex);
+    BOOL tooMany = gClientCount >= kMaxClients;
+    if (!tooMany) gClientCount++;
+    pthread_mutex_unlock(&gFrameMutex);
+    if (tooMany) { close(fd); continue; }
+
     ClientArg *carg = calloc(1, sizeof(ClientArg));
-    if (!carg) { close(fd); continue; }
+    if (!carg) { releaseClientSlot(); close(fd); continue; }
     carg->fd = fd;
     carg->epoch = epoch;
     pthread_t tid;
     if (pthread_create(&tid, NULL, clientThread, carg) != 0) {
       free(carg);
+      releaseClientSlot();
       close(fd);
       continue;
     }
