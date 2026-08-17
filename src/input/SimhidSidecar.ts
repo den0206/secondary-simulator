@@ -46,6 +46,12 @@ export class SimhidSidecar {
   /** 復帰不能になったときに呼ばれる（上位が WDA 経路へ降格する） */
   public onFatal?: (reason: string) => void;
 
+  /**
+   * captureStart 後に届く画面フレーム（base64 JPEG）。SidecarCapture が繋ぐ。
+   * 毎秒 30 回届くので、ここではログを出さない。
+   */
+  public onFrame?: (base64: string) => void;
+
   constructor(private readonly binaryPath: string) {}
 
   isFatal(): boolean {
@@ -159,6 +165,10 @@ export class SimhidSidecar {
     }
     // 通知（event）
     switch (msg.event) {
+      case 'frame':
+        // 高頻度パス。ログもコピーもせず、そのまま渡す
+        if (typeof msg.data === 'string') this.onFrame?.(msg.data);
+        break;
       case 'ready':
         Logger.info(`simhid-server ready (pid=${msg.pid})`);
         onReady();

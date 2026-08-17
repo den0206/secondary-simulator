@@ -224,6 +224,57 @@ setTimeout(() => process.exit(1), 50);
     fs.unlinkSync(bin);
   }
 
+  console.log('\n8) 画面取り込み（captureStart → frame 通知）');
+  {
+    // captureStart を受けたら frame を 2 枚流す偽サイドカー
+    const bin = writeFakeSidecar(`
+const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+out({event: 'ready', pid: process.pid});
+let buf = '';
+process.stdin.on('data', (c) => {
+  buf += c;
+  let i;
+  while ((i = buf.indexOf('\\n')) >= 0) {
+    const line = buf.slice(0, i); buf = buf.slice(i + 1);
+    if (!line.trim()) continue;
+    const m = JSON.parse(line);
+    if (m.id) out({id: m.id, ok: true});
+    if (m.cmd === 'captureStart') {
+      out({event: 'frame', device: m.device, w: 4, h: 8, data: Buffer.from([0xff, 0xd8, 0x01]).toString('base64')});
+      out({event: 'frame', device: m.device, w: 4, h: 8, data: Buffer.from([0xff, 0xd8, 0x02]).toString('base64')});
+    }
+  }
+});
+`);
+    const sidecar = new SimhidSidecar(bin);
+    await sidecar.start();
+    const {SidecarCapture} = require(path.join(ROOT, 'out/capture/SidecarCapture'));
+    const capture = new SidecarCapture(sidecar, () => ({
+      fps: 30,
+      maxWidth: 640,
+      quality: 0.6,
+    }));
+    const frames = [];
+    capture.setDevice('UDID');
+    capture.onFrame((f) => frames.push(Buffer.from(f)));
+    await capture.start();
+    await new Promise((r) => setTimeout(r, 150));
+    check('frame 通知が届く', frames.length === 2, String(frames.length));
+    check(
+      'base64 がバイト列へ戻る',
+      frames[0] && frames[0].equals(Buffer.from([0xff, 0xd8, 0x01])),
+      frames[0] && frames[0].toString('hex')
+    );
+    capture.stop();
+    await new Promise((r) => setTimeout(r, 50));
+    frames.length = 0;
+    // stop 後に来たフレームは捨てる（onFrame を外しているため）
+    check('stop 後は受け取らない', frames.length === 0);
+    capture.dispose();
+    sidecar.dispose();
+    fs.unlinkSync(bin);
+  }
+
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => {
