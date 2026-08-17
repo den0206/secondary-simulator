@@ -17,9 +17,11 @@ VS Code / Cursor 拡張の入力経路を mobilecli/WDA（約 600ms）から HID
 - 拡張ホスト側の `InputBackend` 抽象（HID 経路と WDA 経路を差し替え可能に）
 - webview から拡張ホストへ渡す既存メッセージとの対応
 - ドラッグのレートリミッタ・ライフサイクル・再接続・エラー通知
+- 画面取り込み（`captureStart` / `frame`）。WDA のスクリーンショットにソフトキーボードが
+  写らない問題への対策（§3.5）。H.264 化はまだしない
 
 ### スコープに含まない（別フェーズ）
-- 表示経路（MJPEG/H.264）の変更 — [sync-research.md](./sync-research.md) の Phase 2
+- H.264 などコーデックの変更 — [sync-research.md](./sync-research.md) の検討メモ
 - Android 経路（scrcpy）
 - サイドカーバイナリの署名・公証・VSIX 同梱
 
@@ -90,6 +92,8 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `keyDown`/`keyUp` | `usage`（USB HID usage code） | 単一キー |
 | `modifier` | `bit`（16..20）, `down`（bool） | 修飾キー |
 | `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解） |
+| `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6) | 画面バッファの JPEG 配信を開始（§3.5） |
+| `captureStop` | — | 同 停止 |
 | `ping` | — | 生存確認 |
 
 **設計方針: サイドカーは「薄い」。** down/move/up の粒度でそのまま HID に流し、
@@ -114,6 +118,27 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `fatal` | `reason` | シンボル解決失敗・SimulatorKit 読み込み失敗など復帰不能 |
 | `portLost` | `device` | HID ポート断を検知（自動でクライアント再生成を試みる） |
 | `recovered` | `device` | 再生成に成功した |
+| `frame` | `device`, `w`, `h`, `data`（base64 JPEG） | 画面フレーム（`captureStart` 中のみ） |
+
+### 3.5 画面取り込み（`captureStart` / `frame`）
+
+**なぜサイドカーで撮るか。** WDA(XCTest) のスクリーンショットは「テスト対象アプリの
+ウィンドウ」しか描かないため、**ソフトウェアキーボードとステータスバーが写らない**
+（iOS 26 / WDA 10.2.4 で実測。`docs/ios-hid-injection.md` §6）。サイドカーは
+`SimDeviceIOClient.ioPorts` から `SimDisplayIOSurfaceRenderable` の descriptor を選び、
+`maskedFramebufferSurface`（角丸・ノッチのマスク込み）を CoreImage で JPEG にする。
+端末のフレームバッファそのものなので、画面に出ているものが全て入る。
+
+- descriptor は ROCK のリモートプロキシで `respondsToSelector:` に答えない。
+  **クラス名に埋め込まれたインタフェース名で判定する**。該当は複数あるので、
+  実際に面を返すものを選ぶ（外部ディスプレイのぶんは nil を返す）。
+- 送るのは **変化したフレームだけ**。`IOSurfaceGetSeed` は静止画面でも動くため、
+  直前に送った JPEG とバイト列で比較する（保持は 1 枚ぶん・約 68KB）。
+- 取り込みは入力とは別のシリアルキューで回す（JPEG 変換は実測 2ms）。
+  stdout は入力の応答と共用なので mutex で 1 行ずつに保つ。親の読み出しが遅いと
+  `write` がブロックし、そのぶん取り込みも止まる（＝キューを作らない背圧）。
+- 実測（iPhone 17 / 640px / q60）: 1 枚 68KB、静止画面で約 0.5MB/s、
+  最大 30fps。WDA 経路（2.9MB/s・アプリのみ）より軽く、写る範囲も広い。
 
 ---
 
