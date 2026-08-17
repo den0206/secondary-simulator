@@ -78,6 +78,7 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 詳細設計は `docs/sidecar-protocol.md`（サイドカープロトコル）と
 `docs/ios-hid-injection.md`（HID 仕様）、`docs/sync-research.md`（同期改善の調査）、
+`docs/sync-enhancement.md`（同期の現状の問題点と実装方針。sync-research.md より新しい）、
 `docs/project-review.md`（全体精査と未対応の提案）。
 
 ## 守る境界
