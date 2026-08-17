@@ -14,6 +14,7 @@ function defaultStub() {
       createOutputChannel: () => ({
         appendLine() {},
         show() {},
+        clear() {},
         dispose() {},
       }),
       showErrorMessage: async () => undefined,
