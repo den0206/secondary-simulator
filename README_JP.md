@@ -75,6 +75,7 @@ VSCodeの設定で以下のオプションを調整できます：
 - **`secondarySimulator.captureFps`**: サイドカー取り込みの上限 fps（デフォルト: 30）。変化のないフレームは送られない。
 - **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG の最大幅 px（デフォルト: 640）
 - **`secondarySimulator.keyInput`**: iOS Simulator へのキー入力経路。`hid`（デフォルト・高速）または `wda`（1文字あたり約 370ms）。HID のキーはハードウェアキーボード扱いになるためソフトウェアキーボードが出ない。サイドバーにソフトキーボードを映したいときは `wda`。タッチは常に HID。
+- **`secondarySimulator.logLevel`**: 出力チャンネル **Secondary Simulator** へ書くログの詳しさ。`off` / `error` / `warn` / `info`（デフォルト） / `debug`。VS Code は出力チャンネルの全文をメモリに保持し古い行を捨てられないため、調査時以外は `info` 以下にする。
 
 タップ/スワイプ/ロングプレスの判定はデバイス側が行うため、閾値の設定項目はありません。
 
@@ -94,6 +95,9 @@ VSCodeの設定で以下のオプションを調整できます：
    - **Shot**: 接続中デバイスの画面を保存
    - **Trail**: リップルとドラッグ軌跡の表示切替
    - **Auto**: 起動中デバイスへの自動接続の切替
+6. プレビューにフォーカスがあるあいだはキーボードで入力できます。`Cmd` / `Ctrl` / `Option` を伴うショートカット（`Cmd+A`・`Cmd+C` など）は修飾キー付きの組み合わせとして送られます（HID 経路のみ。WDA は修飾キーを扱えません）
+
+ステータスバー（右下）に接続中のデバイスと入力経路（**HID** / **WDA**）が出ます。サイドバー下部にも同じラベルが出るので、HID から WDA へ無音で降格したことに気づけます。
 
 ## ⌨️ コマンド
 
@@ -102,8 +106,9 @@ VSCodeの設定で以下のオプションを調整できます：
 
 | コマンド              | 説明                                                         |
 | --------------------- | ------------------------------------------------------------ |
-| `Select Device`       | 一覧から選んで接続する                                       |
+| `Select Device`       | 一覧から選んで接続する。停止中を選ぶと起動できる             |
 | `Save Screenshot`     | 接続中のデバイスの画面を保存する                             |
+| `Open URL on Device`  | 接続中のデバイスでディープリンク / URL を開く                |
 | `Press Home`          | Home ボタン（`Cmd+Shift+H`）                                 |
 | `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
 | `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`）                    |
@@ -136,6 +141,8 @@ secondary-simulator/
 │   │   ├── HidSidecarBackend.ts       # HID 直接注入バックエンド
 │   │   ├── WdaBackend.ts              # WDA/mobilecli フォールバック
 │   │   └── SimulatorInputController.ts # バックエンド選択と降格
+│   ├── ui/
+│   │   └── DeviceStatusBar.ts          # ステータスバー（接続中デバイスと入力経路）
 │   └── utils/
 │       ├── Logger.ts                  # ログ管理
 │       ├── MobileCliClient.ts         # mobilecliクライアント

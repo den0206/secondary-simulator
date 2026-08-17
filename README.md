@@ -73,6 +73,7 @@ npm run build
 - **`secondarySimulator.captureFps`**: cap for sidecar capture (default: 30). Unchanged frames are not sent.
 - **`secondarySimulator.captureMaxWidth`**: JPEG width sent by the sidecar, in px (default: 640)
 - **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a _hardware_ keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
+- **`secondarySimulator.logLevel`**: verbosity of the **Secondary Simulator** output channel — `off` / `error` / `warn` / `info` (default) / `debug`. VS Code keeps the channel's full text in memory and offers no way to drop old lines, so keep this at `info` or below unless you are investigating something.
 
 There are no gesture threshold settings: tap, swipe, and long press are all recognized on the device side.
 
@@ -92,6 +93,9 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Shot**: save a screenshot of the connected device
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
+6. Type with the keyboard while the preview has focus. Shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers.
+
+The status bar (bottom right) shows the connected device and whether input is going through **HID** or **WDA**; the same label appears in the sidebar footer. A silent demotion from HID to WDA is visible there.
 
 ## ⌨️ Commands
 
@@ -100,8 +104,9 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 
 | Command               | Description                                                      |
 | --------------------- | ---------------------------------------------------------------- |
-| `Select Device`       | Pick a device from a list and connect                            |
+| `Select Device`       | Pick a device from a list and connect. Picking a stopped one offers to boot it |
 | `Save Screenshot`     | Save the connected device's screen to a file                     |
+| `Open URL on Device`  | Open a deep link or URL on the connected device                  |
 | `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
 | `Refresh Device List` | Re-fetch the device list (`Cmd+Shift+R`)                         |
@@ -134,6 +139,8 @@ secondary-simulator/
 │   │   ├── HidSidecarBackend.ts       # Direct HID injection backend
 │   │   ├── WdaBackend.ts              # WDA/mobilecli fallback
 │   │   └── SimulatorInputController.ts # Backend selection and degradation
+│   ├── ui/
+│   │   └── DeviceStatusBar.ts          # Status bar: connected device and input route
 │   └── utils/
 │       ├── Logger.ts                  # Logging
 │       ├── MobileCliClient.ts         # mobilecli client

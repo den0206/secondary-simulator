@@ -31,6 +31,15 @@
 - `Secondary Simulator: Show Logs` — 出力チャンネルを開く
 - `Secondary Simulator: Clear Logs` — 出力チャンネルを空にする（VS Code は全文をメモリに持ち、行数の上限を設けられないため）
 - `Secondary Simulator: Select Device` を QuickPick 化（従来はビューへフォーカスするだけだった）
+- `secondarySimulator.logLevel` — 出力チャンネルへ書くログの詳しさ（既定 info）。
+  VS Code は全文をメモリに持ち行数の上限を設けられないため、書く量そのものを絞れるようにした
+- ステータスバーに接続中のデバイスと入力経路（HID / WDA）を出すようにした。
+  サイドバー下部にも同じラベルを出す（従来 `status` メッセージは webview で捨てられていた）
+- 修飾キー付きの入力（`Cmd+A` / `Cmd+C` など）を送れるようにした。
+  webview が `Shift` / `Control` / `Alt` / `Meta` を捨てていたため送れなかった。HID 経路のみ
+- `Secondary Simulator: Select Device` で停止中のデバイスを選ぶと、その場で起動して接続できるようにした
+  （`device.boot`）。従来は「起動していません」で終わっていた
+- `Secondary Simulator: Open URL on Device` — 接続中のデバイスでディープリンク / URL を開く（`device.url`）
 - スクリーンショット / 再取得 / ログをビュータイトルのアイコンに追加
 - `docs/project-review.md` — 全体精査の記録と未対応の提案
 - `THIRD-PARTY-NOTICES.md` — 同梱 `@mobilenext/mobilecli` 0.1.64（AGPL-3.0）のライセンス全文と入手先を VSIX に同梱
@@ -43,6 +52,9 @@
 - フレームを base64 の文字列で webview へ渡すようにした（形式が環境依存だったため）
 - 未使用の入力 API（`tap` / `swipe` / `gesture` ほか）と `ScreenInfo` 型を削除
 - `.d.ts` の生成を止めた（VSIX に同梱されていた）
+- `npm test` を `node --test test/*.test.js` にした。`package.json` へファイルを 1 つずつ
+  並べる形をやめ、テストを足しても登録漏れで素通りしないようにした
+- CI に Linux の型チェック / テストジョブを追加（macOS ランナーが枯渇しても壊れたことに気づける）
 
 ### 初回リリースまでの内容
 

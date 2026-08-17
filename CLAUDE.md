@@ -19,7 +19,9 @@ npm run watch      # tsc -watch
 npm run clean      # out/ と native/simhid-server を削除
 ```
 
-`test/*.device-test.js` は実機/シミュレータが要るため `npm test` には含めない。手動実行する。
+`npm test` は `node --test test/*.test.js`。**ファイルを置けば走る**（登録は要らない）。
+各テストは node 標準のみの素の script で、`process.exit` の終了コードが結果になる。
+`test/*.device-test.js` は `*.test.js` に一致しないので走らない（実機/シミュレータが要る）。手動実行する。
 
 `sh scripts/check-xcode-hid.sh` はインストール済み Xcode すべてに
 `native/simhid-server --check` を当て、HID の私有シンボル（CoreSimulator /
@@ -55,6 +57,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
   デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。
+- **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
+  表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
+  フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
+  遅くなった理由が見える場所を 1 つ用意する、が趣旨。
 - **utils**: `MobileCliServer` が mobilecli をサーバとして起動し、
   `MobileCliClient` が JSON-RPC 2.0（`JsonRpcClient`）で叩く。
   `ResourceStats` が拡張ホストの RSS/heap・子プロセスの RSS・拡張ディレクトリの
@@ -86,6 +92,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **高頻度パスでログを出さない**。`touch*` は 60Hz で届く。OutputChannel は全文を
   メモリに持つので、1 イベント 1 行で確実に膨らむ。**リトライループも高頻度パス**
   （`MjpegCapture` の再接続は指数バックオフで、記録は最初の 3 回まで）。
+  `secondarySimulator.logLevel`（既定 info）で `Logger.debug` は落ちるが、
+  **それを当てにしない**（debug にする人がいる）。閾値は `Logger` がフィールドに写しを
+  持つので、判定のために `getConfiguration` を呼ばない。
 - **確保したものは必ず捨てる**。`Disposable` はフィールドに保持して `dispose()` で
   外す（`resolveWebviewView` は再呼び出しされるので冒頭で前回分を捨てる）。
   子プロセス（mobilecli / simhid-server）・タイマー・`ImageBitmap` も同じ。
@@ -98,8 +107,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   例: `feat(input): HID/WDA を切り替える入力バックエンドを追加`
 - 作業ブランチは `feature/**` / `fix/**`。push すると CI（型チェック・テスト・VSIX）が回る。
 - リリースは `release/Ver_X.Y.Z` ブランチを push する（README「リリース」参照）。
-- ロジックを変えたら `npm test` を通してからコミットする。テストを足したら
-  `package.json` の `test` へ登録する（列挙が手作業なので忘れやすい）。
+- ロジックを変えたら `npm test` を通してからコミットする。テストは `test/` へ
+  `*.test.js` で置けば拾われる（`package.json` への登録は不要）。
   `vscode` に依存するモジュールは `test/helpers/vscode-stub.js` を先に読み込む。
 
 ## 注意
