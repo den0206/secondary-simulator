@@ -151,7 +151,7 @@ jobs:
 
       # 版上げを main へ直接コミットする。release ブランチにコミットすると main の
       # version が古いまま取り残され、手動マージ待ちの運用が生まれるため。
-      # 作業ツリーは持ち運ばず main の最新から version 変更をやり直す
+      # 作業ツリーは持ち運ばず main の最新から version / CHANGELOG 切り出しをやり直す
       # (持ち運ぶとリリース中に main へ入った別の編集を巻き戻す危険がある)。
       - name: Sync version to main
         if: steps.meta.outputs.tag
@@ -160,8 +160,8 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch origin main
 
-          # この自動化が main に運ぶのは version だけ。release ブランチ上で直接コードを
-          # 直した場合は取りこぼすので、気づけるように警告を出す。
+          # この自動化が main に運ぶのは package.json の version と CHANGELOG.md の切り出しだけ。
+          # release ブランチ上で直接コードを直した場合は取りこぼすので、気づけるように警告を出す。
           UNMERGED="$(git log --oneline "origin/main..$GITHUB_SHA")"
           if [ -n "$UNMERGED" ]; then
             echo "::warning::release ブランチに main 未取り込みのコミットがあります。手動で main に取り込んでください:"
