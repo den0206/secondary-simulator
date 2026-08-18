@@ -263,10 +263,16 @@ npm run clean      # 生成物の削除
 2. GitHub Actions（[release.yml](.github/workflows/release.yml)）が型チェック・テスト・VSIX 作成を行い、
    `Ver_X.Y.Z` タグで GitHub Release を作成して VSIX を添付する
 3. `OVSX_TOKEN` が設定されていれば Open VSX にも公開する（未設定ならスキップ）
-4. `package.json` の version は自動で `main` に反映される
+4. `CHANGELOG.md` の `[Unreleased]` が `## [X.Y.Z] — 日付` へ切り出される（VSIX に入る前）
+5. `package.json` の version と切り出し後の `CHANGELOG.md` は自動で `main` に反映される
 
 補足:
 
+- **CHANGELOG は手で移し替えない。** 変更は `[Unreleased]` に書き足すだけでよく、
+  リリース時に [`scripts/release-changelog.js`](scripts/release-changelog.js) が
+  バージョン見出しへ移す。公開ページ（Open VSX / Marketplace）が表示するのは
+  **VSIX 内の CHANGELOG.md** なので、パッケージより前に切り出している
+- `[Unreleased]` が空のままリリースするとバージョン見出しは作られない（空の節を量産しない）
 - 同じ `Ver_X.Y.Z` が既にある場合は `Ver_X.Y.Z+1` として再ビルドされる（公開済みリリースは不変）
 - 既存の最新版より古いバージョン名は拒否される
 - リリースノートは `docs/release-notes/X.Y.Z.md` があればそれを使用し、無ければ自動生成
