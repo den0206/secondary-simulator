@@ -37,6 +37,8 @@ export class AdbTouch {
   private static readonly MAX_BUF = 4096;
   /** 応答待ちの上限。これを超えたら詰まっているので諦める。 */
   private static readonly MAX_PENDING = 8;
+  /** 1 往復の待ち上限（ms）。返らない adb で入力全体を止めない。 */
+  private static readonly TIMEOUT_MS = 5000;
 
   private proc: ChildProcess | null = null;
   private starting: Promise<boolean> | null = null;
@@ -73,7 +75,17 @@ export class AdbTouch {
     }
     const done = new Promise<void>((resolve) => this.pending.push(resolve));
     proc.stdin.write(`${commands.join(';')};echo '${AdbTouch.MARK}'\n`);
-    await done;
+    // 返ってこない adb を待ち続けると pump ごと止まり、以後の入力が全部詰まる。
+    // 諦めて閉じれば呼び手が mobilecli 経路へ落ちる。
+    const timer = setTimeout(
+      () => this.kill('adb shell が応答しない'),
+      AdbTouch.TIMEOUT_MS
+    );
+    try {
+      await done;
+    } finally {
+      clearTimeout(timer);
+    }
     return !this.dead;
   }
 

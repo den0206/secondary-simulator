@@ -86,6 +86,7 @@ export class AndroidBackend implements InputBackend {
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private holdResolve: (() => void) | null = null;
   private errorLogs = 0;
+  private disposed = false;
 
   constructor(
     private readonly client: MobileCliClient,
@@ -400,6 +401,11 @@ export class AndroidBackend implements InputBackend {
   }
 
   dispose(): void {
+    // SimulatorInputController は primary と androidBackend の両方を捨てるので
+    // Android では 2 回来る。2 回目で adb を閉じると、1 回目が送っている
+    // 「押しっぱなしを外す UP」が書かれる前にセッションが死ぬ。
+    if (this.disposed) return;
+    this.disposed = true;
     this.clearPressTimer();
     this.clearHoldTimer();
     const stuck = this.downSent;

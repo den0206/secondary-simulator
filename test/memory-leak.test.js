@@ -251,6 +251,26 @@ const fakeClient = () => {
       /clearPressTimer\(\);[\s\S]{0,80}clearHoldTimer\(\);/.test(android)
     );
 
+    check(
+      'AndroidBackend の dispose が 2 度呼ばれても効くのは 1 回',
+      /if \(this\.disposed\) return;/.test(android)
+    );
+
+    const adbTouch = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'input', 'AdbTouch.ts'),
+      'utf8'
+    );
+    check('AdbTouch に stdout の上限がある', /MAX_BUF\s*=\s*\d+/.test(adbTouch));
+    check('AdbTouch に応答待ちの上限がある', /MAX_PENDING\s*=\s*\d+/.test(adbTouch));
+    check(
+      'AdbTouch が返らない adb を待ち続けない',
+      /TIMEOUT_MS\s*=\s*\d+/.test(adbTouch) && /clearTimeout\(timer\)/.test(adbTouch)
+    );
+    check(
+      'AdbTouch が子プロセスを捨てる（pid は ResourceStats へ出す）',
+      /proc\?\.kill\(\)/.test(adbTouch) && /get pid\(\)/.test(adbTouch)
+    );
+
     const sidecar = require('fs').readFileSync(
       require('path').join(__dirname, '..', 'src', 'input', 'SimhidSidecar.ts'),
       'utf8'
