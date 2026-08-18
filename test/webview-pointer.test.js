@@ -422,8 +422,23 @@ listeners['window:message']({
 check('直結と分かる表示になる', els.stats.innerHTML.includes('直結'), els.stats.innerHTML);
 // multipart は 1 コマごとに load が来るとは限らない。数えられていないときに
 // 0fps と出すと壊れて見えるので、そのときは数字を伏せる。
-check('0fps とは出さない', !els.stats.innerHTML.includes('0fps'), els.stats.innerHTML);
+// `includes('0fps')` は 10fps / 1000fps にもマッチするので使わない。
+check(
+  '0fps とは出さない',
+  !/(^|[^0-9.])0fps/.test(els.stats.innerHTML),
+  els.stats.innerHTML
+);
 check('直結では帯域を出さない', !els.stats.innerHTML.includes('KB/s'), els.stats.innerHTML);
+
+// カウンタは直前で消費済み。次は描画 0 枚の直結 → 数字なしの「直結」だけ
+listeners['window:message']({
+  data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4, direct: true},
+});
+check(
+  '描けていなければ数字を伏せて直結だけ',
+  els.stats.innerHTML.includes('直結') && !els.stats.innerHTML.includes('fps'),
+  els.stats.innerHTML
+);
 
 // 古い拡張ホスト（fps を送らない）でもメモリ表示は壊れない
 listeners['window:message']({
