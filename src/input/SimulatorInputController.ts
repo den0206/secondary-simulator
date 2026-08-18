@@ -331,6 +331,7 @@ export class SimulatorInputController {
     this.primary?.dispose();
     // adb 常駐セッションは AndroidBackend.dispose() が
     // 「押しっぱなしの指を外す UP」を送り切ってから閉じる
+    // （primary と両方捨てるので 2 回来るが、2 回目は無視される）
     this.androidBackend?.dispose();
     this.adbTouch = null;
     this.wdaFallback.dispose();

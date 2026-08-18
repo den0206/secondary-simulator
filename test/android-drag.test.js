@@ -385,6 +385,27 @@ const makeBackend = (client, screen = SCREEN) =>
     b.dispose();
     check('dispose で adb 常駐セッションも閉じる', adb.disposed);
 
+    // SimulatorInputController は primary と androidBackend の両方を捨てるので
+    // Android では dispose が 2 回来る。2 回目で adb を先に閉じてしまうと
+    // 「押しっぱなしを外す UP」が書かれない。
+    const c3 = fakeClient(5);
+    const adb3 = fakeAdb();
+    const b3 = new AndroidBackend(c3, 'dev', () => SCREEN, keysStub, adb3);
+    await b3.touchDown(0.5, 0.9);
+    await b3.touchMove(0.5, 0.5);
+    await sleep(60);
+    adb3.lines.length = 0;
+    b3.dispose();
+    b3.dispose(); // 2 回目
+    await sleep(80);
+    check(
+      'dispose が 2 回来ても UP を adb へ送り切ってから閉じる',
+      adb3.lines.length === 1 &&
+        adb3.lines[0].startsWith('input touchscreen motionevent UP') &&
+        c3.calls.length === 0,
+      JSON.stringify({adb: adb3.lines, mobilecli: c3.calls.length})
+    );
+
     // 使えない adb は黙って mobilecli 経路へ落ちる
     const c2 = fakeClient(5);
     const dead = fakeAdb(false);
