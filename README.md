@@ -66,12 +66,13 @@ npm run build
 ## ⚙️ Settings
 
 - **`secondarySimulator.autoConnect`**: automatically connect to a booted device (default: true). While disconnected the sidebar polls every 5 seconds. The Auto button stays in sync; Disconnect turns this off.
-- **`secondarySimulator.directStream`**: render the stream as a webview-native MJPEG `<img>` (default: false, experimental)
+- **`secondarySimulator.directStream`**: render the stream as a webview-native MJPEG `<img>` (default: false, experimental). On the iOS Simulator this is served by the sidecar on 127.0.0.1; otherwise `MjpegProxy` relays mobilecli's MJPEG.
 - **`secondarySimulator.streamScale`**: MJPEG scaling factor for iOS (default: 1.0 = original size)
 - **`secondarySimulator.streamQuality`**: MJPEG JPEG quality for iOS, 1-100 (default: 80)
 - **`secondarySimulator.captureSource`**: `auto` (default) grabs the iOS Simulator's framebuffer through the HID sidecar — the software keyboard and status bar are included; `wda` keeps the old mobilecli/WDA MJPEG stream, which only renders the app's own window. Falls back to WDA automatically when the sidecar is unavailable.
-- **`secondarySimulator.captureFps`**: cap for sidecar capture (default: 30). Unchanged frames are not sent.
-- **`secondarySimulator.captureMaxWidth`**: JPEG width sent by the sidecar, in px (default: 640)
+- **`secondarySimulator.captureFps`**: sidecar capture fps while idle (default: 30). Doubles (capped at 60) while a finger is down. Unchanged frames are not sent.
+- **`secondarySimulator.captureMaxWidth`**: upper bound for sidecar JPEG width, in px (default: 640). Actual width follows the sidebar size × devicePixelRatio.
+- **`secondarySimulator.captureMode`**: `auto` (default) uses display-change notifications when available, otherwise polling; `poll` stays on the timer. Private API, so pin to `poll` if an Xcode update breaks capture.
 - **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a _hardware_ keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
 - **`secondarySimulator.logLevel`**: verbosity of the **Secondary Simulator** output channel — `off` / `error` / `warn` / `info` (default) / `debug`. VS Code keeps the channel's full text in memory and offers no way to drop old lines, so keep this at `info` or below unless you are investigating something.
 
@@ -177,7 +178,7 @@ secondary-simulator/
 ### Capture
 
 1. **Per-frame delivery (default)** — the extension host receives frames, forwards them to the webview, and shows them as a data URL on an `<img>`. On the iOS Simulator, `SidecarCapture` encodes the device framebuffer directly (the software keyboard is included), and the capture width and fps follow the panel size and whether you are touching the screen
-2. **Direct MJPEG (`directStream`, experimental)** — `MjpegProxy` serves the stream so the webview `<img>` receives it directly and Chromium decodes it natively
+2. **Direct MJPEG (`directStream`, experimental)** — the webview `<img>` receives multipart directly. The iOS Simulator sidecar serves 127.0.0.1 itself; otherwise `MjpegProxy` relays mobilecli.
 
 ### Device input
 
@@ -188,7 +189,7 @@ secondary-simulator/
 
 ### Memory management
 
-- **Resource cleanup**: streams, ImageBitmaps, event listeners, and timers are all released
+- **Resource cleanup**: streams, event listeners, and timers are all released
 - **Process management**: the mobilecli server, the sidecar, and the Android `adb shell` session are started and disposed in one place
 
 ## 🐛 Troubleshooting

@@ -68,12 +68,13 @@ npm run build
 VSCodeの設定で以下のオプションを調整できます：
 
 - **`secondarySimulator.autoConnect`**: 起動中のデバイスへ自動接続する（デフォルト: true）。未接続のあいだは 5 秒ごとに探す。Auto ボタンと連動し、Disconnect で OFF になる。
-- **`secondarySimulator.directStream`**: 表示を webview 直結 MJPEG（`<img>`）にする（デフォルト: false・実験的）
+- **`secondarySimulator.directStream`**: 表示を webview 直結 MJPEG（`<img>`）にする（デフォルト: false・実験的）。iOS Simulator ではサイドカーが 127.0.0.1 で配信し、それ以外は `MjpegProxy` が mobilecli の MJPEG を中継する。
 - **`secondarySimulator.streamScale`**: iOS の MJPEG 縮小率（デフォルト: 1.0＝原寸）
 - **`secondarySimulator.streamQuality`**: iOS の MJPEG JPEG 品質 1-100（デフォルト: 80）
 - **`secondarySimulator.captureSource`**: `auto`（デフォルト）は HID サイドカー経由で iOS Simulator のフレームバッファを取り込む（ソフトウェアキーボード・ステータスバーも写る）。`wda` は従来の mobilecli/WDA MJPEG（アプリのウィンドウのみ）。サイドカーが使えないときは自動で WDA へ降格する。
-- **`secondarySimulator.captureFps`**: サイドカー取り込みの上限 fps（デフォルト: 30）。変化のないフレームは送られない。
-- **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG の最大幅 px（デフォルト: 640）
+- **`secondarySimulator.captureFps`**: サイドカー取り込みの通常時 fps（デフォルト: 30）。指を置いているあいだは最大 2 倍・60fps。変化のないフレームは送られない。
+- **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG 幅の上限 px（デフォルト: 640）。実際の幅はサイドバーの表示幅 × devicePixelRatio に追従する。
+- **`secondarySimulator.captureMode`**: `auto`（デフォルト）はディスプレイの変更通知が使えれば使い、駄目ならポーリング。`poll` はタイマ固定。私有 API なので、Xcode 更新で取り込みが不調なときは `poll` に固定する。
 - **`secondarySimulator.keyInput`**: iOS Simulator へのキー入力経路。`hid`（デフォルト・高速）または `wda`（1文字あたり約 370ms）。HID のキーはハードウェアキーボード扱いになるためソフトウェアキーボードが出ない。サイドバーにソフトキーボードを映したいときは `wda`。タッチは常に HID。
 - **`secondarySimulator.logLevel`**: 出力チャンネル **Secondary Simulator** へ書くログの詳しさ。`off` / `error` / `warn` / `info`（デフォルト） / `debug`。VS Code は出力チャンネルの全文をメモリに保持し古い行を捨てられないため、調査時以外は `info` 以下にする。
 
@@ -184,7 +185,8 @@ secondary-simulator/
    - iOS Simulator では `SidecarCapture` が端末のフレームバッファを直接 JPEG 化する
      （ソフトウェアキーボードも写る）。取り込む幅と fps は表示幅と操作状態に追従する
 2. **MJPEG 直結（`directStream`・実験的）**
-   - `MjpegProxy` 経由で webview の `<img>` が直接受信し、Chromium がネイティブ復号
+   - webview の `<img>` が multipart を直接受ける。iOS Simulator ではサイドカーが
+     127.0.0.1 で配信し、それ以外は `MjpegProxy` が mobilecli を中継する
 
 ### デバイス操作
 
@@ -195,7 +197,7 @@ secondary-simulator/
 
 ### メモリ管理
 
-- **リソースクリーンアップ**: ストリーム、ImageBitmap、イベントリスナー、タイマーの適切な解放
+- **リソースクリーンアップ**: ストリーム、イベントリスナー、タイマーの適切な解放
 - **プロセス管理**: mobilecli サーバー、サイドカー、Android の `adb shell` の起動・再接続・破棄を一元管理
 
 ## 🐛 トラブルシューティング
