@@ -53,6 +53,11 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   （mobilecli 経由）へ降格する。**キー入力だけは `secondarySimulator.keyInput` で
   WDA へ回せる**（HID のキーはハードウェアキーボード扱いになり、iOS がソフトウェア
   キーボードを描かなくなるため。`docs/ios-hid-injection.md` §6）。タッチは常に HID。
+  **Android は `AndroidBackend`**（`WdaBackend` ではない）。mobilecli の
+  `device.io.gesture` は Android では 1 アクション = `adb shell input ... motionevent`
+  1 回に展開され、**`duration` は無視される**。貯めて一括送信すると数十秒かけて再生され
+  フリックも効かないので、押しているあいだ「最新の 1 点だけ」を送り続ける
+  （前の adb が返るまで次を出さない）。キー・テキスト・ボタンは `WdaBackend` へ委譲する。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
@@ -74,7 +79,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 - **座標は常に正規化 [0,1]** でやり取りする。ピクセル変換は各バックエンドの内側。
 - **私有 API は `native/` の中だけ**。TypeScript 側から直接触らない。
-- **HID は iOS Simulator 限定**。Android・実機は WDA/mobilecli 経路。
+- **HID は iOS Simulator 限定**。iOS 実機は `WdaBackend`、Android は `AndroidBackend`
+  （どちらも mobilecli 経由）。
 - 入力経路を増やすときは `InputBackend` を実装する。webview から個別経路を生やさない。
 - `native/simhid-server` は macOS 専用。ビルドは `scripts/build-native.sh` が
   非 macOS を自動スキップするので、拡張は WDA だけでも動く状態を保つ。
