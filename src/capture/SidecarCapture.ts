@@ -26,10 +26,10 @@ export interface SidecarCaptureConfig {
  * - `stdout`（既定）: base64 JPEG の JSON Lines。`onFrame` へ流す
  * - `http`: サイドカーが loopback で multipart を配信し、webview の `<img>` が直接受ける。
  *   フレームが拡張ホストを通らないので、**映像の背圧が入力の応答を巻き込まない**
- *   （docs/sync-enhancement.md §2.4 / §3.2）。URL は `streamUrl` で取る
+ *   （`docs/sidecar-protocol.md` §3.6）。URL は `streamUrl` で取る
  *
- * 取り込みの粗さは固定ではなく、**表示中の幅と操作の有無に追従させる**
- * （docs/sync-enhancement.md §3.4）。設定値は上限として扱う。
+ * 取り込みの粗さは固定ではなく、**表示中の幅と操作の有無に追従させる。**
+ * 設定値は上限として扱う。
  */
 export class SidecarCapture implements CaptureStrategy {
   /**
@@ -239,7 +239,7 @@ export class SidecarCapture implements CaptureStrategy {
    * 操作の開始・終了。押している間だけ fps を上げる。
    *
    * 追従が要るのはドラッグ中だけで、静止中に同じレートで回すのは
-   * エンコードの無駄になる（docs/sync-enhancement.md §2.7）。
+   * エンコードの無駄になる。
    * 高頻度の move では呼ばない（down / up だけ）。
    */
   setInteracting(active: boolean): void {

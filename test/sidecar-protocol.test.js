@@ -261,8 +261,8 @@ process.stdin.on('data', (c) => {
     await capture.start();
     await new Promise((r) => setTimeout(r, 150));
     check('frame 通知が届く', frames.length === 2, String(frames.length));
-    // webview も base64 で受けるので、途中で復号して詰め直さない
-    // （docs/sync-enhancement.md §2.3）。サイドカーの文字列がそのまま出る。
+    // webview も base64 で受けるので、途中で復号して詰め直さない。
+    // サイドカーの文字列がそのまま出る。
     check(
       'base64 のまま素通しする',
       typeof frames[0] === 'string' &&

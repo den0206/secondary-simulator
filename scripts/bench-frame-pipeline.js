@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // サイドカー → webview のフレーム経路のうち、拡張ホスト側の処理コストを再現して測る。
-// docs/sync-enhancement.md §1.3 の表はこのスクリプトで取得している。
+// 拡張ホスト側の処理コストを再現して測る。
 //
 //   node scripts/bench-frame-pipeline.js
 //

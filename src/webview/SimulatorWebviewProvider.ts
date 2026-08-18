@@ -44,8 +44,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private static readonly STATS_INTERVAL_MS = 30_000;
   /**
    * 受け取ったフレームの数とバイト数。`reportStats` が読んで 0 に戻す
-   * （増える一方の入れ物にしない）。取り込みが効いているかを見る唯一の手段で、
-   * これが無いと同期の改善を評価できない（docs/sync-enhancement.md §2.13）。
+   * （増える一方の入れ物にしない）。取り込みが効いているかを見る唯一の手段。
+   * これが無いと同期の改善を評価できない。
    * 数える以上のことはしない — フレームは高頻度パスなので。
    */
   private frameCount = 0;
@@ -383,7 +383,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    *
    * `portMapping` はリモート開発（Remote SSH / Codespaces）で localhost 直結を
    * 成立させるために要る。http のみ対応なので、直結を WebSocket ではなく
-   * multipart にしてある（docs/sync-enhancement.md §3.2）。
+   * multipart にしてある（`docs/sidecar-protocol.md` §3.6）。
    */
   private allowStreamPort(port: number): void {
     if (!port || !this.view) return;
@@ -611,8 +611,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     // 直結ストリーム: フレームは webview の <img> が直接受ける。
     // サイドカー取り込みのときはサイドカー自身が配信するので、この分岐は
-    // WDA/mobilecli 経路（MjpegProxy）専用。取り込み元と転送は独立に選べる
-    // （docs/sync-enhancement.md §2.1）。
+    // WDA/mobilecli 経路（MjpegProxy）専用。取り込み元と転送は独立に選べる。
     if (this.isDirectStreamEnabled() && !this.sidecarCaptureAvailable()) {
       try {
         const proxy = await this.ensureProxy();
@@ -995,7 +994,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /**
    * @param options.keepInput 入力コントローラ（＝サイドカープロセス）を残す。
    *   非表示や同じデバイスへの繋ぎ直しで、`ready` 待ちと HID クライアント生成を
-   *   やり直さないため（docs/sync-enhancement.md §2.9）。
+   *   やり直さないため。
    */
   private stopCapture(options?: {keepInput?: boolean}): void {
     if (this.currentCapture) {

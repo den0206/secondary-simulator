@@ -168,7 +168,7 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 
 **なぜ分けるか。** stdout は入力の応答と共用で、しかもブロッキングな fd なので、
 親の読み出しが遅れるとフレームの `write` が mutex を握ったまま止まり、
-**入力の応答まで巻き込む**（docs/sync-enhancement.md §2.4）。経路を分けると
+**入力の応答まで巻き込む。** 経路を分けると
 この結合が設計から消える。あわせて base64・JSON・postMessage が不要になり、
 multipart の復号は Chromium がやる。
 
@@ -193,7 +193,7 @@ multipart の復号は Chromium がやる。
 （`registerCallbackWithUUID:damageRectanglesCallback:` と
 `…ioSurfaceChangeCallback:`。idb の `FBFramebuffer` が同じ 2 つを使う）。
 ポーリングだと平均 16.7ms のサンプリング遅延が構造的に乗るため、ここが
-glass-to-glass で一番削れる（docs/sync-enhancement.md §2.2 / §3.1）。
+glass-to-glass で一番削れる。
 
 **私有 API なので壊れうる。3 段構えで守る。**
 
