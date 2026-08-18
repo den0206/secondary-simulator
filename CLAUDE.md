@@ -130,6 +130,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   例: `feat(input): HID/WDA を切り替える入力バックエンドを追加`
 - 作業ブランチは `feature/**` / `fix/**`。push すると CI（型チェック・テスト・VSIX）が回る。
 - リリースは `release/Ver_X.Y.Z` ブランチを push する（README「リリース」参照）。
+- **CHANGELOG は `[Unreleased]` に書き足すだけ**。バージョン見出しへの切り出しは
+  リリース時に `scripts/release-changelog.js` がやる。公開ページが表示するのは
+  **VSIX 内の CHANGELOG.md** なので、パッケージより前に切っている。
+  手で移し替えると二重の見出しになるのでやらない。
 - ロジックを変えたら `npm test` を通してからコミットする。テストは `test/` へ
   `*.test.js` で置けば拾われる（`package.json` への登録は不要）。
   `vscode` に依存するモジュールは `test/helpers/vscode-stub.js` を先に読み込む。

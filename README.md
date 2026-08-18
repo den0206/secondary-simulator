@@ -255,10 +255,16 @@ See [CLAUDE.md](CLAUDE.md) for working conventions and architecture notes, and [
 1. Create a `release/Ver_X.Y.Z` branch from `main` and push it
 2. GitHub Actions ([release.yml](.github/workflows/release.yml)) type checks, tests, builds the VSIX, creates a GitHub Release tagged `Ver_X.Y.Z`, and attaches the VSIX
 3. If `OVSX_TOKEN` is configured, it also publishes to Open VSX (skipped otherwise)
-4. The `package.json` version is synced back to `main` automatically
+4. The `[Unreleased]` section of `CHANGELOG.md` is cut into `## [X.Y.Z] — date` (before the VSIX is built)
+5. The `package.json` version and the updated `CHANGELOG.md` are synced back to `main` automatically
 
 Notes:
 
+- **Do not move changelog entries by hand.** Add them under `[Unreleased]`;
+  [`scripts/release-changelog.js`](scripts/release-changelog.js) moves them under a
+  version heading at release time. The public page (Open VSX / Marketplace) renders
+  the **CHANGELOG.md inside the VSIX**, so the cut happens before packaging
+- Releasing with an empty `[Unreleased]` creates no version heading (no empty sections)
 - If `Ver_X.Y.Z` already exists, the rebuild is numbered `Ver_X.Y.Z+1` (published releases are immutable)
 - A version older than the latest existing release is rejected
 - Release notes come from `docs/release-notes/X.Y.Z.md` if present, otherwise they are generated

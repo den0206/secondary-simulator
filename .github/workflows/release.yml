@@ -78,6 +78,15 @@ jobs:
         if: steps.meta.outputs.marketing
         run: npm version "${{ steps.meta.outputs.marketing }}" --no-git-tag-version --allow-same-version
 
+      # 公開ページ(Marketplace / Open VSX)が出すのは **VSIX 内の CHANGELOG.md** なので、
+      # パッケージより前に切り出す。後から main だけ直しても公開ページは Unreleased のまま。
+      # +N 再ビルドは同じ X.Y.Z の見出しが既にあるので no-op になる。
+      - name: Cut CHANGELOG
+        if: steps.meta.outputs.marketing
+        run: |
+          node scripts/release-changelog.js \
+            "${{ steps.meta.outputs.marketing }}" "$(date -u +%F)"
+
       - name: Build (TypeScript + simhid-server)
         run: npm run build
 
@@ -162,11 +171,15 @@ jobs:
           # -f で作業ツリーの変更を捨てる (下で main の内容から作り直すため)
           git switch -f -C main origin/main
           npm version "${{ steps.meta.outputs.marketing }}" --no-git-tag-version --allow-same-version
+          # VSIX へ入れたのと同じ切り出しを main にも反映する(日付も揃える)。
+          # main 側で [Unreleased] が空なら何もしない。
+          node scripts/release-changelog.js \
+            "${{ steps.meta.outputs.marketing }}" "$(date -u +%F)"
 
-          git add package.json package-lock.json
+          git add package.json package-lock.json CHANGELOG.md
           git diff --cached --quiet && exit 0
           # [skip ci] がこの push による CI 再実行を防ぐ
-          git commit -m "chore: ${{ steps.meta.outputs.tag }} の版を反映 [skip ci]"
+          git commit -m "chore: ${{ steps.meta.outputs.tag }} の版と CHANGELOG を反映 [skip ci]"
           if ! git push origin main; then
             echo "::error::main への push に失敗しました。main がブランチ保護されている場合は github-actions をバイパスに追加してください"
             exit 1
