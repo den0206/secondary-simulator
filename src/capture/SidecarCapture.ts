@@ -196,6 +196,13 @@ export class SidecarCapture implements CaptureStrategy {
   stop(): void {
     this.clearStallTimer();
     this.clearInteractionTimer();
+    // 待ち受けは started と別に畳む。start() が captureStart で失敗した場合、
+    // 配信だけ張られたまま started は false なので、下の早期 return では閉じられない
+    // （サイドカーは使い回されるため、開けっ放しの listener が残る）。
+    if (this.servePort) {
+      this.servePort = 0;
+      this.sidecar.send({cmd: 'captureServe', enable: false}).catch(() => {});
+    }
     if (!this.started) return;
     this.started = false;
     this.applied = null;
@@ -205,11 +212,6 @@ export class SidecarCapture implements CaptureStrategy {
     this.sidecar
       .send({cmd: 'captureStop', device: this.deviceId})
       .catch(() => {});
-    if (this.servePort) {
-      // 待ち受けも畳む。サイドカーは使い回されるので、開けっ放しにしない
-      this.servePort = 0;
-      this.sidecar.send({cmd: 'captureServe', enable: false}).catch(() => {});
-    }
   }
 
   /** 設定が変わったときに呼ばれる。張り直さずに差分だけ送る。 */

@@ -492,8 +492,10 @@ window.addEventListener('message', (event) => {
       const painted = takePaintedFps();
       // 直結中はフレームが拡張ホストを通らないので、受信 fps と帯域は測れない。
       // 描画側の数字だけを出す（測れないものを 0 と出さない）。
+      // 直結では multipart の 1 コマごとに load が来るとは限らない。
+      // 数えられていないのに 0fps と出すと壊れて見えるので、そのときは伏せる。
       const rate = message.direct
-        ? chip('映像', `${painted}fps 直結`)
+        ? chip('映像', painted > 0 ? `${painted}fps 直結` : '直結')
         : message.fps === undefined
           ? ''
           : chip('映像', `${message.fps}/${painted}fps ${message.kbps}KB/s`);
