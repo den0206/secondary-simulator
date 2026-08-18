@@ -419,8 +419,10 @@ fireImg('load');
 listeners['window:message']({
   data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4, direct: true},
 });
-check('直結では「直結」と描画 fps だけ', els.stats.innerHTML.includes('fps 直結'),
-  els.stats.innerHTML);
+check('直結と分かる表示になる', els.stats.innerHTML.includes('直結'), els.stats.innerHTML);
+// multipart は 1 コマごとに load が来るとは限らない。数えられていないときに
+// 0fps と出すと壊れて見えるので、そのときは数字を伏せる。
+check('0fps とは出さない', !els.stats.innerHTML.includes('0fps'), els.stats.innerHTML);
 check('直結では帯域を出さない', !els.stats.innerHTML.includes('KB/s'), els.stats.innerHTML);
 
 // 古い拡張ホスト（fps を送らない）でもメモリ表示は壊れない
