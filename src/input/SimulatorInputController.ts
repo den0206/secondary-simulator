@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
+import {AdbTouch} from './AdbTouch';
 import {AndroidBackend} from './AndroidBackend';
 import {HidSidecarBackend} from './HidSidecarBackend';
 import {
@@ -47,6 +48,7 @@ export class SimulatorInputController {
   private primary!: InputBackend;
   private readonly wdaFallback: WdaBackend;
   private androidBackend: AndroidBackend | null = null;
+  private adbTouch: AdbTouch | null = null;
   private sidecar: SimhidSidecar | null = null;
 
   constructor(private readonly opts: ControllerOptions) {
@@ -99,11 +101,13 @@ export class SimulatorInputController {
   private defaultBackend(): InputBackend {
     if (this.opts.platform === 'android') {
       if (!this.androidBackend) {
+        this.adbTouch = new AdbTouch(this.opts.deviceId);
         this.androidBackend = new AndroidBackend(
           this.opts.mobileCliClient,
           this.opts.deviceId,
           this.opts.getScreenSize,
-          this.wdaFallback
+          this.wdaFallback,
+          this.adbTouch
         );
       }
       return this.androidBackend;
@@ -124,6 +128,11 @@ export class SimulatorInputController {
 
   get sidecarPid(): number | undefined {
     return this.sidecar?.pid;
+  }
+
+  /** Android のタッチ用 adb 常駐セッション。ResourceStats の集計対象。 */
+  get adbTouchPid(): number | undefined {
+    return this.adbTouch?.pid;
   }
 
   /** HID 経路が生きているときだけ非 null。画面取り込み（SidecarCapture）が使う。 */
@@ -320,7 +329,10 @@ export class SimulatorInputController {
 
   dispose(): void {
     this.primary?.dispose();
+    // adb 常駐セッションは AndroidBackend.dispose() が
+    // 「押しっぱなしの指を外す UP」を送り切ってから閉じる
     this.androidBackend?.dispose();
+    this.adbTouch = null;
     this.wdaFallback.dispose();
     this.sidecar?.dispose();
     this.sidecar = null;
