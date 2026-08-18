@@ -32,6 +32,11 @@ export interface ControllerOptions {
    * 設定を即時反映させるため、値ではなく関数で受ける。
    */
   preferWdaKeys?: () => boolean;
+  /**
+   * Android の速いタッチ口。省略時は `AdbTouch` を作る。
+   * 単体テストで実 adb を起こしたくないときは `null` を渡す（mobilecli 経路だけになる）。
+   */
+  adbTouch?: AdbTouch | null;
 }
 
 /**
@@ -101,7 +106,10 @@ export class SimulatorInputController {
   private defaultBackend(): InputBackend {
     if (this.opts.platform === 'android') {
       if (!this.androidBackend) {
-        this.adbTouch = new AdbTouch(this.opts.deviceId);
+        this.adbTouch =
+          this.opts.adbTouch === undefined
+            ? new AdbTouch(this.opts.deviceId)
+            : this.opts.adbTouch;
         this.androidBackend = new AndroidBackend(
           this.opts.mobileCliClient,
           this.opts.deviceId,
