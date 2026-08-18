@@ -4,7 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+require('./helpers/vscode-stub').install();
+
 const SRC = path.join(__dirname, '..', 'media', 'webview', 'main.js');
+
+// 拡張ホストが HTML へ埋め込むのと同じ辞書を使う（テスト用に文言を書き写さない）。
+// スタブの l10n.t は原文をそのまま返すので、ここでは既定言語＝英語になる。
+const STRINGS = require('../out/utils/Strings').webviewStrings();
 
 const sent = [];
 let webviewState; // vscode.getState/setState の保存先
@@ -18,6 +24,15 @@ function makeEl(id, opts = {}) {
   const el = {
     id,
     style: {},
+    attrs: opts.attrs || {},
+    getAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(this.attrs, name)
+        ? this.attrs[name]
+        : null;
+    },
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
     classList: {
       _s: new Set(),
       add(c) { this._s.add(c); },
@@ -56,6 +71,9 @@ function makeEl(id, opts = {}) {
 }
 
 const els = {
+  'l10n-strings': Object.assign(makeEl('l10n-strings'), {
+    textContent: JSON.stringify(STRINGS),
+  }),
   'simulator-img': makeEl('simulator-img'),
   overlay: makeEl('overlay'),
   'simulator-container': makeEl('simulator-container'),
@@ -70,6 +88,16 @@ const els = {
   mode: makeEl('mode'),
 };
 
+// applyStaticStrings が書き換える対象（HTML の data-i18n 相当）
+const i18nEls = [
+  makeEl('i18n-text', {attrs: {'data-i18n': 'disconnect'}}),
+  makeEl('i18n-icon', {
+    attrs: {'data-i18n': 'home', 'data-i18n-icon': '⌂', 'data-i18n-title': 'home'},
+  }),
+  makeEl('i18n-title-only', {attrs: {'data-i18n-title': 'refresh'}}),
+  makeEl('i18n-unknown', {attrs: {'data-i18n': 'noSuchKey'}}),
+];
+
 const sandbox = {
   console,
   acquireVsCodeApi: () => ({
@@ -81,6 +109,7 @@ const sandbox = {
     getElementById: (id) => els[id] || makeEl(id),
     createElement: (t) => makeEl('created-' + t),
     addEventListener(ev, fn) { listeners[`document:${ev}`] = fn; },
+    querySelectorAll: () => i18nEls,
     documentElement: {},
   },
   window: {
@@ -419,7 +448,11 @@ fireImg('load');
 listeners['window:message']({
   data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4, direct: true},
 });
-check('直結と分かる表示になる', els.stats.innerHTML.includes('直結'), els.stats.innerHTML);
+check(
+  '直結と分かる表示になる',
+  els.stats.innerHTML.includes(STRINGS.direct),
+  els.stats.innerHTML
+);
 // multipart は 1 コマごとに load が来るとは限らない。数えられていないときに
 // 0fps と出すと壊れて見えるので、そのときは数字を伏せる。
 // `includes('0fps')` は 10fps / 1000fps にもマッチするので使わない。
@@ -436,7 +469,8 @@ listeners['window:message']({
 });
 check(
   '描けていなければ数字を伏せて直結だけ',
-  els.stats.innerHTML.includes('直結') && !els.stats.innerHTML.includes('fps'),
+  els.stats.innerHTML.includes(STRINGS.direct) &&
+    !els.stats.innerHTML.includes('fps'),
   els.stats.innerHTML
 );
 
@@ -446,6 +480,20 @@ listeners['window:message']({
 });
 check('fps が無ければ映像チップを出さない', !els.stats.innerHTML.includes('fps'),
   els.stats.innerHTML);
+
+console.log('\n15c) HTML に静的に書かれた文言を差し替える');
+const [textEl, iconEl, titleEl, unknownEl] = i18nEls;
+check('data-i18n で textContent を差し替える',
+  textEl.textContent === STRINGS.disconnect, textEl.textContent);
+check('data-i18n-icon は記号を残して後ろだけ訳す',
+  iconEl.textContent === `⌂ ${STRINGS.home}`, iconEl.textContent);
+check('data-i18n-title で title を差し替える',
+  titleEl.title === STRINGS.refresh, String(titleEl.title));
+check('text と title の両方を持つ要素も両方当たる',
+  iconEl.title === STRINGS.home, String(iconEl.title));
+// 辞書に無いキーは英語の原文がそのまま出る（空白にしない）
+check('未知のキーはキー名のまま出す（空にしない）',
+  unknownEl.textContent === 'noSuchKey', unknownEl.textContent);
 
 console.log('\n16) 表示幅をホストへ伝える');
 check('コンテナを observe する（img は最初のフレームまで幅 0）',

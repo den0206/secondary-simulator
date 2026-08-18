@@ -7,14 +7,22 @@
   <link rel="stylesheet" href="{{styleUri}}">
 </head>
 <body>
+  <!--
+    文言は拡張ホストが翻訳して埋め込む（vscode.l10n は webview からは触れない）。
+    表示前に揃うので、後から差し替えて一瞬英語が見える、が起きない。
+    実行しないデータブロックなので CSP の script-src には掛からない。
+    data-i18n = textContent、data-i18n-title = title 属性、data-i18n-icon = 先頭の記号。
+  -->
+  <script type="application/json" id="l10n-strings">{{l10n}}</script>
+
   <div class="toolbar">
     <div class="select-wrap">
       <select id="device">
-        <option value="">Select Device…</option>
+        <option value="" data-i18n="selectDevice">Select Device…</option>
       </select>
     </div>
-    <span class="lamp" id="lamp" title="切断中"></span>
-    <button class="icon-btn" id="btn-refresh" title="デバイス一覧を再取得">↻</button>
+    <span class="lamp" id="lamp" data-i18n-title="lampDisconnected" title="Disconnected"></span>
+    <button class="icon-btn" id="btn-refresh" data-i18n-title="refresh" title="Refresh the device list">↻</button>
   </div>
 
   <div class="stage">
@@ -26,28 +34,28 @@
         <img id="simulator-img" style="display: none;" alt="" />
         <canvas id="touch-overlay"></canvas>
         <div class="overlay" id="overlay">
-          <span>Select a device to start</span>
+          <span data-i18n="selectToStart">Select a device to start</span>
         </div>
       </div>
     </div>
 
     <div class="controls">
       <div class="btn-group">
-        <button class="control-btn" id="btn-home" title="Home">⌂ Home</button>
-        <button class="control-btn" id="btn-back" title="Back">‹ Back</button>
-        <button class="control-btn" id="btn-shot" title="スクリーンショットを保存">◉ Shot</button>
+        <button class="control-btn" id="btn-home" data-i18n="home" data-i18n-icon="⌂" data-i18n-title="home" title="Home">⌂ Home</button>
+        <button class="control-btn" id="btn-back" data-i18n="back" data-i18n-icon="‹" data-i18n-title="back" title="Back">‹ Back</button>
+        <button class="control-btn" id="btn-shot" data-i18n="shot" data-i18n-icon="◉" data-i18n-title="shotTitle" title="Save a screenshot">◉ Shot</button>
       </div>
       <div class="btn-group">
-        <button class="control-btn" id="btn-trail" title="タップのリップルとドラッグ軌跡の表示">Trail ON</button>
-        <button class="control-btn" id="btn-auto" title="起動中のデバイスへ自動で接続する">Auto ON</button>
+        <button class="control-btn" id="btn-trail" data-i18n-title="trailTitle" title="Show tap ripples and drag trails">Trail ON</button>
+        <button class="control-btn" id="btn-auto" data-i18n-title="autoTitle" title="Connect automatically to a running device">Auto ON</button>
       </div>
-      <button class="control-btn danger" id="btn-disconnect" title="Disconnect">Disconnect</button>
+      <button class="control-btn danger" id="btn-disconnect" data-i18n="disconnect" data-i18n-title="disconnect" title="Disconnect">Disconnect</button>
     </div>
   </div>
 
   <div class="resources">
-    <span class="chip mode" id="mode" style="display: none;" title="入力経路。HID は端末へ直接注入（速い）、WDA は mobilecli 経由（互換）。"></span>
-    <span id="stats" title="30秒ごとに更新。拡張ホストは他拡張と共有のプロセス。拡張ディレクトリは同梱物のサイズで、実行中に増えることはない（この拡張は永続ストレージを持たない）。mobilecli が入れる WebDriverAgent はこの数字に含まれない。">計測中…</span>
+    <span class="chip mode" id="mode" style="display: none;" data-i18n-title="modeTitle" title="Input path. HID injects straight into the device (fast); WDA goes through mobilecli (compatible)."></span>
+    <span id="stats" data-i18n="measuring" data-i18n-title="statsTitle" title="Updated every 30 seconds.">Measuring…</span>
   </div>
 
   <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
