@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
+import {AndroidBackend} from './AndroidBackend';
 import {HidSidecarBackend} from './HidSidecarBackend';
 import {
   HidModifier,
@@ -35,7 +36,7 @@ export interface ControllerOptions {
 /**
  * 入力の司令塔。
  *
- * - デバイス種別に応じて HID 注入 / WDA フォールバックを選ぶ
+ * - デバイス種別に応じて HID 注入 / Android(adb) / WDA フォールバックを選ぶ
  * - HID が復帰不能になったら WDA へ降格する
  * - webview から届く生ポインタ（touchDown/Move/Up・2本指）をバックエンドへ素通しする
  * - keypress/home/back をバックエンドの key/button 等へ変換する
@@ -45,6 +46,7 @@ export interface ControllerOptions {
 export class SimulatorInputController {
   private primary!: InputBackend;
   private readonly wdaFallback: WdaBackend;
+  private androidBackend: AndroidBackend | null = null;
   private sidecar: SimhidSidecar | null = null;
 
   constructor(private readonly opts: ControllerOptions) {
@@ -54,7 +56,7 @@ export class SimulatorInputController {
       opts.getScreenSize
     );
     // init 完了前に touch が来ても primary 未設定で落ちないようにする
-    this.primary = this.wdaFallback;
+    this.primary = this.defaultBackend();
   }
 
   /** バックエンドを選択して初期化する。iOS Simulator なら HID を試み、失敗時は WDA。 */
@@ -82,14 +84,37 @@ export class SimulatorInputController {
         );
       }
     }
-    this.primary = this.wdaFallback;
+    this.primary = this.defaultBackend();
     this.opts.onBackendChange?.('wda');
+  }
+
+  /**
+   * HID を使わないときの主経路。
+   *
+   * Android は `AndroidBackend`（adb の motionevent を押している間ずっと送る）。
+   * `WdaBackend` の「touchUp まで貯めて一括送信」は、Android では 1 アクションが
+   * adb 1 回に展開され duration も無視されるため、ドラッグが数十秒かけて再生され
+   * フリックも効かない（AndroidBackend の冒頭コメント）。
+   */
+  private defaultBackend(): InputBackend {
+    if (this.opts.platform === 'android') {
+      if (!this.androidBackend) {
+        this.androidBackend = new AndroidBackend(
+          this.opts.mobileCliClient,
+          this.opts.deviceId,
+          this.opts.getScreenSize,
+          this.wdaFallback
+        );
+      }
+      return this.androidBackend;
+    }
+    return this.wdaFallback;
   }
 
   private degradeToWda(reason: string): void {
     if (this.primary.kind === 'wda') return;
     Logger.warn(`HID 経路を降格し WDA へ切替: ${reason}`);
-    this.primary = this.wdaFallback;
+    this.primary = this.defaultBackend();
     this.opts.onBackendChange?.('wda');
   }
 
@@ -295,6 +320,7 @@ export class SimulatorInputController {
 
   dispose(): void {
     this.primary?.dispose();
+    this.androidBackend?.dispose();
     this.wdaFallback.dispose();
     this.sidecar?.dispose();
     this.sidecar = null;

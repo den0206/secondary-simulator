@@ -215,8 +215,45 @@ interface InputBackend {
 - **HidBackend**: 上記コマンドを JSON Lines で サイドカーに書き込む。座標変換なし
 - **WdaBackend**: 既存の `MobileCliClient`（tap/gesture/inputText/pressButton）をこのIFに適合させる薄いラッパ。
   座標は現行どおりピクセル変換する
+- **AndroidBackend**: Android 専用（§7.1）。同じ `MobileCliClient` を使うが、
+  タッチの送り方だけが違う。キー・テキスト・ボタンは WdaBackend へ委譲する
 - `SimulatorInputController` が起動時にバックエンドを選ぶ:
-  iOS Simulator かつ HID 注入が使える → HidBackend、それ以外（実機・Android・降格時）→ WdaBackend
+  iOS Simulator かつ HID 注入が使える → HidBackend、Android → AndroidBackend、
+  それ以外（iOS 実機・降格時）→ WdaBackend
+
+### 7.1 Android のタッチを貯めない理由
+
+mobilecli の `device.io.gesture` は、Android では**アクション 1 個 = adb コマンド 1 回**
+（`adb shell input touchscreen motionevent down|move|up X Y`）に展開される。
+**`duration` は読まれない**（`pause` だけがホスト側の `time.Sleep` になる。
+mobilecli `devices/android.go` の `Gesture`）。1 回あたりの往復は 100ms 前後。
+
+そのため WdaBackend の「`touchUp` まで軌跡を貯めて一括送信」を Android に当てると:
+
+1. 240 点のドラッグが adb 242 回になり、**指を離してから数十秒かけて再生される**
+2. 各イベントの注入時刻が指の実際の動きと無関係になるため、Android の VelocityTracker が
+   速度を拾えず、**フリック（慣性スクロール）が一切効かない**
+
+`tap` は `input tap` 1 回で終わるので影響を受けない（＝タップだけ正常に見える）。
+
+AndroidBackend は貯めずに、押しているあいだ送り続ける:
+
+| 局面 | 送るもの |
+|---|---|
+| `touchDown` | 何も送らない（タップかドラッグか未確定） |
+| slop（12px）超えの `touchMove` | `[pointerMove(始点), pointerDown, pointerMove(現在)]` |
+| 以降の `touchMove` | `[pointerMove(最新の 1 点)]`。前の adb が返るまで次を出さない（溜めない） |
+| `touchUp`（動いた） | `[pointerMove(終点), pointerUp]` |
+| `touchUp`（動いていない・短い） | `device.io.tap` 1 回 |
+| 静止のまま 400ms | `[pointerMove(始点), pointerDown]` を先出しして押しっぱなしを作る |
+
+- `down`..`up` の実時間が指の実時間と一致するので、速度が正しく伝わりフリックが効く
+- 送信数は点数ではなく **adb の往復時間**で頭打ちになる（60 点/秒 → 実測 14 イベント）
+- 長押しで先出しした `down` は、実際に 400ms 押されるまで次の `move`/`up` を出さない
+  （すぐ出すと「速いタップ」になり、長押しも長押し→ドラッグも成立しない）
+- Android 側は `pointerDown` / `pointerUp` の座標を**直前の `pointerMove`** から取るので、
+  位置決めの `pointerMove` を必ず前に置く
+- `dispose()` は押しっぱなしの指を離す（残すと次のタッチが別のジェスチャーになる）
 
 ### 既存メッセージとの対応
 
@@ -225,7 +262,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 
 | webview → ホスト | 扱い |
 |---|---|
-| `touchDown` / `touchMove` / `touchUp` | 1本指。座標は正規化。HID は同名コマンド、WDA は tap/gesture に再構成 |
+| `touchDown` / `touchMove` / `touchUp` | 1本指。座標は正規化。HID は同名コマンド、WDA は tap/gesture に再構成、Android は押しているあいだ最新点を送り続ける（§7.1） |
 | `touch2Down` / `touch2Move` / `touch2Up` | 2本指（ピンチ等） |
 | `keypress {key, special, modifiers?}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3）。`modifiers`（`command`/`control`/`option`/`shift`）があれば `modifier` で挟んだ `keyDown`/`keyUp` を組む（HID 経路のみ。`text` は使えない — project-review.md §5.7） |
 | `home` | `button "home"` |
