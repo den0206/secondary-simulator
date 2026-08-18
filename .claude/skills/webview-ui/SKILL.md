@@ -31,6 +31,31 @@ description: この拡張の webview UI（media/webview/ の index.html / style.
   ホストからの通知で確定させる（楽観更新 → 上書き）。
 - `globalState` / ファイル書き込みは使わない（CLAUDE.md「ストレージ / メモリ管理」）。
 
+## 文言（data-i18n / t()）
+
+webview は別プロセスなので **`vscode.l10n` を呼ばない**。拡張ホストが
+`webviewStrings()`（`src/utils/Strings.ts`）で翻訳し、`getHtmlContent` が
+`<script type="application/json" id="l10n-strings">` に埋め込む。
+表示前に揃うので、後から差し替えて一瞬英語が見える、が起きない。
+
+| 用途 | やり方 |
+|------|--------|
+| HTML に静的に書くラベル | `data-i18n="key"`。要素の中身は英語の原文（フォールバック） |
+| `title` | `data-i18n-title="key"` と `title="英語の原文"` |
+| 先頭の記号を残す | `data-i18n-icon="⌂"`。`applyStaticStrings` が `⌂ Home` の形にする |
+| JS で差し替える（Trail ON/OFF、オーバーレイ） | `t('key')` / `t('connectingTo', name)`。`{0}` が引数 |
+
+キーを足すときは **同じキーを 4 か所に書く**。
+
+1. `webviewStrings()` に `key: vscode.l10n.t('英語の原文')`（原文がキー）
+2. `l10n/bundle.l10n.ja.json` と `l10n/bundle.l10n.zh-cn.json` に同じ原文→訳
+3. HTML の `data-i18n` / `data-i18n-title`、または `main.js` の `t('key')`
+4. 確認は `npm test`（`test/localization.test.js` が過不足と `{0}` の欠落を落とす）
+
+状態で文言が変わるボタン（Trail / Auto）は `data-i18n` を付けない。
+`t('trailOn')` のように JS 側で書く。ホストから来る `mode` の文字列は
+すでに翻訳済みなので、webview で訳し直さない。
+
 ## 高頻度パスに触るとき
 
 `frame` は毎秒 20〜30 回、`touchMove` はドラッグ中 60Hz。ここで
