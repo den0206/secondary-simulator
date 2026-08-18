@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import * as os from 'node:os';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import {captureRate, shouldRestartCapture} from '../capture/CaptureStats';
+import {captureConfigAction, captureRate} from '../capture/CaptureStats';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {MjpegCapture} from '../capture/MjpegCapture';
 import {MjpegProxy} from '../capture/MjpegProxy';
@@ -125,10 +125,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       portMapping,
     };
 
-    webviewView.webview.html = this.getHtmlContent(
-      webviewView.webview,
-      this.mjpegProxy?.getPort()
-    );
+    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
     // イベントリスナーを保持して、dispose時にクリーンアップできるようにする
     this.messageDisposable = webviewView.webview.onDidReceiveMessage(
@@ -1072,7 +1069,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.postMessage({type: 'error', text});
   }
 
-  private getHtmlContent(webview: vscode.Webview, proxyPort?: number): string {
+  private getHtmlContent(webview: vscode.Webview): string {
     const nonce = this.getNonce();
     const htmlPath = vscode.Uri.joinPath(
       this.extensionUri,
@@ -1086,8 +1083,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'media', 'webview', 'style.css')
     );
-    // 直結ストリームは preferredPort から最大 20 ポートを試すため、範囲を CSP に含める
-    // （HTML 生成後にプロキシが別ポートで起動しても img-src で止まらないようにする）
+    // 直結ストリームは preferredPort から最大 20 ポートを試すため、範囲を CSP に含める。
+    // 設定の ON/OFF で HTML を作り直さないので、使わないときも範囲を許可しておく
+    // （トークンが無いと絵は取れない。localhost 以外には開かない）。
     const range = (base: number, count: number) =>
       Array.from({length: count}, (_, i) => ` http://localhost:${base + i}`).join('');
     const proxyOrigins = range(
@@ -1099,11 +1097,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       SidecarCapture.STREAM_BASE_PORT,
       SidecarCapture.MAX_PORT_TRIES
     );
-    const extra = this.isDirectStreamEnabled()
-      ? proxyOrigins + sidecarOrigins
-      : proxyPort
-        ? ` http://localhost:${proxyPort}`
-        : '';
+    const extra = proxyOrigins + sidecarOrigins;
     const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:${extra}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
 
     const html = fs.readFileSync(htmlPath.fsPath, 'utf8');
@@ -1123,11 +1117,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    *   （`autoConnect` / `logLevel` / `keyInput`）で画面を切らないため。
    */
   onConfigurationChanged(event?: vscode.ConfigurationChangeEvent): void {
-    if (
-      this.currentCapture &&
-      shouldRestartCapture(event && ((s) => event.affectsConfiguration(s)))
-    ) {
-      this.currentCapture.updateConfig();
+    const action = captureConfigAction(
+      event && ((s) => event.affectsConfiguration(s))
+    );
+    if (action === 'recreate' && this.currentDeviceId) {
+      const device = this.devices.find((d) => d.id === this.currentDeviceId);
+      if (device) {
+        void this.startCaptureForDevice(this.currentDeviceId, device).catch(
+          (error) =>
+            Logger.error('設定変更後の取り込み再開に失敗', error as Error)
+        );
+      }
+    } else if (action === 'tune') {
+      this.currentCapture?.updateConfig();
     }
     // autoConnect の切り替えを即座に反映する（ON に戻したらその場で探しに行く）
     this.postAutoConnectState();

@@ -1,10 +1,10 @@
-// captureRate / shouldRestartCapture の検証。vscode に触らない純粋関数。
+// captureRate / captureConfigAction の検証。vscode に触らない純粋関数。
 const assert = require('node:assert');
 require('./helpers/vscode-stub').install();
 
 const {
   captureRate,
-  shouldRestartCapture,
+  captureConfigAction,
   effectiveCaptureConfig,
 } = require('../out/capture/CaptureStats');
 
@@ -52,54 +52,56 @@ check('フレーム 0 でも例外にならない', () => {
   assert.deepStrictEqual(captureRate(0, 0, 30_000), {fps: 0, kbps: 0});
 });
 
-console.log('\n2) 設定変更で取り込みを張り直すか');
+console.log('\n2) 設定変更で取り込みをどう扱うか');
 
 // affectsConfiguration の代わり。渡されたキーだけ true を返す。
 const changed = (...keys) => (section) => keys.includes(section);
 
-check('captureFps は張り直す', () => {
-  assert.strictEqual(
-    shouldRestartCapture(changed('secondarySimulator.captureFps')),
-    true
-  );
-});
-
-check('captureMaxWidth / streamQuality も張り直す', () => {
+check('captureFps / 幅 / 品質は張り直さず差し替える', () => {
   for (const key of [
+    'secondarySimulator.captureFps',
     'secondarySimulator.captureMaxWidth',
     'secondarySimulator.streamQuality',
-    'secondarySimulator.streamScale',
-    'secondarySimulator.captureSource',
-    'secondarySimulator.directStream',
   ]) {
-    assert.strictEqual(shouldRestartCapture(changed(key)), true, key);
+    assert.strictEqual(captureConfigAction(changed(key)), 'tune', key);
   }
 });
 
-check('autoConnect では張り直さない（Auto ボタンで画面を切らない）', () => {
+check('経路そのものが変わる設定は作り直す', () => {
+  for (const key of [
+    'secondarySimulator.captureSource',
+    'secondarySimulator.directStream',
+    'secondarySimulator.captureMode',
+    'secondarySimulator.streamScale',
+  ]) {
+    assert.strictEqual(captureConfigAction(changed(key)), 'recreate', key);
+  }
+});
+
+check('autoConnect では触れない（Auto ボタンで画面を切らない）', () => {
   assert.strictEqual(
-    shouldRestartCapture(changed('secondarySimulator.autoConnect')),
-    false
+    captureConfigAction(changed('secondarySimulator.autoConnect')),
+    'none'
   );
 });
 
-check('logLevel / keyInput でも張り直さない', () => {
+check('logLevel / keyInput でも触れない', () => {
   assert.strictEqual(
-    shouldRestartCapture(changed('secondarySimulator.logLevel')),
-    false
+    captureConfigAction(changed('secondarySimulator.logLevel')),
+    'none'
   );
   assert.strictEqual(
-    shouldRestartCapture(changed('secondarySimulator.keyInput')),
-    false
+    captureConfigAction(changed('secondarySimulator.keyInput')),
+    'none'
   );
 });
 
-check('何も変わっていなければ張り直さない', () => {
-  assert.strictEqual(shouldRestartCapture(changed()), false);
+check('何も変わっていなければ触れない', () => {
+  assert.strictEqual(captureConfigAction(changed()), 'none');
 });
 
-check('判定できないとき（イベント無し）は従来どおり張り直す', () => {
-  assert.strictEqual(shouldRestartCapture(undefined), true);
+check('判定できないとき（イベント無し）は作り直す側に倒す', () => {
+  assert.strictEqual(captureConfigAction(undefined), 'recreate');
 });
 
 console.log('\n3) 表示幅と操作状態に追従する取り込み設定');

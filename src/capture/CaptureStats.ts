@@ -70,33 +70,35 @@ function clampFps(fps: number): number {
 }
 
 /**
- * 変わったときに取り込みを張り直す必要がある設定。
+ * 設定変更で取り込みをどう扱うか。
  *
- * 以前は `secondarySimulator.*` の**どれが変わっても**張り直していた。
- * 拡張自身が `autoConnect` を書き戻す経路が 2 つある（Auto ボタン・Disconnect）ため、
- * **接続中に Auto を押すと画面がいったん切れていた**（docs/sync-enhancement.md §2.8）。
+ * - `recreate`: 経路そのものが変わる（取り込み元・直結・駆動方法）。
+ *   `captureConfig` では足りず、インスタンスを作り直す。
+ * - `tune`: fps / 幅 / JPEG 品質。張り直さず `captureConfig` で差し替える。
+ * - `none`: 取り込みと無関係（Auto ボタンで画面を切らない）。
+ *
+ * イベントを渡さずに呼ばれた場合は recreate に倒す（従来どおり）。
  */
-const CAPTURE_KEYS = [
-  'secondarySimulator.captureSource',
+const TUNE_KEYS = [
   'secondarySimulator.captureFps',
   'secondarySimulator.captureMaxWidth',
-  'secondarySimulator.streamScale',
   'secondarySimulator.streamQuality',
-  'secondarySimulator.directStream',
 ] as const;
 
-/**
- * 設定変更で取り込みを張り直すべきか。
- *
- * @param affects `vscode.ConfigurationChangeEvent.affectsConfiguration` 相当。
- *   イベントを渡さずに呼ばれた場合（呼び出し元が旧シグネチャ）は、
- *   従来どおり張り直す側に倒す。
- */
-export function shouldRestartCapture(
+const RECREATE_KEYS = [
+  'secondarySimulator.captureSource',
+  'secondarySimulator.directStream',
+  'secondarySimulator.captureMode',
+  'secondarySimulator.streamScale',
+] as const;
+
+export function captureConfigAction(
   affects?: (section: string) => boolean
-): boolean {
-  if (!affects) return true;
-  return CAPTURE_KEYS.some((key) => affects(key));
+): 'recreate' | 'tune' | 'none' {
+  if (!affects) return 'recreate';
+  if (RECREATE_KEYS.some((key) => affects(key))) return 'recreate';
+  if (TUNE_KEYS.some((key) => affects(key))) return 'tune';
+  return 'none';
 }
 
 /**
