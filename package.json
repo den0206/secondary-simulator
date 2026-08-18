@@ -2,7 +2,7 @@
   "name": "secondary-simulator",
   "displayName": "Secondary Simulator",
   "description": "Display iOS/Android simulators in the sidebar with real-time screen capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "yuuki-sakai",
   "icon": "media/icon.png",
   "license": "MIT",
