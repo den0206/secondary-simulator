@@ -6,6 +6,7 @@ const assert = require('node:assert');
 require('./helpers/vscode-stub').install();
 
 const {WdaBackend} = require('../out/input/WdaBackend');
+const {AndroidBackend} = require('../out/input/AndroidBackend');
 const {MjpegParser} = require('../out/capture/MjpegParser');
 const {MjpegCapture} = require('../out/capture/MjpegCapture');
 const {MjpegProxy} = require('../out/capture/MjpegProxy');
@@ -84,6 +85,87 @@ const fakeClient = () => {
     check('dispose で軌跡が解放される', b2.points.length === 0);
   }
 
+  console.log('\n1.5) AndroidBackend: 軌跡もタイマーも持ち越さない');
+  {
+    // 押しているあいだ「最新の 1 点だけ」を送るので、そもそも貯める入れ物が無い。
+    // 入れ物が増えていないこと・タイマーが残らないことを守る。
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const keys = {
+      kind: 'wda',
+      async button() {},
+      async key() {},
+      async modifier() {},
+      async text() {},
+      dispose() {},
+    };
+    let maxActions = 0;
+    let maxBytes = 0;
+    const client = {
+      async gesture(_dev, actions) {
+        maxActions = Math.max(maxActions, actions.length);
+        maxBytes = Math.max(maxBytes, Buffer.byteLength(JSON.stringify(actions)));
+      },
+      async tap() {},
+      async inputText() {},
+      async pressButton() {},
+    };
+    const screen = () => ({width: 1080, height: 2400});
+
+    // touchUp が来ないまま 60 秒ぶん（60Hz）の move が届いた場合
+    const a = new AndroidBackend(client, 'dev', screen, keys);
+    await a.touchDown(0.5, 0.95);
+    for (let i = 1; i <= 3600; i++) await a.touchMove(0.5, 0.95 - (i % 500) * 0.001);
+    const held = Object.keys(a)
+      .filter((k) => k !== 'client' && k !== 'keys')
+      .map((k) => a[k]);
+    check(
+      '配列・Map・Set を保持しない（貯める入れ物が無い）',
+      !held.some((v) => Array.isArray(v) || v instanceof Map || v instanceof Set)
+    );
+    await a.touchUp(0.5, 0.5);
+    // 1 回の RPC は down/move/up を数個持つだけで、点数に比例しない
+    // （WdaBackend は同じ入力で 1 回に 200 超のアクションを積む）。
+    check(
+      `1 回の gesture の action 数が一定（3600 move → 最大 ${maxActions} 個 / ${maxBytes}B）`,
+      maxActions <= 4 && maxBytes < 256,
+      `${maxActions} / ${maxBytes}B`
+    );
+    a.dispose();
+
+    // タップ／ドラッグを繰り返してもタイマーが積み上がらない
+    const base = activeTimers();
+    const b = new AndroidBackend(client, 'dev', screen, keys);
+    for (let i = 0; i < 500; i++) {
+      await b.touchDown(0.5, 0.9);
+      await b.touchUp(0.5, 0.9); // タップ
+      await b.touchDown(0.5, 0.9);
+      await b.touchMove(0.5, 0.5); // ドラッグ
+      await b.touchUp(0.5, 0.5);
+    }
+    check(`500 往復してもタイマーが増えない（実測 ${activeTimers() - base}）`, activeTimers() === base);
+    b.dispose();
+
+    // 長押し判定のタイマーを抱えたまま dispose される場合
+    const c = new AndroidBackend(client, 'dev', screen, keys);
+    await c.touchDown(0.5, 0.9);
+    check('長押し待ちのタイマーは 1 本だけ', activeTimers() - base === 1);
+    c.dispose();
+    check('dispose で長押し待ちのタイマーが外れる', activeTimers() === base);
+
+    // 長押し成立待ち（holdTimer）の最中に dispose される場合。
+    // clearTimeout だけだと待っている送信ループが解けずに残る。
+    const d = new AndroidBackend(client, 'dev', screen, keys);
+    await d.touchDown(0.5, 0.9);
+    await sleep(AndroidBackend.LONG_PRESS_MS + 40); // down を先出し済み
+    const pending = d.touchUp(0.5, 0.9); // 長押し成立まで待つ
+    await sleep(10);
+    check('長押し成立待ちのタイマーは 1 本だけ', activeTimers() - base === 1);
+    d.dispose();
+    await pending; // 待っていた送信ループがちゃんと解ける（解けないとここで止まる）
+    check('dispose で成立待ちのタイマーが外れる', activeTimers() === base);
+    check('送信ループの参照も外れる', d.pumping === null);
+  }
+
   console.log('\n2) MjpegParser: 入力が壊れてもバッファが伸びない');
   {
     // バウンダリの来ないゴミを 20MB 流す
@@ -155,6 +237,19 @@ const fakeClient = () => {
       'utf8'
     );
     check('WdaBackend に MAX_POINTS がある', /MAX_POINTS\s*=\s*\d+/.test(src));
+
+    const android = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'input', 'AndroidBackend.ts'),
+      'utf8'
+    );
+    check(
+      'AndroidBackend のエラーログに上限がある（ドラッグは高頻度パス）',
+      /MAX_ERROR_LOGS\s*=\s*\d+/.test(android)
+    );
+    check(
+      'AndroidBackend が抱えたタイマーを dispose で外す',
+      /clearPressTimer\(\);[\s\S]{0,80}clearHoldTimer\(\);/.test(android)
+    );
 
     const sidecar = require('fs').readFileSync(
       require('path').join(__dirname, '..', 'src', 'input', 'SimhidSidecar.ts'),
