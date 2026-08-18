@@ -130,7 +130,7 @@ setTimeout(() => process.exit(1), 50);
     fs.unlinkSync(bin);
   }
 
-  console.log('\n5) Android は WDA にフォールバック');
+  console.log('\n5) Android は AndroidBackend');
   {
     const calls = [];
     const fakeCli = {
@@ -147,6 +147,7 @@ setTimeout(() => process.exit(1), 50);
       getScreenSize: () => ({width: 1000, height: 2000}),
       sidecarBinaryPath: '/nonexistent',
       onBackendChange: () => {},
+      adbTouch: null, // 単体テストで実 adb を起こさない
     });
     check('init 前でも primary は wda（未初期化で落ちない）', ctrl.backendKind === 'wda');
     await ctrl.init();

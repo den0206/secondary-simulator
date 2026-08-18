@@ -303,6 +303,7 @@ const makeBackend = (client, screen = SCREEN) =>
       mobileCliClient: client,
       getScreenSize: () => SCREEN,
       sidecarBinaryPath: '/nonexistent/simhid-server',
+      adbTouch: null,
     });
     await android.init();
     check('Android は AndroidBackend を選ぶ', android.primary instanceof AndroidBackend);
