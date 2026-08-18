@@ -123,7 +123,7 @@ static uint64_t nowNs(void) {
  *
  * **静止画面では frame が 1 枚も出ない**ので、親は「画面が動いていない」のか
  * 「取り込みが死んだ」のかを frame の有無だけでは区別できない。約2秒毎に
- * これを送り、親が停止検出を張れるようにする（docs/sync-enhancement.md §2.5）。
+ * これを送り、親が停止検出を張れるようにする（docs/sidecar-protocol.md §3.5）。
  */
 @property(nonatomic, assign) uint64_t lastAliveNs;
 @property(nonatomic, assign) uint32_t tickCount;
@@ -131,7 +131,7 @@ static uint64_t nowNs(void) {
 /** 連続して面が取れなかった tick 数。続くと descriptor を取り直す。 */
 @property(nonatomic, assign) uint32_t noSurfaceTicks;
 
-// ---- フレームの配信先（docs/sync-enhancement.md §3.2 B-1）----
+// ---- フレームの配信先（docs/sidecar-protocol.md §3.6）----
 /**
  * `stdout`（JSON Lines の base64）か `http`（loopback の multipart）か。
  * http のときフレームは stdout を通らないので、**映像の背圧が入力の応答を
@@ -145,7 +145,7 @@ static uint64_t nowNs(void) {
 @property(nonatomic, strong) NSData *httpFrame;
 @property(nonatomic, assign) uint64_t httpFrameGen;
 
-// ---- プッシュ型の取り込み（docs/sync-enhancement.md §3.1）----
+// ---- プッシュ型の取り込み（docs/sidecar-protocol.md §3.7）----
 /** 変更通知が使えているか。登録に失敗したら NO のままポーリングで回す。 */
 @property(nonatomic, assign) BOOL pushMode;
 @property(nonatomic, strong) NSUUID *pushUUID;
@@ -229,7 +229,7 @@ static void respond(NSNumber *reqId, BOOL ok, NSString *error, double latencyMs)
   emitLine(d);
 }
 
-#pragma mark - フレームの HTTP 直結配信（docs/sync-enhancement.md §3.2）
+#pragma mark - フレームの HTTP 直結配信（docs/sidecar-protocol.md §3.6）
 
 /**
  * webview の `<img>` へ multipart/x-mixed-replace を直接返す loopback サーバ。
@@ -808,7 +808,7 @@ static void captureTick(DeviceState *st, NSString *udid) {
     if (!surfObj) {
       // 画面が無い間（消灯・切替中）は黙って飛ばす。ただし**戻ってこない**場合がある
       // ―― シミュレータを再起動すると descriptor が古くなり、以後ずっと nil を返す。
-      // 一定回数続いたら取り直す（docs/sync-enhancement.md §2.5）。
+      // 一定回数続いたら取り直す（docs/sidecar-protocol.md §3.5）。
       if (++st.noSurfaceTicks < kReacquireAfterTicks) return;
       st.noSurfaceTicks = 0;
       id client = nil;
@@ -860,7 +860,7 @@ static void captureTick(DeviceState *st, NSString *udid) {
 #pragma mark - プッシュ型の取り込み（変更通知）
 
 /**
- * ディスプレイの変更通知でフレームを撮る（docs/sync-enhancement.md §3.1）。
+ * ディスプレイの変更通知でフレームを撮る（docs/sidecar-protocol.md §3.7）。
  *
  * ポーリングだと「画面が変わってから次の tick まで」平均 16.7ms が構造的に乗る。
  * `SimDisplayIOSurfaceRenderable` はダメージ矩形と面の差し替えを通知できるので、
@@ -1021,8 +1021,8 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
  * 配信中の設定だけを差し替える（gQueue 上）。
  *
  * captureStop → captureStart で張り直すと、その間のフレームが落ちて画面が一瞬止まる。
- * 表示幅への追従と操作中の fps 引き上げは頻繁に起きる（docs/sync-enhancement.md §3.4）
- * ので、張り直さずに変えられる必要がある。
+ * 表示幅への追従と操作中の fps 引き上げは頻繁に起きるので、
+ * 張り直さずに変えられる必要がある（docs/sidecar-protocol.md §3.5 の `captureConfig`）。
  *
  * 値の書き換えは取り込みと同じキューへ載せる（gCaptureQueue 上の captureTick が
  * 読んでいるフィールドを、別のキューから直接触らない）。

@@ -4,8 +4,8 @@
 const vscode = acquireVsCodeApi();
 // 表示は <img> 1 つ。拡張ホストから届くフレーム（base64 JPEG）も、直結 MJPEG も
 // 同じ要素に出す。以前は canvas + createImageBitmap で描いていたが、
-// base64 を 1 バイトずつ詰め替えるループが要り、しかも同じ絵になるだけだった
-// （docs/sync-enhancement.md §2.10）。data URL を渡せば Chromium が復号する。
+// base64 を 1 バイトずつ詰め替えるループが要り、しかも同じ絵になるだけだった。
+// data URL を渡せば Chromium が復号する。
 const img = document.getElementById('simulator-img');
 const overlay = document.getElementById('overlay');
 const container = document.getElementById('simulator-container');
@@ -351,7 +351,7 @@ img.addEventListener('load', () => {
 });
 
 // 表示中の実ピクセル幅をホストへ伝える。取り込みの幅がこれに追従する
-// （狭いサイドバーへ 640px を送り続けない。docs/sync-enhancement.md §2.6）。
+// （狭いサイドバーへ 640px を送り続けない）。
 let lastReportedWidth = 0;
 function reportViewport() {
   // <img> ではなくコンテナを測る（img は最初のフレームまで display:none で幅が 0）

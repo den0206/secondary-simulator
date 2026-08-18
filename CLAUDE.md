@@ -51,7 +51,7 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   **取り込みの粗さは固定ではない** — webview が報告する表示幅（× DPR）に幅を合わせ、
   指を置いている間だけ fps を上げる（`captureConfig` で張り直さずに差し替える。
   設定値は上限として扱う）。静止画面ではフレームが 1 枚も来ないので、死活は
-  サイドカーの生存通知（`captureAlive`）で見る（`docs/sync-enhancement.md`）。
+  サイドカーの生存通知（`captureAlive`）で見る（`docs/sidecar-protocol.md` §3.5）。
 - **input**: `SimulatorInputController` が司令塔。**iOS Simulator かつサイドカーが
   存在する場合だけ** HID 直接注入（`HidSidecarBackend` → `SimhidSidecar` →
   `native/simhid-server`）を使い、それ以外と HID 失敗時は `WdaBackend`
@@ -83,7 +83,6 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 詳細設計は `docs/sidecar-protocol.md`（サイドカープロトコル）と
 `docs/ios-hid-injection.md`（HID 仕様）、`docs/sync-research.md`（同期改善の調査）、
-`docs/sync-enhancement.md`（同期の現状の問題点と実装方針。sync-research.md より新しい）、
 `docs/project-review.md`（全体精査と未対応の提案）。
 
 ## 守る境界
@@ -123,7 +122,7 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **計測できる状態を保つ**。子プロセスを増やしたら pid を公開し、
   `SimulatorWebviewProvider.reportStats()` の集計対象に加える。
   同期の質（受信 fps / 描画 fps / 帯域）も同じフッターに出す。**改善を入れる前に、
-  効果を確かめる手段を用意する**（`docs/sync-enhancement.md` §2.13）。
+  効果を確かめる手段を用意する。**
 
 ## 開発フロー
 

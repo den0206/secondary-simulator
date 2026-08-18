@@ -3,9 +3,8 @@
  *
  * webview へは base64 で渡すと決まっている（postMessage のシリアライズで形が
  * ぶれないため。docs/project-review.md §3.2）。バイト列で受け渡すと、
- * サイドカー経路が「base64 → Buffer → base64」と 1 往復ぶん無駄に変換していた
- * （docs/sync-enhancement.md §2.3）。終端の形に合わせて、変換はそれが要る
- * 経路（MJPEG）の内側だけで行う。
+ * サイドカー経路が「base64 → Buffer → base64」と 1 往復ぶん無駄に変換していた。
+ * 終端の形に合わせて、変換はそれが要る経路（MJPEG）の内側だけで行う。
  */
 export type FrameCallback = (frameBase64: string) => void;
 
