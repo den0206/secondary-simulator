@@ -137,6 +137,8 @@ secondary-simulator/
 │   │   ├── InputBackend.ts            # Input backend abstraction
 │   │   ├── SimhidSidecar.ts           # simhid-server process management (JSON Lines)
 │   │   ├── HidSidecarBackend.ts       # Direct HID injection backend
+│   │   ├── AndroidBackend.ts          # Android touch (stream latest point while pressed)
+│   │   ├── AdbTouch.ts                # Persistent `adb shell` for motionevent
 │   │   ├── WdaBackend.ts              # WDA/mobilecli fallback
 │   │   └── SimulatorInputController.ts # Backend selection and degradation
 │   ├── ui/
@@ -180,13 +182,14 @@ secondary-simulator/
 ### Device input
 
 - **Direct HID injection**: on the iOS Simulator, `native/simhid-server` injects HID events (lowest latency)
-- **WDA fallback**: Android, physical devices, and any HID init/runtime failure go through `mobilecli`
+- **Android touch**: `AdbTouch` writes `motionevent` to a persistent `adb shell`. If adb is missing, it falls back to mobilecli
+- **WDA fallback**: iOS physical devices, HID init/runtime failure, and Android keys/buttons go through `mobilecli`
 - **Coordinates**: normalized (0-1) across the whole pipeline; pixel conversion happens inside each backend
 
 ### Memory management
 
 - **Resource cleanup**: streams, ImageBitmaps, event listeners, and timers are all released
-- **Process management**: the mobilecli server and the sidecar are started, reconnected, and disposed in one place
+- **Process management**: the mobilecli server, the sidecar, and the Android `adb shell` session are started and disposed in one place
 
 ## 🐛 Troubleshooting
 
