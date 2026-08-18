@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-18
+
 ### 追加
 
 - UI の多言語化。既定を英語にし、日本語（`ja`）と簡体字中国語（`zh-cn`）を同梱する。
@@ -126,7 +128,8 @@
 - 未使用の入力 API（`tap` / `swipe` / `gesture` ほか）と `ScreenInfo` 型を削除
 - `.d.ts` の生成を止めた（VSIX に同梱されていた）
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.1.1...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.2.0...HEAD
+[0.2.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.1.1...Ver_0.2.0
 [0.1.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.1.0...Ver_0.1.1
 [0.1.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.0.1...Ver_0.1.0
 [0.0.1]: https://github.com/den0206/secondary-simulator/releases/tag/Ver_0.0.1
