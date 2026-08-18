@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import {DeviceStatusBar} from './ui/DeviceStatusBar';
+import {statusStrings} from './utils/Strings';
 import {Logger} from './utils/Logger';
 import {SimulatorWebviewProvider} from './webview/SimulatorWebviewProvider';
 
@@ -9,7 +10,7 @@ export function activate(context: vscode.ExtensionContext): void {
   Logger.initialize();
   Logger.info('Secondary Simulator extension activated');
 
-  const statusBar = new DeviceStatusBar();
+  const statusBar = new DeviceStatusBar(statusStrings());
   provider = new SimulatorWebviewProvider(context.extensionUri, (status) =>
     statusBar.update(status)
   );
@@ -40,10 +41,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('simulator.openUrl', async () => {
       if (!provider) return;
       const url = await vscode.window.showInputBox({
-        title: 'Secondary Simulator: デバイスで開く URL',
-        placeHolder: 'myapp://path/to/screen または https://example.com',
+        title: vscode.l10n.t('Secondary Simulator: URL to open on the device'),
+        placeHolder: vscode.l10n.t(
+          'myapp://path/to/screen or https://example.com'
+        ),
         validateInput: (value) =>
-          value.trim() ? undefined : 'URL を入力してください',
+          value.trim() ? undefined : vscode.l10n.t('Enter a URL.'),
       });
       if (!url) return;
       await provider.openUrl(url.trim());
@@ -115,7 +118,9 @@ async function pickDevice(p: SimulatorWebviewProvider): Promise<void> {
   const devices = p.getDevices();
   if (devices.length === 0) {
     void vscode.window.showInformationMessage(
-      'Secondary Simulator: デバイスが見つかりません。シミュレータ／エミュレータを起動してから再試行してください。'
+      vscode.l10n.t(
+        'Secondary Simulator: No devices found. Start a simulator or emulator and try again.'
+      )
     );
     return;
   }
@@ -125,27 +130,33 @@ async function pickDevice(p: SimulatorWebviewProvider): Promise<void> {
     label: `${d.id === current ? '$(check) ' : ''}${d.name}`,
     // 起動していないデバイスは選んでも繋がらないので、その場で分かるようにする
     description: [d.platform, d.runtime, d.state].filter(Boolean).join(' · '),
-    detail: d.state === 'Booted' ? undefined : '起動していません（選ぶと起動できます）',
+    detail:
+      d.state === 'Booted'
+        ? undefined
+        : vscode.l10n.t('Not running (select it to boot)'),
     deviceId: d.id,
     name: d.name,
     booted: d.state === 'Booted',
   }));
 
   const picked = await vscode.window.showQuickPick(items, {
-    title: 'Secondary Simulator: 接続するデバイス',
-    placeHolder: '起動中のデバイスを選ぶと接続します（停止中はここから起動できます）',
+    title: vscode.l10n.t('Secondary Simulator: Device to connect to'),
+    placeHolder: vscode.l10n.t(
+      'Pick a running device to connect. Stopped devices can be booted from here.'
+    ),
     matchOnDescription: true,
   });
   if (!picked) return;
 
   if (!picked.booted) {
     // 以前はここで終わっていた。シミュレータを自分で立ち上げに行かずに済ませる。
+    const boot = vscode.l10n.t('Boot and connect');
     const answer = await vscode.window.showInformationMessage(
-      `${picked.name} は起動していません。起動しますか？`,
-      '起動して接続',
-      'キャンセル'
+      vscode.l10n.t('{0} is not running. Boot it?', picked.name),
+      boot,
+      vscode.l10n.t('Cancel')
     );
-    if (answer !== '起動して接続') return;
+    if (answer !== boot) return;
     await p.bootAndConnect(picked.deviceId);
     return;
   }

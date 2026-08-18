@@ -18,6 +18,42 @@ const statsEl = document.getElementById('stats');
 const modeEl = document.getElementById('mode');
 const lamp = document.getElementById('lamp');
 
+// ---- 文言 --------------------------------------------------------------------
+
+// 拡張ホストが翻訳して HTML に埋めた辞書（index.html の #l10n-strings）。
+// webview から vscode.l10n は触れないので、出来上がった文字列を受け取る。
+const STRINGS = (() => {
+  const el = document.getElementById('l10n-strings');
+  try {
+    return JSON.parse((el && el.textContent) || '{}');
+  } catch {
+    return {}; // 壊れていても英語のキー名で動き続ける
+  }
+})();
+
+/** 翻訳を引く。未定義ならキーをそのまま返す（英語の原文がキーになっている）。 */
+function t(key, ...args) {
+  const text = STRINGS[key] !== undefined ? STRINGS[key] : key;
+  if (args.length === 0) return text;
+  return text.replace(/\{(\d)\}/g, (_, i) => (args[Number(i)] !== undefined ? args[Number(i)] : ''));
+}
+
+/** HTML に静的に書かれた文言を差し替える（起動時に 1 回だけ）。 */
+function applyStaticStrings() {
+  const all = document.querySelectorAll
+    ? document.querySelectorAll('[data-i18n], [data-i18n-title]')
+    : [];
+  for (const el of all) {
+    const key = el.getAttribute('data-i18n');
+    if (key) {
+      const icon = el.getAttribute('data-i18n-icon');
+      el.textContent = icon ? `${icon} ${t(key)}` : t(key);
+    }
+    const titleKey = el.getAttribute('data-i18n-title');
+    if (titleKey) el.title = t(titleKey);
+  }
+}
+
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 // 表示要素は常に <img>。座標の正規化とオーバーレイのサイズ合わせが参照する。
@@ -281,7 +317,7 @@ let trailEnabled = vscode.getState()?.trail ?? true;
 
 function syncTrailButton() {
   btnTrail.classList.toggle('on', trailEnabled);
-  btnTrail.textContent = trailEnabled ? 'Trail ON' : 'Trail OFF';
+  btnTrail.textContent = trailEnabled ? t('trailOn') : t('trailOff');
   if (!trailEnabled) clearTrail();
 }
 
@@ -299,7 +335,7 @@ let autoConnectEnabled = true;
 
 function syncAutoButton() {
   btnAuto.classList.toggle('on', autoConnectEnabled);
-  btnAuto.textContent = autoConnectEnabled ? 'Auto ON' : 'Auto OFF';
+  btnAuto.textContent = autoConnectEnabled ? t('autoOn') : t('autoOff');
 }
 
 btnAuto.addEventListener('click', () => {
@@ -374,13 +410,13 @@ if (typeof ResizeObserver === 'function') {
 img.addEventListener('error', () => {
   // 直結ストリームは接続そのものが切れた合図。個別フレームは 1 枚壊れただけなので
   // 次のフレームで直る（毎秒 30 回届く経路で警告を出さない）。
-  if (streamMode) setOverlayVisible(true, 'ストリームに接続できません');
+  if (streamMode) setOverlayVisible(true, t('streamFailed'));
 });
 
 let overlayVisible = null; // 直近に適用した状態。frame 毎の DOM 書き換えを避ける
 let overlayText = null;
 
-function setOverlayVisible(visible, text = 'Select a device to start') {
+function setOverlayVisible(visible, text = t('selectToStart'), busy = false) {
   if (!overlay) return;
   // 'frame' は毎秒 30 回届く（load も同じ回数）。状態が同じなら DOM を触らない。
   if (overlayVisible === visible && (!visible || overlayText === text)) {
@@ -390,10 +426,11 @@ function setOverlayVisible(visible, text = 'Select a device to start') {
   overlayText = text;
   // 画面が出ている＝接続中。オーバーレイの表示状態がそのまま接続状態になる。
   lamp.classList.toggle('on', !visible);
-  lamp.title = visible ? '切断中' : '接続中';
+  lamp.title = visible ? t('lampDisconnected') : t('lampConnected');
   overlay.classList.toggle('hidden', !visible);
-  // 「…」を含む文言（Searching… / Connecting… 端末名）は待機中なのでスピナーを出す
-  overlay.classList.toggle('busy', visible && text.includes('…'));
+  // 待機中（Searching / Connecting）はスピナーを出す。呼び出し側が明示する
+  // ——「…」を含むかで見ていたが、言語によって記号が変わるので当てにできない。
+  overlay.classList.toggle('busy', visible && busy);
   overlay.querySelector('span').textContent = text;
   img.style.display = visible ? 'none' : 'block';
 }
@@ -416,7 +453,11 @@ window.addEventListener('message', (event) => {
   switch (message.type) {
     case 'devices': {
       const selected = deviceSelect.value;
-      deviceSelect.innerHTML = '<option value="">Select Device...</option>';
+      deviceSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = t('selectDevice');
+      deviceSelect.appendChild(placeholder);
       platformById.clear();
       message.devices.forEach((device) => {
         platformById.set(device.id, device.platform);
@@ -432,7 +473,7 @@ window.addEventListener('message', (event) => {
       if (selected && next === '') {
         vscode.postMessage({type: 'deviceChange', deviceId: ''});
         cleanup();
-        setOverlayVisible(true, 'Disconnected — デバイスを選び直すと再接続します');
+        setOverlayVisible(true, t('disconnected'));
       }
       break;
     }
@@ -441,15 +482,15 @@ window.addEventListener('message', (event) => {
     // （Disconnect やエラーの表示を上書きしないため）。
     case 'searching':
       if (message.active) {
-        setOverlayVisible(true, 'Searching…');
-      } else if (overlay.querySelector('span').textContent === 'Searching…') {
-        setOverlayVisible(true, 'Select a device to start');
+        setOverlayVisible(true, t('searching'), true);
+      } else if (overlay.querySelector('span').textContent === t('searching')) {
+        setOverlayVisible(true, t('selectToStart'));
       }
       break;
 
     // 接続開始。最初のフレーム（frame / img.onload）が来るまで出したままにする。
     case 'connecting':
-      setOverlayVisible(true, `Connecting… ${message.name}`);
+      setOverlayVisible(true, t('connectingTo', message.name), true);
       break;
 
     // 設定側の値。設定画面から変えたときもここで揃う。
@@ -469,7 +510,7 @@ window.addEventListener('message', (event) => {
       // 初回は WDA 起動待ちで最初のフレームまで数秒かかることがあるため、
       // 実際に表示できるまでオーバーレイで待機中を示す（load で消える）。
       streamMode = true;
-      setOverlayVisible(true, 'Connecting…');
+      setOverlayVisible(true, t('connecting'), true);
       img.src = message.url;
       break;
     }
@@ -497,18 +538,18 @@ window.addEventListener('message', (event) => {
       // 直結では multipart の 1 コマごとに load が来るとは限らない。
       // 数えられていないのに 0fps と出すと壊れて見えるので、そのときは伏せる。
       const rate = message.direct
-        ? chip('映像', painted > 0 ? `${painted}fps 直結` : '直結')
+        ? chip(t('video'), painted > 0 ? `${painted}fps ${t('direct')}` : t('direct'))
         : message.fps === undefined
           ? ''
-          : chip('映像', `${message.fps}/${painted}fps ${message.kbps}KB/s`);
+          : chip(t('video'), `${message.fps}/${painted}fps ${message.kbps}KB/s`);
       statsEl.innerHTML =
         rate +
-        chip('ホスト', message.rssMb + 'MB') +
-        chip('heap', message.heapUsedMb + 'MB') +
-        chip('子プロセス', message.childrenMb + 'MB') +
+        chip(t('host'), message.rssMb + 'MB') +
+        chip(t('heap'), message.heapUsedMb + 'MB') +
+        chip(t('children'), message.childrenMb + 'MB') +
         // 測っているのは拡張ディレクトリ（VSIX 同梱物）だけ。mobilecli が入れる
         // WebDriverAgent や npx の npm キャッシュは含まれないので「ストレージ」とは呼ばない。
-        chip('拡張', message.storageMb + 'MB');
+        chip(t('extension'), message.storageMb + 'MB');
       break;
     }
 
@@ -522,7 +563,7 @@ window.addEventListener('message', (event) => {
       // 同じデバイスを選び直しても change が飛ぶように選択を空へ戻す（復帰導線）
       deviceSelect.value = '';
       syncBackButton();
-      setOverlayVisible(true, 'Disconnected — デバイスを選び直すと再接続します');
+      setOverlayVisible(true, t('disconnected'));
       break;
 
     case 'pauseStream':
@@ -535,4 +576,5 @@ window.addEventListener('message', (event) => {
 // <img> は width:100% なのでリサイズ時に再描画は要らない（canvas 経路の名残を削除）。
 window.addEventListener('beforeunload', cleanup);
 
+applyStaticStrings();
 vscode.postMessage({type: 'init'});

@@ -151,7 +151,8 @@ secondary-simulator/
 │       ├── MobileCliClient.ts         # mobilecliクライアント
 │       ├── MobileCliServer.ts         # mobilecliサーバー管理
 │       ├── JsonRpcClient.ts           # JSON-RPC 2.0クライアント
-│       └── ResourceStats.ts           # RSS / heap / 子プロセス / 拡張ディレクトリ
+│       ├── ResourceStats.ts           # RSS / heap / 子プロセス / 拡張ディレクトリ
+│       └── Strings.ts                 # ステータスバーと webview へ渡す文言
 ├── native/
 │   └── simhid-server.m                # HID 注入サイドカー（macOS/iOS Simulator）
 ├── media/
@@ -164,6 +165,8 @@ secondary-simulator/
 ├── .github/workflows/                 # CI とリリース
 ├── out/                               # コンパイル済みファイル
 ├── package.json                       # プロジェクト設定
+├── package.nls.json / package.nls.ja.json / package.nls.zh-cn.json  # コマンド名・設定説明の翻訳
+├── l10n/                               # 実行時メッセージの翻訳（ja / zh-cn）
 └── tsconfig.json                     # TypeScript設定
 ```
 
@@ -199,6 +202,26 @@ secondary-simulator/
 
 - **リソースクリーンアップ**: ストリーム、イベントリスナー、タイマーの適切な解放
 - **プロセス管理**: mobilecli サーバー、サイドカー、Android の `adb shell` の起動・再接続・破棄を一元管理
+
+## 🌐 表示言語
+
+UI は VS Code / Cursor の表示言語に従う。
+
+| 言語 | ロケール | 備考 |
+|---|---|---|
+| English | （既定） | 一致するバンドルが無い言語はこれになる |
+| 日本語 | `ja` | |
+| 简体中文 | `zh-cn` | |
+
+コマンド名と設定の説明は `package.nls*.json`、実行時のメッセージは
+`l10n/bundle.l10n.*.json` から引く。サイドバーの文言は拡張ホストが翻訳して
+HTML に埋め込むので、**最初に英語が見えてから切り替わる、が起きない**。
+
+出力チャンネル "Secondary Simulator" のログは翻訳しない（UI ではなく開発者向けの診断のため）。
+
+言語を足すときは `package.nls.<locale>.json` と `l10n/bundle.l10n.<locale>.json` を置き、
+`test/localization.test.js` の `LOCALES` に追加する。翻訳漏れや古い原文が残っていれば
+テストが落ちる。
 
 ## 🐛 トラブルシューティング
 

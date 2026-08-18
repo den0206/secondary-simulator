@@ -139,3 +139,21 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - `@mobilenext/mobilecli` は VSIX に darwin 版バイナリだけ同梱する（`.vscodeignore`）。
   見つからない場合は `npx` 実行にフォールバックする。
 - webview は CSP 下で動く。外部 CDN・インライン script は使えない。
+
+## 多言語化
+
+**既定は英語。** 日本語（`ja`）と簡体字中国語（`zh-cn`）を同梱する。
+
+- **package.json の貢献点**（コマンド名・設定の説明）は `%key%` にし、
+  `package.nls.json`（英語）/ `package.nls.ja.json` / `package.nls.zh-cn.json` に書く。
+- **実行時の文言**は `vscode.l10n.t('英語の原文')`。**原文がキー**なので、
+  呼び出し側に英語がそのまま見える。訳は `l10n/bundle.l10n.<locale>.json`。
+- **webview は `vscode.l10n` を触れない**（別プロセス）。`src/utils/Strings.ts` が
+  翻訳済みの辞書を作り、`getHtmlContent` が `<script type="application/json">` で
+  埋め込む。webview 側は `t('key')` と `data-i18n` / `data-i18n-title` /
+  `data-i18n-icon` で引く。**表示前に揃うので、後から差し替えて一瞬英語が見える、が起きない。**
+- **`renderStatus` は純粋関数のまま保つ**。翻訳は `StatusStrings` として引数で渡す
+  （`vscode.l10n` を呼ぶとテストから使えなくなる）。
+- **ログは対象外**。開発者向けの診断であって UI ではない。
+- 文言を足したら `test/localization.test.js` が過不足を落とす（`{0}` の欠落も見る）。
+  言語を増やすときは、このテストの `LOCALES` にも足す。

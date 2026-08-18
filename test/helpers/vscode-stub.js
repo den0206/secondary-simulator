@@ -23,6 +23,14 @@ function defaultStub() {
     workspace: {
       getConfiguration: () => ({get: (_key, fallback) => fallback}),
     },
+    // 既定言語（英語）と同じ振る舞い: 原文をそのまま返し、{0} だけ埋める。
+    // 翻訳の網羅は test/localization.test.js がバンドルを直接見て確かめる。
+    l10n: {
+      t: (message, ...args) =>
+        String(message).replace(/\{(\d)\}/g, (_, i) =>
+          args[Number(i)] !== undefined ? String(args[Number(i)]) : ''
+        ),
+    },
     ConfigurationTarget: {Global: 1, Workspace: 2, WorkspaceFolder: 3},
   };
 }

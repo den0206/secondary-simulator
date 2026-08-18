@@ -149,7 +149,8 @@ secondary-simulator/
 │       ├── MobileCliClient.ts         # mobilecli client
 │       ├── MobileCliServer.ts         # mobilecli server management
 │       ├── JsonRpcClient.ts           # JSON-RPC 2.0 client
-│       └── ResourceStats.ts           # RSS / heap / child process / storage
+│       ├── ResourceStats.ts           # RSS / heap / child process / storage
+│       └── Strings.ts                 # Strings handed to the status bar and webview
 ├── native/
 │   └── simhid-server.m                # HID injection sidecar (macOS / iOS Simulator)
 ├── media/
@@ -162,6 +163,8 @@ secondary-simulator/
 ├── .github/workflows/                 # CI and release
 ├── out/                               # Compiled output
 ├── package.json                       # Project manifest
+├── package.nls.json / package.nls.ja.json / package.nls.zh-cn.json  # Command and setting names per locale
+├── l10n/                               # Runtime message bundles (ja / zh-cn)
 └── tsconfig.json                     # TypeScript config
 ```
 
@@ -191,6 +194,27 @@ secondary-simulator/
 
 - **Resource cleanup**: streams, event listeners, and timers are all released
 - **Process management**: the mobilecli server, the sidecar, and the Android `adb shell` session are started and disposed in one place
+
+## 🌐 Languages
+
+The UI follows the VS Code / Cursor display language.
+
+| Language | Locale | Notes |
+|---|---|---|
+| English | (default) | Used when no bundle matches the display language |
+| 日本語 | `ja` | |
+| 简体中文 | `zh-cn` | |
+
+Command names and setting descriptions come from `package.nls*.json`; runtime
+messages come from `l10n/bundle.l10n.*.json`. The sidebar receives its strings
+already translated from the extension host, so nothing flashes in English first.
+
+Log output in the "Secondary Simulator" channel is not localized — it is
+developer-facing diagnostics rather than UI.
+
+To add a language, drop in `package.nls.<locale>.json` and
+`l10n/bundle.l10n.<locale>.json`, then add the locale to `LOCALES` in
+`test/localization.test.js`; the test fails on any missing or stale string.
 
 ## 🐛 Troubleshooting
 

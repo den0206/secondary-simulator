@@ -1,7 +1,7 @@
 {
   "name": "secondary-simulator",
   "displayName": "Secondary Simulator",
-  "description": "Display iOS/Android simulators in the sidebar with real-time screen capture",
+  "description": "%extension.description%",
   "version": "0.1.1",
   "publisher": "yuuki-sakai",
   "icon": "media/icon.png",
@@ -32,12 +32,13 @@
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
           "id": "simulator-container",
-          "title": "Secondary Simulator",
+          "title": "%viewsContainer.title%",
           "icon": "$(device-mobile)"
         }
       ]
@@ -47,54 +48,54 @@
         {
           "type": "webview",
           "id": "simulatorView",
-          "name": "Device Preview"
+          "name": "%view.devicePreview.name%"
         }
       ]
     },
     "commands": [
       {
         "command": "simulator.selectDevice",
-        "title": "Select Device",
-        "category": "Secondary Simulator"
+        "title": "%command.selectDevice.title%",
+        "category": "%extension.category%"
       },
       {
         "command": "simulator.screenshot",
-        "title": "Save Screenshot",
-        "category": "Secondary Simulator",
+        "title": "%command.screenshot.title%",
+        "category": "%extension.category%",
         "icon": "$(device-camera)"
       },
       {
         "command": "simulator.openUrl",
-        "title": "Open URL on Device",
-        "category": "Secondary Simulator",
+        "title": "%command.openUrl.title%",
+        "category": "%extension.category%",
         "icon": "$(link)"
       },
       {
         "command": "simulator.home",
-        "title": "Press Home",
-        "category": "Secondary Simulator"
+        "title": "%command.home.title%",
+        "category": "%extension.category%"
       },
       {
         "command": "simulator.back",
-        "title": "Press Back",
-        "category": "Secondary Simulator"
+        "title": "%command.back.title%",
+        "category": "%extension.category%"
       },
       {
         "command": "simulator.refresh",
-        "title": "Refresh Device List",
-        "category": "Secondary Simulator",
+        "title": "%command.refresh.title%",
+        "category": "%extension.category%",
         "icon": "$(refresh)"
       },
       {
         "command": "simulator.showLogs",
-        "title": "Show Logs",
-        "category": "Secondary Simulator",
+        "title": "%command.showLogs.title%",
+        "category": "%extension.category%",
         "icon": "$(output)"
       },
       {
         "command": "simulator.clearLogs",
-        "title": "Clear Logs",
-        "category": "Secondary Simulator",
+        "title": "%command.clearLogs.title%",
+        "category": "%extension.category%",
         "icon": "$(clear-all)"
       }
     ],
@@ -118,31 +119,31 @@
       ]
     },
     "configuration": {
-      "title": "Secondary Simulator",
+      "title": "%configuration.title%",
       "properties": {
         "secondarySimulator.autoConnect": {
           "type": "boolean",
           "default": true,
-          "description": "起動中のデバイスへ自動で接続する。未接続のあいだは5秒ごとに探し、新しく起動したシミュレータにも繋ぐ。サイドバーの Auto ボタンと連動し、Disconnect を押すと OFF になる。"
+          "description": "%configuration.autoConnect.description%"
         },
         "secondarySimulator.directStream": {
           "type": "boolean",
           "default": false,
-          "description": "表示を webview 直結にする。フレームが拡張ホストを経由せず、Chromium がネイティブ復号する。iOS Simulator のサイドカー取り込みではサイドカーが 127.0.0.1 で直接配信し、それ以外は mobilecli の MJPEG を中継する。実験的。"
+          "description": "%configuration.directStream.description%"
         },
         "secondarySimulator.streamScale": {
           "type": "number",
           "default": 1,
           "minimum": 0.1,
           "maximum": 1,
-          "description": "iOS: MJPEG の縮小率（1.0=原寸）。小さくすると帯域が下がる（WDA の mjpegScalingFactor を設定）。"
+          "description": "%configuration.streamScale.description%"
         },
         "secondarySimulator.streamQuality": {
           "type": "number",
           "default": 80,
           "minimum": 1,
           "maximum": 100,
-          "description": "iOS: MJPEG の JPEG 品質（1-100）。streamScale と併用して帯域を調整する。"
+          "description": "%configuration.streamQuality.description%"
         },
         "secondarySimulator.keyInput": {
           "type": "string",
@@ -151,11 +152,11 @@
             "wda"
           ],
           "enumDescriptions": [
-            "HID 直接注入（速い）。シミュレータはハードウェアキーボード扱いになり、ソフトウェアキーボードが表示されない。",
-            "WDA 経由（1文字あたり約 370ms）。ソフトウェアキーボードが表示されたままになり、端末側の入力ソース（英字/かな）にも左右されない。"
+            "%configuration.keyInput.enum.hid%",
+            "%configuration.keyInput.enum.wda%"
           ],
           "default": "hid",
-          "description": "iOS: キーボード入力の経路。タッチは常に HID のまま。サイドバーにソフトウェアキーボードを映したいときは wda にする。"
+          "description": "%configuration.keyInput.description%"
         },
         "secondarySimulator.captureSource": {
           "type": "string",
@@ -164,25 +165,25 @@
             "wda"
           ],
           "enumDescriptions": [
-            "iOS Simulator で HID サイドカーが使えるなら端末のフレームバッファを直接取り込む。ソフトウェアキーボードやステータスバーも写る。",
-            "従来どおり mobilecli/WDA の MJPEG を使う。WDA のスクリーンショットはアプリのウィンドウしか描かないため、ソフトウェアキーボードは写らない。"
+            "%configuration.captureSource.enum.auto%",
+            "%configuration.captureSource.enum.wda%"
           ],
           "default": "auto",
-          "description": "iOS: 画面の取り込み元。auto は HID サイドカーがあればフレームバッファ直取り、無ければ WDA へ降格する。"
+          "description": "%configuration.captureSource.description%"
         },
         "secondarySimulator.captureFps": {
           "type": "number",
           "default": 30,
           "minimum": 1,
           "maximum": 60,
-          "description": "iOS: サイドカー取り込みの通常時 fps。画面が変わらないフレームは送られない。操作中（指を置いている間）は最大 2 倍・60fps まで自動で上がる。"
+          "description": "%configuration.captureFps.description%"
         },
         "secondarySimulator.captureMaxWidth": {
           "type": "number",
           "default": 640,
           "minimum": 160,
           "maximum": 2048,
-          "description": "iOS: サイドカー取り込みで送る JPEG の幅の上限（px）。実際の幅はサイドバーの表示幅（× devicePixelRatio）に追従し、この値で頭打ちになる。上げると鮮明になり帯域も増える。"
+          "description": "%configuration.captureMaxWidth.description%"
         },
         "secondarySimulator.captureMode": {
           "type": "string",
@@ -191,11 +192,11 @@
             "poll"
           ],
           "enumDescriptions": [
-            "ディスプレイの変更通知が使えるなら使う（画面が変わった瞬間に撮るので、ポーリング由来の平均 16.7ms が消える）。使えない・届かない場合はポーリングへ自動で戻る。",
-            "常にポーリングで撮る。変更通知は非公開 API なので、Xcode 更新で不調なときはこちらに固定する。"
+            "%configuration.captureMode.enum.auto%",
+            "%configuration.captureMode.enum.poll%"
           ],
           "default": "auto",
-          "description": "iOS: サイドカー取り込みの駆動方法。"
+          "description": "%configuration.captureMode.description%"
         },
         "secondarySimulator.logLevel": {
           "type": "string",
@@ -207,14 +208,14 @@
             "debug"
           ],
           "enumDescriptions": [
-            "何も出力しない。",
-            "エラーのみ。",
-            "エラーと警告。",
-            "通常の動作ログまで（既定）。",
-            "受信メッセージなども含む詳細ログ。調査時だけ使う。"
+            "%configuration.logLevel.enum.off%",
+            "%configuration.logLevel.enum.error%",
+            "%configuration.logLevel.enum.warn%",
+            "%configuration.logLevel.enum.info%",
+            "%configuration.logLevel.enum.debug%"
           ],
           "default": "info",
-          "description": "出力チャンネル \"Secondary Simulator\" へ書くログの詳しさ。VS Code は出力チャンネルの全文をメモリに保持し古い行を捨てられないので、常用は info 以下にする。"
+          "description": "%configuration.logLevel.description%"
         }
       }
     },

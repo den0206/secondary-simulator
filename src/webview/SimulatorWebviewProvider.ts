@@ -22,6 +22,7 @@ import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
 import {MobileCliServer} from '../utils/MobileCliServer';
 import {collectResourceStats} from '../utils/ResourceStats';
+import {statusStrings, webviewStrings} from '../utils/Strings';
 
 export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'simulatorView';
@@ -92,7 +93,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private setStatus(status: DeviceStatus): void {
     this.status = status;
     this.onStatusChange?.(status);
-    this.postMessage({type: 'mode', text: renderStatus(status).mode});
+    this.postMessage({
+      type: 'mode',
+      text: renderStatus(status, statusStrings()).mode,
+    });
   }
 
   async resolveWebviewView(
@@ -174,7 +178,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.startStatsTimer();
     // HTML を作り直したので、一覧が同じでも webview へ送り直す
     this.lastDevicesSignature = '';
-    this.postMessage({type: 'mode', text: renderStatus(this.status).mode});
+    this.postMessage({
+      type: 'mode',
+      text: renderStatus(this.status, statusStrings()).mode,
+    });
     this.refreshDevices();
   }
 
@@ -849,7 +856,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
     if (!this.mobileCliClient) {
       void vscode.window.showErrorMessage(
-        'Secondary Simulator: mobilecli を初期化できませんでした。'
+        vscode.l10n.t('Secondary Simulator: Could not initialize mobilecli.')
       );
       return;
     }
@@ -862,7 +869,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: `Secondary Simulator: ${name} を起動しています…`,
+          title: vscode.l10n.t('Secondary Simulator: Booting {0}…', name),
           cancellable: false,
         },
         async () => {
@@ -871,9 +878,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           } catch (error) {
             Logger.error('デバイスの起動に失敗', error as Error);
             void vscode.window.showErrorMessage(
-              `Secondary Simulator: ${name} を起動できませんでした — ${
+              vscode.l10n.t(
+                'Secondary Simulator: Could not boot {0} — {1}',
+                name,
                 (error as Error).message
-              }`
+              )
             );
             return;
           }
@@ -892,7 +901,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             );
           }
           void vscode.window.showWarningMessage(
-            `Secondary Simulator: ${name} の起動を待ちましたが Booted になりませんでした。一覧を更新して選び直してください。`
+            vscode.l10n.t(
+              'Secondary Simulator: Waited for {0} but it never reached Booted. Refresh the list and pick it again.',
+              name
+            )
           );
         }
       );
@@ -909,7 +921,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const deviceId = this.currentDeviceId;
     if (!deviceId || !this.mobileCliClient) {
       void vscode.window.showWarningMessage(
-        'Secondary Simulator: デバイスに接続してから URL を開いてください。'
+        vscode.l10n.t(
+          'Secondary Simulator: Connect to a device before opening a URL.'
+        )
       );
       return;
     }
@@ -919,9 +933,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       Logger.error('URL を開けなかった', error as Error);
       void vscode.window.showErrorMessage(
-        `Secondary Simulator: URL を開けませんでした — ${
+        vscode.l10n.t(
+          'Secondary Simulator: Could not open the URL — {0}',
           (error as Error).message
-        }`
+        )
       );
     }
   }
@@ -934,7 +949,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const deviceId = this.currentDeviceId;
     if (!deviceId || !this.mobileCliClient) {
       void vscode.window.showWarningMessage(
-        'Secondary Simulator: デバイスに接続してからスクリーンショットを撮ってください。'
+        vscode.l10n.t(
+          'Secondary Simulator: Connect to a device before taking a screenshot.'
+        )
       );
       return;
     }
@@ -948,20 +965,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       Logger.error('スクリーンショットの取得に失敗', error as Error);
       void vscode.window.showErrorMessage(
-        `Secondary Simulator: スクリーンショットを取得できませんでした — ${
+        vscode.l10n.t(
+          'Secondary Simulator: Could not capture a screenshot — {0}',
           (error as Error).message
-        }`
+        )
       );
       return;
     }
 
     const target = await vscode.window.showSaveDialog({
-      title: 'スクリーンショットの保存先',
+      title: vscode.l10n.t('Save screenshot to'),
       defaultUri: vscode.Uri.joinPath(
         this.defaultScreenshotDir(),
         defaultScreenshotName(deviceName, shot.ext)
       ),
-      filters: {画像: [shot.ext]},
+      filters: {[vscode.l10n.t('Images')]: [shot.ext]},
     });
     if (!target) return; // キャンセル
 
@@ -970,17 +988,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       Logger.error('スクリーンショットの保存に失敗', error as Error);
       void vscode.window.showErrorMessage(
-        `Secondary Simulator: 保存できませんでした — ${(error as Error).message}`
+        vscode.l10n.t(
+          'Secondary Simulator: Could not save — {0}',
+          (error as Error).message
+        )
       );
       return;
     }
 
     Logger.info(`スクリーンショットを保存: ${target.fsPath}`);
+    const openLabel = vscode.l10n.t('Open');
     const open = await vscode.window.showInformationMessage(
-      `スクリーンショットを保存しました: ${target.fsPath}`,
-      '開く'
+      vscode.l10n.t('Screenshot saved: {0}', target.fsPath),
+      openLabel
     );
-    if (open === '開く') {
+    if (open === openLabel) {
       await vscode.commands.executeCommand('vscode.open', target);
     }
   }
@@ -1104,7 +1126,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       .replace('{{scriptUri}}', scriptUri.toString())
       .replace('{{styleUri}}', styleUri.toString())
       .replace('{{nonce}}', nonce)
-      .replace('{{cspMeta}}', cspMeta);
+      .replace('{{cspMeta}}', cspMeta)
+      .replace('{{l10n}}', SimulatorWebviewProvider.embedJson(webviewStrings()));
+  }
+
+  /**
+   * `<script type="application/json">` へ埋める JSON。
+   *
+   * `<` を `\u003c` へ逃がす。文言に `</script>` が入るとその場でブロックが閉じ、
+   * 後続が HTML として解釈されてしまう（今の文言には無いが、翻訳を足すのは人なので
+   * 埋め込む側で断つ）。
+   */
+  private static embedJson(value: unknown): string {
+    return JSON.stringify(value).replace(/</g, '\\u003c');
   }
 
   private getNonce(): string {
