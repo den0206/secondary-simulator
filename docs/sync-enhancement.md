@@ -4,6 +4,10 @@
 前提: [sync-research.md](./sync-research.md)（2026-08-16 の実測調査）、
 [sidecar-protocol.md](./sidecar-protocol.md)、[ios-hid-injection.md](./ios-hid-injection.md)
 
+**実装状況（2026-08-18）:** Phase A〜C（プッシュ型取り込み・HTTP 直結）は入っている。
+H.264 + WebCodecs（当時の C-13）は着手していない。§1 の経路図は調査時点の
+canvas / 二重 base64 であり、現行は `<img>` と `sink: "http"`。
+
 macOS / 実機を持たない環境での**静的な読み取り**と、経路のコストを再現した
 **Node 上のマイクロベンチ**による調査。macOS 側の私有 API に関する提案は
 **すべて未検証**であることを都度明記する。
