@@ -325,7 +325,9 @@ function takePaintedFps() {
   const count = paintedFrames;
   paintedFrames = 0;
   paintedSince = now;
-  return seconds > 0 ? Math.round((count / seconds) * 10) / 10 : 0;
+  if (!(seconds > 0)) return 0;
+  // 集計期間が極端に短いと 1 枚で 1000fps になる。表示の上限は取り込みと同じ 60。
+  return Math.min(60, Math.round((count / seconds) * 10) / 10);
 }
 
 // 拡張ホストは base64 の JPEG を送る（postMessage のシリアライズで形がぶれないため）。
