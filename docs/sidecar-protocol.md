@@ -37,10 +37,9 @@ VS Code / Cursor 拡張の入力経路を mobilecli/WDA（約 600ms）から HID
 ┌───────────▼───────────────────┐
 │ Extension Host (TypeScript)    │
 │   SimulatorInputController     │
-│     ├ InputBackend 抽象         │
-│     │   ├ HidBackend  ← 新規    │
-│     │   └ WdaBackend  ← 既存の mobilecli 経路（フォールバック）
-│     └ サイドカーの spawn / 監視  │
+│     ├ HidBackend（iOS Sim HID）│
+│     ├ AndroidBackend（AdbTouch）│
+│     └ WdaBackend（実機・降格） │
 └───────────┬───────────────────┘
             │ stdin/stdout に JSON Lines（1行=1メッセージ）
 ┌───────────▼───────────────────┐
@@ -146,7 +145,8 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 
 - webview・拡張ホスト・サイドカーの**全経路で正規化座標 `[0.0, 1.0]` を使う**
 - simhid（= HID 注入）は正規化座標をそのまま受けるため、ピクセル変換は不要
-- WDA 経路だけが例外で、`WdaBackend` が `touchUp` 時に `getScreenSize()` でピクセルへ直す
+- ピクセルが要るのはバックエンドの内側だけ。`WdaBackend` は `touchUp` 時に、
+  `AndroidBackend` は送る直前に、`getScreenSize()` で直す
   （`screenSize` 未取得だとここで例外になる。HID 経路にはこの制約はない）
 - 画面回転は将来対応。当面は縦向き前提で正規化する
 
@@ -215,8 +215,8 @@ interface InputBackend {
 - **HidBackend**: 上記コマンドを JSON Lines で サイドカーに書き込む。座標変換なし
 - **WdaBackend**: 既存の `MobileCliClient`（tap/gesture/inputText/pressButton）をこのIFに適合させる薄いラッパ。
   座標は現行どおりピクセル変換する
-- **AndroidBackend**: Android 専用（§7.1）。同じ `MobileCliClient` を使うが、
-  タッチの送り方だけが違う。キー・テキスト・ボタンは WdaBackend へ委譲する
+- **AndroidBackend**: Android 専用（§7.1）。タッチは `AdbTouch`（常駐 `adb shell`）、
+  使えなければ mobilecli。キー・テキスト・ボタンは WdaBackend へ委譲する
 - `SimulatorInputController` が起動時にバックエンドを選ぶ:
   iOS Simulator かつ HID 注入が使える → HidBackend、Android → AndroidBackend、
   それ以外（iOS 実機・降格時）→ WdaBackend
@@ -236,23 +236,34 @@ mobilecli `devices/android.go` の `Gesture`）。1 回あたりの往復は 100
 
 `tap` は `input tap` 1 回で終わるので影響を受けない（＝タップだけ正常に見える）。
 
-AndroidBackend は貯めずに、押しているあいだ送り続ける:
+AndroidBackend は貯めずに、押しているあいだ送り続ける。
+速い経路は `AdbTouch`（`adb shell` を 1 本張りっぱなしにして `motionevent` を書き込む）。
+adb が見つからない・シリアルを解決できないときは mobilecli の `device.io.gesture` へ落ちる。
+
+AdbTouch（主経路）。`DOWN`/`UP` が座標を引数に取れるので、位置決めの MOVE は挟まない:
 
 | 局面 | 送るもの |
 |---|---|
 | `touchDown` | 何も送らない（タップかドラッグか未確定） |
-| slop（12px）超えの `touchMove` | `[pointerMove(始点), pointerDown, pointerMove(現在)]` |
-| 以降の `touchMove` | `[pointerMove(最新の 1 点)]`。前の adb が返るまで次を出さない（溜めない） |
-| `touchUp`（動いた） | `[pointerMove(終点), pointerUp]` |
+| slop（12px）超えの `touchMove` | `DOWN(始点)` と、必要なら `MOVE(現在)` |
+| 以降の `touchMove` | `MOVE(最新の 1 点)`。前の adb が返るまで次を出さない（溜めない） |
+| `touchUp`（動いた） | `UP(終点)`。同じ座標の MOVE を挟まない（離す直前に止まるとフリックが弱くなる） |
 | `touchUp`（動いていない・短い） | `device.io.tap` 1 回 |
-| 静止のまま 400ms | `[pointerMove(始点), pointerDown]` を先出しして押しっぱなしを作る |
+| 静止のまま 400ms | `DOWN(始点)` を先出しして押しっぱなしを作る |
+
+mobilecli へ落ちたときだけ、次の形になる（Android 側は `pointerDown` / `pointerUp` の座標を**直前の `pointerMove`** からしか取れないため）:
+
+| 局面 | 送るもの |
+|---|---|
+| slop 超えの `touchMove` | `[pointerMove(始点), pointerDown, pointerMove(現在)]` |
+| 以降の `touchMove` | `[pointerMove(最新の 1 点)]` |
+| `touchUp`（動いた） | `[pointerMove(終点), pointerUp]` |
+| 静止のまま 400ms | `[pointerMove(始点), pointerDown]` |
 
 - `down`..`up` の実時間が指の実時間と一致するので、速度が正しく伝わりフリックが効く
-- 送信数は点数ではなく **adb の往復時間**で頭打ちになる（60 点/秒 → 実測 14 イベント）
+- 送信数は点数ではなく **adb の往復時間**で頭打ちになる（常駐セッション実測 約 20ms、mobilecli 経由は約 70ms）
 - 長押しで先出しした `down` は、実際に 400ms 押されるまで次の `move`/`up` を出さない
   （すぐ出すと「速いタップ」になり、長押しも長押し→ドラッグも成立しない）
-- Android 側は `pointerDown` / `pointerUp` の座標を**直前の `pointerMove`** から取るので、
-  位置決めの `pointerMove` を必ず前に置く
 - `dispose()` は押しっぱなしの指を離す（残すと次のタッチが別のジェスチャーになる）
 
 ### 既存メッセージとの対応

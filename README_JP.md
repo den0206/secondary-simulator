@@ -139,6 +139,8 @@ secondary-simulator/
 │   │   ├── InputBackend.ts            # 入力バックエンドの抽象
 │   │   ├── SimhidSidecar.ts           # simhid-server プロセス管理（JSON Lines）
 │   │   ├── HidSidecarBackend.ts       # HID 直接注入バックエンド
+│   │   ├── AndroidBackend.ts          # Android タッチ（押しているあいだ最新点を送る）
+│   │   ├── AdbTouch.ts                # motionevent 用の常駐 `adb shell`
 │   │   ├── WdaBackend.ts              # WDA/mobilecli フォールバック
 │   │   └── SimulatorInputController.ts # バックエンド選択と降格
 │   ├── ui/
@@ -185,13 +187,14 @@ secondary-simulator/
 ### デバイス操作
 
 - **HID 直接注入**: iOS Simulator では `native/simhid-server` が HID イベントを注入（最低遅延）
-- **WDA フォールバック**: Android・実機、および HID 初期化/実行に失敗した場合は `mobilecli` 経由
+- **Android タッチ**: `AdbTouch` が常駐 `adb shell` へ `motionevent` を書く。adb が無ければ mobilecli へ落ちる
+- **WDA フォールバック**: iOS 実機、HID 初期化/実行の失敗、Android のキー・ボタンは `mobilecli` 経由
 - **座標変換**: 正規化座標（0-1）でやり取りし、ピクセル変換は各バックエンドの内側で行う
 
 ### メモリ管理
 
 - **リソースクリーンアップ**: ストリーム、ImageBitmap、イベントリスナー、タイマーの適切な解放
-- **プロセス管理**: mobilecli サーバーとサイドカーの起動・再接続・破棄を一元管理
+- **プロセス管理**: mobilecli サーバー、サイドカー、Android の `adb shell` の起動・再接続・破棄を一元管理
 
 ## 🐛 トラブルシューティング
 
