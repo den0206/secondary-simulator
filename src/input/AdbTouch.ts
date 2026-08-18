@@ -97,6 +97,7 @@ export class AdbTouch {
 
   /** 未起動なら `adb -s <serial> shell` を立ち上げる。多重呼び出しは 1 本に畳む。 */
   private start(): Promise<boolean> {
+    if (this.dead) return Promise.resolve(false);
     if (this.proc) return Promise.resolve(true);
     if (!this.starting) {
       this.starting = this.spawnShell().finally(() => {
@@ -120,10 +121,16 @@ export class AdbTouch {
       this.kill(`adb のシリアル解決に失敗: ${(error as Error).message}`);
       return false;
     }
+    // resolveSerial の待ち中に dispose されると、このあとの spawn が孤児になる
+    if (this.dead) return false;
 
     const proc = spawn(adb, ['-s', serial, 'shell'], {
       stdio: ['pipe', 'pipe', 'ignore'],
     });
+    if (this.dead) {
+      proc.kill();
+      return false;
+    }
     proc.stdout?.setEncoding('utf8');
     proc.stdout?.on('data', (chunk: string) => this.onStdout(chunk));
     proc.on('error', () => this.kill('adb shell の起動に失敗'));

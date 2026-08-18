@@ -188,13 +188,19 @@ export class AndroidBackend implements InputBackend {
   /**
    * 送信待ちが無くなるまで送り続ける。同時に走るのは常に 1 本だけで、
    * 実行中に届いた move は「最新の 1 点」に畳まれる（adb の往復に合わせて自動的に間引かれる）。
+   *
+   * 実行中の Promise をそのまま返すと、ループが空で抜けた直後に `needUp` が
+   * 立った場合に UP が落ちる。終わったあともフラグが残っていればもう 1 周する。
    */
-  private pump(): Promise<void> {
-    if (this.pumping) return this.pumping;
+  private async pump(): Promise<void> {
+    if (this.pumping) await this.pumping;
+    if (this.pumping) return this.pump();
+    if (!this.needDown && !this.needMove && !this.needUp) return;
     this.pumping = this.runPump().finally(() => {
       this.pumping = null;
     });
-    return this.pumping;
+    await this.pumping;
+    if (this.needDown || this.needMove || this.needUp) return this.pump();
   }
 
   /** {@link pump} の本体。送信待ちが無くなるまで回る。 */
