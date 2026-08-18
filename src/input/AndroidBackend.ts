@@ -1,8 +1,12 @@
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
+import {AdbTouch} from './AdbTouch';
 import {InputBackend} from './InputBackend';
 
 type Pt = {x: number; y: number};
+
+/** 端末へ送る 1 イベント。座標はデバイスピクセル。 */
+type Touch = {t: 'DOWN' | 'MOVE' | 'UP'; x: number; y: number};
 
 type GestureAction = {
   type: string;
@@ -15,10 +19,10 @@ type GestureAction = {
 /**
  * Android（adb）向けタッチバックエンド。
  *
- * mobilecli の `device.io.gesture` は Android では **1 アクション = adb 1 回**
- * （`adb shell input touchscreen motionevent down|move|up X Y`）に展開され、
- * 1 回あたり 100ms 前後かかる。**`duration` は Android では完全に無視される**
- * （mobilecli `devices/android.go` の `Gesture`。`pause` だけがホスト側の sleep になる）。
+ * mobilecli の `device.io.gesture` は Android では **1 アクション = adb 1 起動**
+ * （`adb shell input touchscreen motionevent down|move|up X Y`）に展開される。
+ * **`duration` は Android では完全に無視される**（mobilecli `devices/android.go` の
+ * `Gesture`。`pause` だけがホスト側の sleep になる）。
  *
  * そのため `WdaBackend` のように「touchUp まで軌跡を貯めて一括送信」すると:
  *
@@ -39,6 +43,11 @@ type GestureAction = {
  *   速度が正しく伝わり、フリックが効く
  * - 動かないまま {@link LONG_PRESS_MS} 押し続けたら `down` を先出しして「押しっぱなし」に
  *   する（長押し、および長押し→ドラッグのため）
+ *
+ * それでも mobilecli 経由では **1 イベント = adb 1 起動**（実測 約 70ms ＝ 14Hz）で、
+ * ドラッグはまだ粗い。{@link AdbTouch} が使えるときは `adb shell` の常駐セッションへ
+ * 直接流し（同 約 20ms ＝ 45Hz）、`UP` にも座標を持たせて「離す直前に止まっている時間」
+ * を無くす。使えなければ mobilecli 経路へそのまま落ちる。
  *
  * 座標は正規化 [0,1] で受け、ピクセル変換はこの中だけで行う。
  */
@@ -83,7 +92,9 @@ export class AndroidBackend implements InputBackend {
     private readonly deviceId: string,
     private readonly getScreenSize: () => {width: number; height: number} | null,
     /** キー・テキスト・ハードウェアボタンの委譲先（mobilecli 経路は共通）。 */
-    private readonly keys: InputBackend
+    private readonly keys: InputBackend,
+    /** 速い送信口。null か死んでいたら mobilecli 経路で送る。 */
+    private readonly adb: AdbTouch | null = null
   ) {}
 
   // ---- 1本指タッチ ---------------------------------------------------------
@@ -203,20 +214,20 @@ export class AndroidBackend implements InputBackend {
         this.holdSatisfied = true;
       }
 
-      let actions: GestureAction[];
+      let touches: Touch[];
       try {
-        actions = this.takeActions();
+        touches = this.takeTouches();
       } catch (error) {
         // 画面サイズ未取得など。送りようがないので畳んで抜ける
         this.logError(error);
         this.resetPending();
         return;
       }
-      if (actions.length === 0) return;
+      if (touches.length === 0) return;
 
-      const hadDown = actions.some((a) => a.type === 'pointerDown');
+      const hadDown = touches.some((t) => t.t === 'DOWN');
       try {
-        await this.client.gesture(this.deviceId, actions);
+        await this.send(touches);
       } catch (error) {
         // 失敗しても up は送り切る（指が押しっぱなしで残る方が害が大きい）
         this.logError(error);
@@ -225,20 +236,14 @@ export class AndroidBackend implements InputBackend {
     }
   }
 
-  /**
-   * 今すぐ送るぶんのアクションを取り出す（取り出したフラグは落とす）。
-   *
-   * Android 側は `pointerDown` / `pointerUp` の座標を**直前の `pointerMove`** から取る
-   * （mobilecli `devices/android.go`）ので、位置決めの `pointerMove` を必ず先に置く。
-   */
-  private takeActions(): GestureAction[] {
-    const out: GestureAction[] = [];
-    let downPx: {x: number; y: number} | null = null;
+  /** 今すぐ送るぶんを取り出す（取り出したフラグは落とす）。 */
+  private takeTouches(): Touch[] {
+    const out: Touch[] = [];
+    let downPx: Pt | null = null;
 
     if (this.needDown) {
       downPx = this.px(this.start);
-      out.push({type: 'pointerMove', duration: 0, x: downPx.x, y: downPx.y});
-      out.push({type: 'pointerDown', button: 0});
+      out.push({t: 'DOWN', ...downPx});
       this.needDown = false;
       this.downSent = true;
     }
@@ -251,17 +256,49 @@ export class AndroidBackend implements InputBackend {
         return out;
       }
       const p = this.px(this.last);
-      // down と同じ点なら adb 1 回ぶん無駄なので置かない
-      if (!downPx || downPx.x !== p.x || downPx.y !== p.y) {
-        out.push({type: 'pointerMove', duration: 0, x: p.x, y: p.y});
-      }
+      const up = this.needUp;
       this.needMove = false;
-    }
-
-    if (this.needUp) {
-      out.push({type: 'pointerUp', button: 0});
       this.needUp = false;
-      this.downSent = false;
+      if (up) {
+        // UP 自身が座標を運ぶ。同じ点の MOVE を挟むと「離す直前に止まっていた」
+        // ことになり VelocityTracker の速度が落ちる（＝フリックが弱くなる）
+        out.push({t: 'UP', ...p});
+        this.downSent = false;
+      } else if (!downPx || downPx.x !== p.x || downPx.y !== p.y) {
+        // down と同じ点なら 1 イベントぶん無駄なので置かない
+        out.push({t: 'MOVE', ...p});
+      }
+    }
+    return out;
+  }
+
+  /** 速い adb 経路で送り、使えなければ mobilecli 経路へ落とす。 */
+  private async send(touches: Touch[]): Promise<void> {
+    if (this.adb && !this.adb.isDead) {
+      const sent = await this.adb.send(
+        touches.map((t) => `input touchscreen motionevent ${t.t} ${t.x} ${t.y}`)
+      );
+      if (sent) return;
+    }
+    await this.client.gesture(this.deviceId, AndroidBackend.toActions(touches));
+  }
+
+  /**
+   * mobilecli の gesture アクションへ直す。
+   *
+   * mobilecli は `pointerDown` / `pointerUp` の座標を**直前の `pointerMove`** からしか
+   * 取れない（`devices/android.go`）ので、位置決めの `pointerMove` を必ず先に置く。
+   */
+  private static toActions(touches: Touch[]): GestureAction[] {
+    const out: GestureAction[] = [];
+    let at: Pt | null = null;
+    for (const t of touches) {
+      if (!at || at.x !== t.x || at.y !== t.y) {
+        out.push({type: 'pointerMove', duration: 0, x: t.x, y: t.y});
+        at = {x: t.x, y: t.y};
+      }
+      if (t.t === 'DOWN') out.push({type: 'pointerDown', button: 0});
+      if (t.t === 'UP') out.push({type: 'pointerUp', button: 0});
     }
     return out;
   }
@@ -368,19 +405,20 @@ export class AndroidBackend implements InputBackend {
     const stuck = this.downSent;
     const last = this.last;
     this.resetPending();
-    if (!stuck) return;
+    const closeAdb = () => this.adb?.dispose();
+    if (!stuck) {
+      closeAdb();
+      return;
+    }
     // 押しっぱなしの指を残さない（残ると次のタッチが別のジェスチャーになる）。
-    // 切断中なので結果は待たない。
+    // 切断中なので結果は待たないが、送り終えるまで adb は閉じない。
     try {
-      const p = this.px(last);
-      void this.client
-        .gesture(this.deviceId, [
-          {type: 'pointerMove', duration: 0, x: p.x, y: p.y},
-          {type: 'pointerUp', button: 0},
-        ])
-        .catch(() => {});
+      void this.send([{t: 'UP', ...this.px(last)}])
+        .catch(() => {})
+        .finally(closeAdb);
     } catch {
       // 画面サイズ未取得なら送りようがない
+      closeAdb();
     }
   }
 }

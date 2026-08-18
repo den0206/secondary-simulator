@@ -237,6 +237,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const pids = [
       this.mobileCliServer.getPid(),
       this.inputController?.sidecarPid,
+      this.inputController?.adbTouchPid,
     ].filter((p): p is number => typeof p === 'number');
     try {
       const stats = await collectResourceStats(this.extensionUri.fsPath, pids);

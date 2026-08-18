@@ -57,7 +57,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `device.io.gesture` は Android では 1 アクション = `adb shell input ... motionevent`
   1 回に展開され、**`duration` は無視される**。貯めて一括送信すると数十秒かけて再生され
   フリックも効かないので、押しているあいだ「最新の 1 点だけ」を送り続ける
-  （前の adb が返るまで次を出さない）。キー・テキスト・ボタンは `WdaBackend` へ委譲する。
+  （前の adb が返るまで次を出さない）。さらに `AdbTouch` が `adb shell` を 1 本
+  張りっぱなしにして motionevent を流し込む（Pixel 9 エミュレータ実測で 1 イベント
+  約 42ms → 約 20ms。`DOWN`/`UP` が座標を引数に取れるので位置決めの `MOVE` も要らず、
+  **離す直前に「止まっている 1 往復」が消えてフリックが効く**）。adb が見つからない・
+  シリアルを解決できないときは黙って mobilecli 経路へ落ちる。
+  キー・テキスト・ボタンは `WdaBackend` へ委譲する。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
@@ -79,8 +84,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 - **座標は常に正規化 [0,1]** でやり取りする。ピクセル変換は各バックエンドの内側。
 - **私有 API は `native/` の中だけ**。TypeScript 側から直接触らない。
-- **HID は iOS Simulator 限定**。iOS 実機は `WdaBackend`、Android は `AndroidBackend`
-  （どちらも mobilecli 経由）。
+- **HID は iOS Simulator 限定**。iOS 実機は `WdaBackend`（mobilecli 経由）、
+  Android は `AndroidBackend`（タッチだけ `AdbTouch` の adb 直叩き、それ以外は mobilecli）。
+  **adb を直接叩くのは `AdbTouch` の中だけ**。他から `adb` を生やさない。
 - 入力経路を増やすときは `InputBackend` を実装する。webview から個別経路を生やさない。
 - `native/simhid-server` は macOS 専用。ビルドは `scripts/build-native.sh` が
   非 macOS を自動スキップするので、拡張は WDA だけでも動く状態を保つ。
@@ -103,7 +109,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   持つので、判定のために `getConfiguration` を呼ばない。
 - **確保したものは必ず捨てる**。`Disposable` はフィールドに保持して `dispose()` で
   外す（`resolveWebviewView` は再呼び出しされるので冒頭で前回分を捨てる）。
-  子プロセス（mobilecli / simhid-server）・タイマー・`ImageBitmap` も同じ。
+  子プロセス（mobilecli / simhid-server / `AdbTouch` の adb shell）・タイマー・
+  `ImageBitmap` も同じ。
 - **計測できる状態を保つ**。子プロセスを増やしたら pid を公開し、
   `SimulatorWebviewProvider.reportStats()` の集計対象に加える。
 

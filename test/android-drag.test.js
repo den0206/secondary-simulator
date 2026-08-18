@@ -51,15 +51,17 @@ function fakeClient(latencyMs = 20) {
   };
 }
 
+const keysStub = {
+  kind: 'wda',
+  async button() {},
+  async key() {},
+  async modifier() {},
+  async text() {},
+  dispose() {},
+};
+
 const makeBackend = (client, screen = SCREEN) =>
-  new AndroidBackend(client, 'emulator-5554', () => screen, {
-    kind: 'wda',
-    async button() {},
-    async key() {},
-    async modifier() {},
-    async text() {},
-    dispose() {},
-  });
+  new AndroidBackend(client, 'emulator-5554', () => screen, keysStub);
 
 (async () => {
   console.log('\n1) ドラッグは指を離す前に送られ、アクション数が点数で爆発しない');
@@ -321,6 +323,84 @@ const makeBackend = (client, screen = SCREEN) =>
       !(ios.primary instanceof AndroidBackend)
     );
     ios.dispose();
+  }
+
+  console.log('\n7) adb 常駐セッション（速い送信口）');
+  {
+    // adb を 1 本張りっぱなしにすると 1 イベント約 20ms。mobilecli の
+    // 「1 アクション = adb 1 起動」は約 42ms（Pixel 9 エミュレータ実測）。
+    const fakeAdb = (alive = true) => ({
+      isDead: false,
+      lines: [],
+      disposed: false,
+      async send(commands) {
+        if (!alive) return false;
+        this.lines.push(...commands);
+        await sleep(20);
+        return true;
+      },
+      dispose() {
+        this.disposed = true;
+      },
+    });
+
+    const client = fakeClient(5);
+    const adb = fakeAdb();
+    const b = new AndroidBackend(client, 'dev', () => SCREEN, keysStub, adb);
+    await b.touchDown(0.5, 0.9);
+    for (let i = 1; i <= 10; i++) {
+      await b.touchMove(0.5, 0.9 - i * 0.02);
+      await sleep(16);
+    }
+    await b.touchUp(0.5, 0.68); // 最後の move より少し先で離す（実際の指と同じ）
+    await sleep(80);
+
+    check(
+      'ドラッグは adb 経路だけで送られる（mobilecli を通らない）',
+      adb.lines.length > 0 && client.calls.length === 0,
+      JSON.stringify({adb: adb.lines.length, mobilecli: client.calls.length})
+    );
+    check(
+      'DOWN は 1 コマンド（位置決めの MOVE が要らない）',
+      adb.lines[0] ===
+        `input touchscreen motionevent DOWN ${Math.round(0.5 * SCREEN.width)} ${Math.round(0.9 * SCREEN.height)}`,
+      adb.lines[0]
+    );
+
+    // ここが「フリックが効かない」の芯。同じ座標の MOVE を挟んでから UP にすると、
+    // 端末から見て「離す直前に 1 往復ぶん止まっていた」ことになり
+    // VelocityTracker の速度が落ちる。UP 自身に座標を持たせて挟まない。
+    const upY = Math.round(0.68 * SCREEN.height);
+    check(
+      'UP が座標を運ぶ（指を離した位置）',
+      adb.lines[adb.lines.length - 1] ===
+        `input touchscreen motionevent UP ${Math.round(0.5 * SCREEN.width)} ${upY}`,
+      adb.lines[adb.lines.length - 1]
+    );
+    check(
+      'UP の直前に同じ座標の MOVE を挟まない（離す直前に止まらない）',
+      !adb.lines[adb.lines.length - 2].endsWith(`MOVE ${Math.round(0.5 * SCREEN.width)} ${upY}`),
+      adb.lines[adb.lines.length - 2]
+    );
+    b.dispose();
+    check('dispose で adb 常駐セッションも閉じる', adb.disposed);
+
+    // 使えない adb は黙って mobilecli 経路へ落ちる
+    const c2 = fakeClient(5);
+    const dead = fakeAdb(false);
+    const b2 = new AndroidBackend(c2, 'dev', () => SCREEN, keysStub, dead);
+    await b2.touchDown(0.5, 0.9);
+    await b2.touchMove(0.5, 0.5);
+    await sleep(60);
+    await b2.touchUp(0.5, 0.5);
+    await sleep(60);
+    check(
+      'adb が使えなければ mobilecli 経路へ落ちる',
+      c2.events().some((e) => e.type === 'pointerDown') &&
+        c2.events().some((e) => e.type === 'pointerUp'),
+      JSON.stringify(c2.events().map((e) => e.type))
+    );
+    b2.dispose();
   }
 
   assert.strictEqual(failures, 0, `${failures} 件のテストが失敗`);
