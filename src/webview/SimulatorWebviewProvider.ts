@@ -1139,33 +1139,46 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 録画を止めて書き出す。停止は**失敗しても状態を戻す** — 戻さないと
-   * 「録画中」のまま二度と止められなくなる。
+   * 録画を止めて書き出す。mobilecli 側の停止が成功してからだけ
+   * `recording` と UI を戻す — 先に戻すと「止まったように見えるが
+   * 端末では録り続けている」状態になる。
    */
   private async stopRecording(): Promise<void> {
     const session = this.recording;
-    this.clearRecordingTimer();
     if (!session) return;
-    this.recording = null;
-    this.postMessage({type: 'recording', active: false});
 
-    if (!this.mobileCliClient) return;
+    if (!this.mobileCliClient) {
+      this.clearRecordingTimer();
+      this.recording = null;
+      this.postMessage({type: 'recording', active: false});
+      return;
+    }
     // 引き上げと変換で数秒かかる。その間に始め直させない
     this.recordingBusy = true;
     try {
       await this.mobileCliClient.stopScreenRecord(session.deviceId);
     } catch (error) {
       Logger.error('録画の停止に失敗', error as Error);
-      void vscode.window.showErrorMessage(
+      const retry = vscode.l10n.t('Retry');
+      const answer = await vscode.window.showErrorMessage(
         vscode.l10n.t(
           'Secondary Simulator: Could not stop the recording — {0}',
           (error as Error).message
-        )
+        ),
+        retry
       );
+      if (answer === retry) {
+        this.recordingBusy = false;
+        await this.stopRecording();
+      }
       return;
     } finally {
       this.recordingBusy = false;
     }
+
+    this.clearRecordingTimer();
+    this.recording = null;
+    this.postMessage({type: 'recording', active: false});
 
     Logger.info(`録画を保存: ${session.target.fsPath}`);
     const openLabel = vscode.l10n.t('Open');
