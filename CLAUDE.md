@@ -79,10 +79,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   一覧は iOS / Android で分ける。停止中を選んだら `bootDevice` で起動確認する
   （コマンドパレット経由と同じ）。エラー時はオーバーレイに［再試行］［ログを見る］を出す。
   `secondarySimulator.showDeviceFrame` / `showResourceStats` で筐体とリソース数値の
-  表示を切り替えられる（収集は続ける）。
+  表示を切り替えられる（収集は続ける）。スクリーンショット保存・録画の開始/停止は
+  webview 内の Web Audio で短い効果音を鳴らす。
 - **デバイス操作（mobilecli）**: 録画は `device.screenrecord` / `.stop`。保存先パスはユーザーが選び、拡張は一時ファイルを
-  持たない。10 分・切断・破棄で必ず止める。停止に失敗したら UI は録画中のまま残し、
-  通知から再試行できる。
+  持たない。10 分・切断・破棄で必ず止める。**サイドバー非表示でも止める**（止め忘れ防止）。
+  停止に失敗したら UI は録画中のまま残し、通知から再試行できる。拡張の `dispose` は
+  録画停止を待ってから mobilecli を止める。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
   フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
