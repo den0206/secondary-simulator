@@ -54,6 +54,67 @@ function applyStaticStrings() {
   }
 }
 
+// ---- UI サウンド（Web Audio で合成。外部ファイルは CSP 上使わない）----------------
+
+let uiAudioCtx = null;
+
+function uiAudioContext() {
+  if (!uiAudioCtx && typeof AudioContext !== 'undefined') {
+    uiAudioCtx = new AudioContext();
+  }
+  return uiAudioCtx;
+}
+
+/**
+ * クリック直後に呼ぶ。保存先ダイアログなど非同期のあとで鳴らす音は、
+ * ここで AudioContext を起こしておかないと Chromium がブロックする。
+ */
+function unlockUiAudio() {
+  try {
+    const ctx = uiAudioContext();
+    if (ctx && ctx.state === 'suspended') void ctx.resume();
+  } catch {
+    // 音は補助
+  }
+}
+
+function playTone(freq, start, duration, peak = 0.12) {
+  const ctx = uiAudioContext();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, start);
+  gain.gain.setValueAtTime(0, start);
+  gain.gain.linearRampToValueAtTime(peak, start + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+/** @param {'shutter' | 'recordStart' | 'recordStop'} name */
+function playUiSound(name) {
+  try {
+    const ctx = uiAudioContext();
+    if (!ctx) return;
+    // unlockUiAudio で起こしていれば suspended ではない。念のため。
+    if (ctx.state === 'suspended') void ctx.resume();
+    const t0 = ctx.currentTime;
+    if (name === 'shutter') {
+      playTone(1400, t0, 0.035, 0.14);
+      playTone(900, t0 + 0.028, 0.05, 0.07);
+    } else {
+      // 録画の開始/停止: 短いピコン（上昇 2 音）
+      playTone(740, t0, 0.07, 0.11);
+      playTone(988, t0 + 0.055, 0.09, 0.09);
+    }
+  } catch {
+    // 音は補助。失敗しても操作は続ける
+  }
+}
+
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 // 表示要素は常に <img>。座標の正規化とオーバーレイのサイズ合わせが参照する。
@@ -359,8 +420,14 @@ document
   .addEventListener('click', () => post('refresh'));
 document
   .getElementById('btn-shot')
-  .addEventListener('click', () => post('screenshot'));
-btnRecord.addEventListener('click', () => post('record'));
+  .addEventListener('click', () => {
+    unlockUiAudio();
+    post('screenshot');
+  });
+btnRecord.addEventListener('click', () => {
+  unlockUiAudio();
+  post('record');
+});
 
 // エラー表示からの復帰。オーバーレイの中にだけ出る。
 document.getElementById('btn-retry').addEventListener('click', () => post('retry'));
@@ -588,9 +655,17 @@ window.addEventListener('message', (event) => {
       document.body.classList.toggle('hide-stats', message.showResourceStats === false);
       break;
 
-    case 'recording':
+    case 'recording': {
+      const wasRecording = recording;
       recording = message.active === true;
       syncRecordButton();
+      if (recording && !wasRecording) playUiSound('recordStart');
+      else if (!recording && wasRecording) playUiSound('recordStop');
+      break;
+    }
+
+    case 'sound':
+      playUiSound(message.sound);
       break;
 
     // 未接続で起動中デバイスを探している間。やめたときは自分が出した文言だけ戻す
