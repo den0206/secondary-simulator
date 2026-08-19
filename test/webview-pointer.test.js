@@ -622,6 +622,8 @@ listeners['window:message']({data: {type: 'recording', active: false}});
 check('停止で戻る', !els['btn-record'].classList.contains('recording'));
 check('開始のラベルに戻る', els['btn-record'].textContent === STRINGS.recordStart,
   els['btn-record'].textContent);
+// 効果音は Web Audio。Node では AudioContext が無くても落ちない
+listeners['window:message']({data: {type: 'sound', sound: 'shutter'}});
 
 console.log('\n21) エラーからの復帰導線');
 listeners['window:message']({data: {type: 'error', text: 'mobilecli を起動できません'}});

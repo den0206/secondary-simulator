@@ -1242,6 +1242,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     Logger.info(`スクリーンショットを保存: ${target.fsPath}`);
+    this.postMessage({type: 'sound', sound: 'shutter'});
     const openLabel = vscode.l10n.t('Open');
     const open = await vscode.window.showInformationMessage(
       vscode.l10n.t('Screenshot saved: {0}', target.fsPath),
