@@ -257,25 +257,51 @@ function modifiersOf(e) {
   return mods;
 }
 
+// 特殊キー（1 文字にならないもの）→ 拡張ホストが解釈する名前。
+// 矢印は HID usage が元からあるのに、ここに無かったため送られていなかった
+// （`e.key.length === 1` に一致しない）。
+const SPECIAL_KEYS = {
+  Backspace: 'delete',
+  Enter: 'return',
+  Escape: 'escape',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+};
+
+// テキストを受ける要素にフォーカスがあるあいだはデバイスへ送らない。
+// デバイス選択の <select> を開いて機種名を打つ（ブラウザ標準の type-ahead）と、
+// その文字までデバイスに入っていた。
+const TEXT_UI = ['SELECT', 'INPUT', 'TEXTAREA', 'OPTION'];
+
+/**
+ * このキーをデバイスへ送らずに UI へ譲るか。
+ *
+ * **ボタンは全部は譲らない。** クリックした操作ボタン（Home / Rec など）は
+ * フォーカスを保つので、全部譲ると「Home を押したあと文字が打てない」になる。
+ * ボタンを起動するキー（Enter / Space）だけ譲れば足りる。
+ */
+function isEditingUi(target, key) {
+  if (!target || typeof target.tagName !== 'string') return false;
+  if (TEXT_UI.includes(target.tagName)) return true;
+  return target.tagName === 'BUTTON' && (key === 'Enter' || key === ' ');
+}
+
 document.addEventListener('keydown', (e) => {
   // デバイス未選択（オーバーレイ表示中）ならキー入力を送らない
   if (!overlay.classList.contains('hidden')) return;
+  if (isEditingUi(e.target, e.key)) return;
   if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
+
+  // Cmd/Ctrl+V は paste イベントに任せる（1 文字ずつ送らない）
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) return;
 
   const modifiers = modifiersOf(e);
 
-  if (e.key === 'Backspace') {
-    post('keypress', {key: 'delete', special: true, modifiers});
-    e.preventDefault();
-    return;
-  }
-  if (e.key === 'Enter') {
-    post('keypress', {key: 'return', special: true, modifiers});
-    e.preventDefault();
-    return;
-  }
-  if (e.key === 'Escape') {
-    post('keypress', {key: 'escape', special: true, modifiers});
+  const special = SPECIAL_KEYS[e.key];
+  if (special) {
+    post('keypress', {key: special, special: true, modifiers});
     e.preventDefault();
     return;
   }
@@ -285,19 +311,44 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// 貼り付け。1 文字ずつのキー送出では URL の入力が現実的でないため、
+// まとめてホストへ渡す（ホスト側が経路に応じて HID / WDA へ流す）。
+// 長さの上限はホストも持つが、巨大なテキストを postMessage に載せない。
+const MAX_PASTE_CHARS = 4096;
+document.addEventListener('paste', (e) => {
+  if (!overlay.classList.contains('hidden')) return;
+  if (isEditingUi(e.target, 'v')) return;
+  const text = e.clipboardData && e.clipboardData.getData('text');
+  if (!text) return;
+  post('paste', {text: text.slice(0, MAX_PASTE_CHARS)});
+  e.preventDefault();
+});
+
 // ---- デバイス選択・ボタン ----------------------------------------------------
 
 const btnBack = document.getElementById('btn-back');
-const platformById = new Map(); // deviceId -> 'ios' | 'android'
+const btnRotate = document.getElementById('btn-rotate');
+const btnRecord = document.getElementById('btn-record');
+// deviceId -> {platform, booted}。<option> を作り直しても引けるように持つ。
+const deviceById = new Map();
 
 // iOS に Back は存在しないので押せないようにする（未選択時も同様）
 function syncBackButton() {
-  btnBack.disabled = platformById.get(deviceSelect.value) !== 'android';
+  const info = deviceById.get(deviceSelect.value);
+  btnBack.disabled = !info || info.platform !== 'android';
 }
 
 deviceSelect.addEventListener('change', () => {
   syncBackButton();
-  vscode.postMessage({type: 'deviceChange', deviceId: deviceSelect.value});
+  const id = deviceSelect.value;
+  const info = deviceById.get(id);
+  // 停止中を選んだら起動を尋ねる。以前は「起動していません」で終わっていて、
+  // コマンドパレット経由（起動できる）と結果が違っていた。
+  if (id && info && !info.booted) {
+    vscode.postMessage({type: 'bootDevice', deviceId: id});
+    return;
+  }
+  vscode.postMessage({type: 'deviceChange', deviceId: id});
 });
 document.getElementById('btn-home').addEventListener('click', () => post('home'));
 btnBack.addEventListener('click', () => post('back'));
@@ -310,6 +361,20 @@ document
 document
   .getElementById('btn-shot')
   .addEventListener('click', () => post('screenshot'));
+btnRotate.addEventListener('click', () => post('rotate'));
+btnRecord.addEventListener('click', () => post('record'));
+
+// エラー表示からの復帰。オーバーレイの中にだけ出る。
+document.getElementById('btn-retry').addEventListener('click', () => post('retry'));
+document.getElementById('btn-logs').addEventListener('click', () => post('showLogs'));
+
+// 録画中かどうか。ホストが持つ状態を写すだけで、ここでは決めない。
+let recording = false;
+function syncRecordButton() {
+  btnRecord.classList.toggle('recording', recording);
+  btnRecord.textContent = recording ? t('recordStop') : t('recordStart');
+}
+syncRecordButton();
 
 // タップのリップルとドラッグ軌跡の表示切替。状態は webview の state に残す。
 const btnTrail = document.getElementById('btn-trail');
@@ -415,15 +480,32 @@ img.addEventListener('error', () => {
 
 let overlayVisible = null; // 直近に適用した状態。frame 毎の DOM 書き換えを避ける
 let overlayText = null;
+let overlayActionsShown = null;
+const overlayActions = document.getElementById('overlay-actions');
 
-function setOverlayVisible(visible, text = t('selectToStart'), busy = false) {
+/**
+ * @param actions エラーのときだけ true。［再試行］［ログを見る］を出す。
+ *   待機中（Searching / Connecting）に出すと、押しても同じ待ちに戻るだけなので出さない。
+ */
+function setOverlayVisible(
+  visible,
+  text = t('selectToStart'),
+  busy = false,
+  actions = false
+) {
   if (!overlay) return;
   // 'frame' は毎秒 30 回届く（load も同じ回数）。状態が同じなら DOM を触らない。
-  if (overlayVisible === visible && (!visible || overlayText === text)) {
+  if (
+    overlayVisible === visible &&
+    overlayActionsShown === actions &&
+    (!visible || overlayText === text)
+  ) {
     return;
   }
   overlayVisible = visible;
   overlayText = text;
+  overlayActionsShown = actions;
+  overlayActions.classList.toggle('shown', visible && actions);
   // 画面が出ている＝接続中。オーバーレイの表示状態がそのまま接続状態になる。
   lamp.classList.toggle('on', !visible);
   lamp.title = visible ? t('lampDisconnected') : t('lampConnected');
@@ -438,6 +520,7 @@ function setOverlayVisible(visible, text = t('selectToStart'), busy = false) {
 function cleanup() {
   overlayVisible = null;
   overlayText = null;
+  overlayActionsShown = null;
   clearTrail();
   pointers.clear();
   order.length = 0;
@@ -458,16 +541,35 @@ window.addEventListener('message', (event) => {
       placeholder.value = '';
       placeholder.textContent = t('selectDevice');
       deviceSelect.appendChild(placeholder);
-      platformById.clear();
+      deviceById.clear();
+
+      // プラットフォームごとに束ねる。混在した一覧から目的の端末を探しにくかった。
+      // 台数 0 の <optgroup> は作らない。
+      const groups = new Map(); // platform -> <optgroup>
+      const groupFor = (platform) => {
+        let g = groups.get(platform);
+        if (g) return g;
+        g = document.createElement('optgroup');
+        g.label = platform === 'ios' ? t('groupIos') : t('groupAndroid');
+        groups.set(platform, g);
+        deviceSelect.appendChild(g);
+        return g;
+      };
+
       message.devices.forEach((device) => {
-        platformById.set(device.id, device.platform);
+        const booted = device.state === 'Booted';
+        deviceById.set(device.id, {platform: device.platform, booted});
         const option = document.createElement('option');
         option.value = device.id;
-        option.textContent = `${device.name} (${device.state})`;
-        deviceSelect.appendChild(option);
+        // 起動中は状態を書かない（大半が起動中で、毎行に付くと名前が読みにくい）
+        option.textContent = booted
+          ? device.name
+          : `${device.name} — ${t('stopped')}`;
+        groupFor(device.platform).appendChild(option);
       });
+
       // 再取得しても選択中のデバイスは維持する。消えていたらホストのキャプチャも止める。
-      const next = platformById.has(selected) ? selected : '';
+      const next = deviceById.has(selected) ? selected : '';
       deviceSelect.value = next;
       syncBackButton();
       if (selected && next === '') {
@@ -477,6 +579,22 @@ window.addEventListener('message', (event) => {
       }
       break;
     }
+
+    // 見た目の好み（設定が持つもの）。ホストから来た値をそのまま反映する。
+    case 'settings':
+      document.body.classList.toggle('no-frame', message.showDeviceFrame === false);
+      document.body.classList.toggle('hide-stats', message.showResourceStats === false);
+      break;
+
+    // 画面の向き。ボタンの見た目と、筐体の縦横を合わせる。
+    case 'orientation':
+      document.body.classList.toggle('landscape', message.value === 'landscape');
+      break;
+
+    case 'recording':
+      recording = message.active === true;
+      syncRecordButton();
+      break;
 
     // 未接続で起動中デバイスを探している間。やめたときは自分が出した文言だけ戻す
     // （Disconnect やエラーの表示を上書きしないため）。
@@ -555,7 +673,8 @@ window.addEventListener('message', (event) => {
 
     case 'error':
       cleanup();
-      setOverlayVisible(true, message.text);
+      // 文言だけ出して終わりにしない。ここから再試行とログへ行ける。
+      setOverlayVisible(true, message.text, false, true);
       break;
 
     case 'disconnected':

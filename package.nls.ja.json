@@ -4,7 +4,6 @@
   "viewsContainer.title": "Secondary Simulator",
   "view.devicePreview.name": "デバイスプレビュー",
   "configuration.title": "Secondary Simulator",
-
   "command.selectDevice.title": "デバイスを選択",
   "command.screenshot.title": "スクリーンショットを保存",
   "command.openUrl.title": "デバイスで URL を開く",
@@ -13,7 +12,6 @@
   "command.refresh.title": "デバイス一覧を更新",
   "command.showLogs.title": "ログを表示",
   "command.clearLogs.title": "ログを消去",
-
   "configuration.autoConnect.description": "起動中のデバイスへ自動で接続する。未接続のあいだは5秒ごとに探し、新しく起動したシミュレータにも繋ぐ。サイドバーの Auto ボタンと連動し、Disconnect を押すと OFF になる。",
   "configuration.directStream.description": "表示を webview 直結にする。フレームが拡張ホストを経由せず、Chromium がネイティブ復号する。iOS Simulator のサイドカー取り込みではサイドカーが 127.0.0.1 で直接配信し、それ以外は mobilecli の MJPEG を中継する。実験的。",
   "configuration.streamScale.description": "iOS: MJPEG の縮小率（1.0=原寸）。小さくすると帯域が下がる（WDA の mjpegScalingFactor を設定）。",
@@ -34,5 +32,9 @@
   "configuration.logLevel.enum.error": "エラーのみ。",
   "configuration.logLevel.enum.warn": "エラーと警告。",
   "configuration.logLevel.enum.info": "通常の動作ログまで（既定）。",
-  "configuration.logLevel.enum.debug": "受信メッセージなども含む詳細ログ。調査時だけ使う。"
+  "configuration.logLevel.enum.debug": "受信メッセージなども含む詳細ログ。調査時だけ使う。",
+  "command.rotate.title": "画面を回転",
+  "command.record.title": "画面を録画",
+  "configuration.showDeviceFrame.description": "画面のまわりに端末の筐体を描く。サイドバーが狭いときは OFF にすると横幅をすべて使える。",
+  "configuration.showResourceStats.description": "フッターにメモリと拡張ディレクトリのサイズを出す。開発者向けの診断で、映像レートと入力経路は常に表示される。"
 }

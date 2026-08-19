@@ -9,7 +9,18 @@ export type ButtonType =
   | 'APP_SWITCH'
   | 'POWER'
   | 'VOLUME_UP'
-  | 'VOLUME_DOWN';
+  | 'VOLUME_DOWN'
+  | 'DPAD_UP'
+  | 'DPAD_DOWN'
+  | 'DPAD_LEFT'
+  | 'DPAD_RIGHT';
+
+/**
+ * 画面の向き。**mobilecli は小文字しか受けない** — バイナリ内の検証メッセージが
+ * `invalid orientation value '%s', must be 'portrait' or 'landscape'` なので、
+ * `PORTRAIT` などを送るとエラーになる。
+ */
+export type Orientation = 'portrait' | 'landscape';
 
 export interface DeviceDescriptor {
   id: string;
@@ -85,6 +96,62 @@ export class MobileCliClient {
   async boot(deviceId: string, timeoutMs = 120_000): Promise<void> {
     return this.jsonRpcClient.sendJsonRpcRequest(
       'device.boot',
+      {deviceId},
+      timeoutMs
+    );
+  }
+
+  /**
+   * 現在の画面の向きを取る。応答の形は版で変わるので生のまま返し、
+   * `decodeOrientation` に解釈させる（`decodeScreenshotResult` と同じ方針）。
+   */
+  async getOrientation(deviceId: string, timeoutMs = 15_000): Promise<unknown> {
+    return this.jsonRpcClient.sendJsonRpcRequest<unknown>(
+      'device.io.orientation.get',
+      {deviceId},
+      timeoutMs
+    );
+  }
+
+  /** 画面の向きを変える。`orientation` は小文字（{@link Orientation}）。 */
+  async setOrientation(
+    deviceId: string,
+    orientation: Orientation,
+    timeoutMs = 30_000
+  ): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest(
+      'device.io.orientation.set',
+      {deviceId, orientation},
+      timeoutMs
+    );
+  }
+
+  /**
+   * 画面録画を開始する。
+   *
+   * `output` は**ホスト側の保存先パス**で、mobilecli が自分で書く。
+   * 拡張が一時ファイルを抱えないので「永続ストレージを持たない」方針を崩さない
+   * （保存先はスクリーンショットと同じくユーザーが選ぶ）。
+   */
+  async startScreenRecord(
+    deviceId: string,
+    output: string,
+    timeoutMs = 30_000
+  ): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest(
+      'device.screenrecord',
+      {deviceId, output},
+      timeoutMs
+    );
+  }
+
+  /**
+   * 録画を止めて書き出させる。端末から引き上げて変換するぶん時間がかかる
+   * （バイナリに "Pulling recording from device..." がある）ので待ちを長く取る。
+   */
+  async stopScreenRecord(deviceId: string, timeoutMs = 180_000): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest(
+      'device.screenrecord.stop',
       {deviceId},
       timeoutMs
     );

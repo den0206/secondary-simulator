@@ -281,6 +281,16 @@ export class SimulatorInputController {
         return HidUsage.Enter;
       case 'escape':
         return HidUsage.Escape;
+      // 矢印キー。usage は元から InputBackend にあったが、ここに載っていないため
+      // webview から送っても届かなかった（`e.key.length === 1` にも一致しない）。
+      case 'up':
+        return HidUsage.ArrowUp;
+      case 'down':
+        return HidUsage.ArrowDown;
+      case 'left':
+        return HidUsage.ArrowLeft;
+      case 'right':
+        return HidUsage.ArrowRight;
       default:
         return undefined;
     }

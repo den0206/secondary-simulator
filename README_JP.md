@@ -27,6 +27,7 @@ Secondary Simulatorは、XcodeやAndroid Studioのシミュレータウィンド
 - **👆 インタラクティブ操作**: Pointer Events を生配信し、タップ・スワイプ・ドラッグ・ピンチをデバイス側で判定
 - **⚡ 低レイテンシ**: iOS Simulator では HID を直接注入（`native/simhid-server`）、失敗時は WDA へ自動降格
 - **🔄 統一API**: `mobilecli`（JSON-RPC 2.0）による一貫したデバイス制御
+- **🎬 記録**: スクリーンショットと画面録画を、指定した保存先へ直接書き出し
 - **💾 メモリ効率**: ストリーム・リスナー・タイマーのクリーンアップでメモリリークを防止
 
 ## 📋 要件
@@ -75,6 +76,8 @@ VSCodeの設定で以下のオプションを調整できます：
 - **`secondarySimulator.captureFps`**: サイドカー取り込みの通常時 fps（デフォルト: 30）。指を置いているあいだは最大 2 倍・60fps。変化のないフレームは送られない。
 - **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG 幅の上限 px（デフォルト: 640）。実際の幅はサイドバーの表示幅 × devicePixelRatio に追従する。
 - **`secondarySimulator.captureMode`**: `auto`（デフォルト）はディスプレイの変更通知が使えれば使い、駄目ならポーリング。`poll` はタイマ固定。私有 API なので、Xcode 更新で取り込みが不調なときは `poll` に固定する。
+- **`secondarySimulator.showDeviceFrame`**: 画面のまわりに端末の筐体を描く（デフォルト: true）。サイドバーが狭いときは OFF にすると横幅をすべて使える。
+- **`secondarySimulator.showResourceStats`**: フッターにメモリと拡張ディレクトリのサイズを出す（デフォルト: false）。開発者向けの診断で、映像レートと入力経路は常に出る。
 - **`secondarySimulator.keyInput`**: iOS Simulator へのキー入力経路。`hid`（デフォルト・高速）または `wda`（1文字あたり約 370ms）。HID のキーはハードウェアキーボード扱いになるためソフトウェアキーボードが出ない。サイドバーにソフトキーボードを映したいときは `wda`。タッチは常に HID。
 - **`secondarySimulator.logLevel`**: 出力チャンネル **Secondary Simulator** へ書くログの詳しさ。`off` / `error` / `warn` / `info`（デフォルト） / `debug`。VS Code は出力チャンネルの全文をメモリに保持し古い行を捨てられないため、調査時以外は `info` 以下にする。
 
@@ -93,10 +96,15 @@ VSCodeの設定で以下のオプションを調整できます：
    - **長押し**: 押下したまま静止でロングプレス
    - **Home**: プレビュー下のボタン
    - **Back**: Android のみ（iOS では無効）
+   - **Rotate**: 画面の縦横を切り替える
    - **Shot**: 接続中デバイスの画面を保存
+   - **Rec**: 画面を動画ファイルへ録画（もう一度押すと停止）
    - **Trail**: リップルとドラッグ軌跡の表示切替
    - **Auto**: 起動中デバイスへの自動接続の切替
-6. プレビューにフォーカスがあるあいだはキーボードで入力できます。`Cmd` / `Ctrl` / `Option` を伴うショートカット（`Cmd+A`・`Cmd+C` など）は修飾キー付きの組み合わせとして送られます（HID 経路のみ。WDA は修飾キーを扱えません）
+6. プレビューにフォーカスがあるあいだはキーボードで入力できます。矢印キーと、`Cmd` / `Ctrl` / `Option` を伴うショートカット（`Cmd+A`・`Cmd+C` など）は修飾キー付きの組み合わせとして送られます（HID 経路のみ。WDA は修飾キーを扱えません）。デバイス選択などのフォーム要素にフォーカスがあるあいだは送りません
+7. `Cmd+V` / `Ctrl+V` でクリップボードのテキストを 1 回でまとめてデバイスへ入力できます（1 文字ずつではありません）
+
+ドロップダウンから停止中のデバイスを選んだときも、コマンドパレットと同じように起動を尋ねます。
 
 ステータスバー（右下）に接続中のデバイスと入力経路（**HID** / **WDA**）が出ます。サイドバー下部にも同じラベルが出るので、HID から WDA へ無音で降格したことに気づけます。
 
@@ -109,6 +117,8 @@ VSCodeの設定で以下のオプションを調整できます：
 | --------------------- | ------------------------------------------------------------ |
 | `Select Device`       | 一覧から選んで接続する。停止中を選ぶと起動できる             |
 | `Save Screenshot`     | 接続中のデバイスの画面を保存する                             |
+| `Record Screen`       | 画面の録画を開始 / 停止する。10 分経過または切断でも必ず止まる |
+| `Rotate Screen`       | 接続中のデバイスの画面を縦横に切り替える                     |
 | `Open URL on Device`  | 接続中のデバイスでディープリンク / URL を開く                |
 | `Press Home`          | Home ボタン（`Cmd+Shift+H`）                                 |
 | `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
@@ -126,6 +136,7 @@ secondary-simulator/
 │   ├── extension.ts                    # 拡張機能のエントリーポイント
 │   ├── simulator/
 │   │   ├── types.ts                   # 型定義
+│   │   ├── Orientation.ts             # 画面の向きの解釈と録画ファイル名
 │   │   └── autoConnect.ts             # 自動接続する起動中デバイスの選択
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理

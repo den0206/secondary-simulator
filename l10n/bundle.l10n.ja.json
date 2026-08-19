@@ -9,14 +9,12 @@
   "Boot and connect": "起動して接続",
   "{0} is not running. Boot it?": "{0} は起動していません。起動しますか？",
   "Cancel": "キャンセル",
-
   "Fast mode (HID)": "高速モード (HID)",
   "Compatible mode (WDA)": "互換モード (WDA)",
   "Secondary Simulator: connecting to {0}": "Secondary Simulator: {0} へ接続中",
   "Secondary Simulator: connected to {0} ({1})": "Secondary Simulator: {0} に接続中（{1}）",
   "Touch and keys are injected directly over HID.": "タッチとキーを HID で直接注入している。",
   "Through mobilecli/WDA. HID is unavailable or was demoted.": "mobilecli/WDA 経由。HID が使えないか、降格した状態。",
-
   "Select Device…": "デバイスを選択…",
   "Refresh the device list": "デバイス一覧を再取得",
   "Connected": "接続中",
@@ -47,7 +45,6 @@
   "heap": "heap",
   "Child processes": "子プロセス",
   "Extension": "拡張",
-
   "Secondary Simulator: Could not initialize mobilecli.": "Secondary Simulator: mobilecli を初期化できませんでした。",
   "Secondary Simulator: Booting {0}…": "Secondary Simulator: {0} を起動しています…",
   "Secondary Simulator: Could not boot {0} — {1}": "Secondary Simulator: {0} を起動できませんでした — {1}",
@@ -60,5 +57,23 @@
   "Images": "画像",
   "Secondary Simulator: Could not save — {0}": "Secondary Simulator: 保存できませんでした — {0}",
   "Open": "開く",
-  "Screenshot saved: {0}": "スクリーンショットを保存しました: {0}"
+  "Screenshot saved: {0}": "スクリーンショットを保存しました: {0}",
+  "iOS": "iOS",
+  "Android": "Android",
+  "stopped": "停止中",
+  "Rotate": "回転",
+  "Rotate the device screen": "デバイスの画面を回転する",
+  "● Rec": "● 録画",
+  "■ Stop": "■ 停止",
+  "Record the screen to a video file": "画面を動画ファイルへ録画する",
+  "Retry": "再試行",
+  "Show Logs": "ログを見る",
+  "Secondary Simulator: Connect to a device before rotating the screen.": "Secondary Simulator: 画面を回転する前にデバイスへ接続してください。",
+  "Secondary Simulator: Could not rotate the screen — {0}": "Secondary Simulator: 画面を回転できませんでした — {0}",
+  "Secondary Simulator: Connect to a device before recording.": "Secondary Simulator: 録画する前にデバイスへ接続してください。",
+  "Save recording to": "録画の保存先",
+  "Videos": "動画",
+  "Secondary Simulator: Could not start recording — {0}": "Secondary Simulator: 録画を開始できませんでした — {0}",
+  "Secondary Simulator: Could not stop the recording — {0}": "Secondary Simulator: 録画を停止できませんでした — {0}",
+  "Recording saved: {0}": "録画を保存しました: {0}"
 }

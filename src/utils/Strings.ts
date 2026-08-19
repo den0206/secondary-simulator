@@ -44,11 +44,21 @@ export function webviewStrings(): Record<string, string> {
     lampConnected: vscode.l10n.t('Connected'),
     lampDisconnected: vscode.l10n.t('Disconnected'),
 
+    // デバイス一覧
+    groupIos: vscode.l10n.t('iOS'),
+    groupAndroid: vscode.l10n.t('Android'),
+    stopped: vscode.l10n.t('stopped'),
+
     // 操作ボタン
     home: vscode.l10n.t('Home'),
     back: vscode.l10n.t('Back'),
+    rotate: vscode.l10n.t('Rotate'),
+    rotateTitle: vscode.l10n.t('Rotate the device screen'),
     shot: vscode.l10n.t('Shot'),
     shotTitle: vscode.l10n.t('Save a screenshot'),
+    recordStart: vscode.l10n.t('● Rec'),
+    recordStop: vscode.l10n.t('■ Stop'),
+    recordTitle: vscode.l10n.t('Record the screen to a video file'),
     trailOn: vscode.l10n.t('Trail ON'),
     trailOff: vscode.l10n.t('Trail OFF'),
     trailTitle: vscode.l10n.t('Show tap ripples and drag trails'),
@@ -65,6 +75,8 @@ export function webviewStrings(): Record<string, string> {
     connectingTo: vscode.l10n.t('Connecting… {0}'),
     disconnected: vscode.l10n.t('Disconnected — pick a device to reconnect'),
     streamFailed: vscode.l10n.t('Cannot connect to the stream'),
+    retry: vscode.l10n.t('Retry'),
+    showLogs: vscode.l10n.t('Show Logs'),
 
     // フッター
     measuring: vscode.l10n.t('Measuring…'),

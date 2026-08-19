@@ -11,6 +11,31 @@
 **実機検証の要否**を付けた。着手の可否を判断するための材料であって、
 「全部やる」ことを前提にしていない。
 
+凡例: **[実装済]** 本ブランチで対応 / **[提案]** 未対応 / **[見送り]** 判断して見送り
+
+---
+
+## 補足 — 同梱バイナリのシンボル表から確定したこと
+
+初版では「実機で確認しないと分からない」としていた点が、
+`node_modules/@mobilenext/mobilecli/bin/` のシンボル表と埋め込み文字列から確定した。
+**実機検証を待たずに閉じられた項目がある**ので、先に記録しておく。
+
+| 事項 | 確定した内容 | 根拠（バイナリ内の文字列） |
+|---|---|---|
+| 向きの値 | **`portrait` / `landscape` の小文字のみ** | `invalid orientation value '%s', must be 'portrait' or 'landscape'` |
+| 向きの RPC | `device.io.orientation.get` / `.set`、引数は `{deviceId, orientation}` | `'params' is required with fields: deviceId, orientation` |
+| 録画の RPC | `device.screenrecord` / `device.screenrecord.stop`、引数は `{deviceId, output}` | `'params' is required with fields: deviceId, output` |
+| 録画の出力先 | **`output` はホスト側の保存先パス**。mobilecli が自分で書く | `server.ScreenRecordParams` / `Pulling recording from device...` |
+| ハードウェアキー | `DPAD_UP/DOWN/LEFT/RIGHT/CENTER`・`ENTER` も `device.io.button` で送れる | `KEYCODE_DPAD_RIGHT` ほか |
+| アプリ操作 | `device.apps.list` / `.launch` / `.terminate` / `.install` / `.uninstall` / `device.apps.foreground` | `server.AppsListParams` ほか |
+| **画面取り込みの帯域** | **`device.screencapture` は `scale` と `quality` を受ける** | `json:"scale,omitempty"` / `json:"quality,omitempty"` / `JPEG quality (1-100, only applies if format is jpeg)` |
+
+最後の 1 行が C-1 の前提を変える。初版では「Android を絞るには adb 経路へ寄せる話になり、
+**境界（adb は `AdbTouch` だけ）に触る設計判断が要る**」と書いたが、これは**誤り**だった。
+`MjpegCapture` が投げている JSON にパラメータを 2 つ足すだけで、**iOS・Android の両方**が
+同じ経路で絞れる（→ C-1 に追記）。
+
 ---
 
 ## 0. 先に要点
@@ -33,20 +58,23 @@
 
 ## A. 追加したほうがよい機能
 
-### A-1. 画面の回転 **[手間 S / リスク 低 / 実機検証が要る]**
+### A-1. 画面の回転 **[実装済]**
 
 `docs/project-review.md` §5.4 で提案されたまま。横向きの確認のために
 シミュレータ本体へ戻る必要がある。
 
-- RPC: `device.io.orientation.set` / `.get`
-- **値の表記（`portrait` / `PORTRAIT` / 数値）がバイナリのシンボル表から確定できない。**
-  実機で 1 回叩けば決まる。両方投げて片方が通る形にする逃げ道もある。
-- webview 側は `.phone-frame` が縦長固定なので、横向きのときは
-  `max-width` と角丸を入れ替える必要がある（CSS だけで済む）。
+- RPC: `device.io.orientation.set` / `.get`、引数は `{deviceId, orientation}`
+- **値は `portrait` / `landscape` の小文字で確定**（上の「補足」参照）。初版で
+  「実機で 1 回叩かないと決まらない」としたのは誤りで、バイナリの検証メッセージに出ていた
+- `.get` の**応答の形は版に依存する**ので、`decodeOrientation`（`src/simulator/Orientation.ts`）へ
+  隔離して単体テストを付けた。読めなければ `null` を返し、**縦だと決めつけない**
+  （決めつけるとトグルが逆へ回り「押しても戻る」になる）
+- webview 側は `.phone-frame` が縦長固定なので、横向きのときは `body.landscape` で
+  `max-width` と角丸を緩める（CSS だけで済む）
 - Android は `adb shell settings put system user_rotation` でも代替できるが、
-  **`AdbTouch` 以外から adb を生やさない**という境界に反するので mobilecli 経由に寄せる。
+  **`AdbTouch` 以外から adb を生やさない**という境界に反するので mobilecli 経由に寄せた
 
-### A-2. ハードウェアボタン（音量 / 電源 / アプリ切替）**[手間 S / リスク 低 / 実機検証は軽い]**
+### A-2. ハードウェアボタン（音量 / 電源 / アプリ切替）**[提案]** *(手間 S / リスク 低)*
 
 `MobileCliClient.pressButton` は `POWER` / `VOLUME_UP` / `VOLUME_DOWN` / `APP_SWITCH` を
 **型としては持っているのに、どこからも呼ばれていない**（呼ばれているのは `HOME` / `BACK` のみ）。
@@ -60,7 +88,7 @@
 - iOS Simulator の HID 経路でも `simhid-server` 側にボタンのコマンドがあるか要確認。
   無ければ `WdaBackend` へ委譲する（キー・テキストと同じ扱い）。
 
-### A-3. クリップボードのテキストをデバイスへ送る **[手間 S / リスク 低]**
+### A-3. クリップボードのテキストをデバイスへ送る **[実装済]**
 
 いまキー入力は `keydown` の 1 文字ずつしか送れない。
 **URL やテスト用のメールアドレスを入れるのに 30 回キーを叩く**ことになる。
@@ -70,7 +98,7 @@
   webview 側で先に握る必要がある。
 - 逆方向（デバイス → ホストのクリップボード）は mobilecli に相当 RPC が見当たらないので対象外。
 
-### A-4. アプリの一覧・起動 **[手間 M / リスク 中 / 実機検証が要る]**
+### A-4. アプリの一覧・起動 **[提案]** *(手間 M / リスク 中)*
 
 RPC: `device.apps.list` / `device.apps.launch`。
 開発中のアプリへ直接飛べる。`simulator.openUrl`（ディープリンク）と並ぶ導線で、
@@ -80,19 +108,24 @@ RPC: `device.apps.list` / `device.apps.launch`。
   単体テストを付ける形にすれば、実機が無くても骨組みは書ける。
 - 「直前に起動したアプリを再起動」まで用意すると、ホットリロードしない環境で効く。
 
-### A-5. 画面録画 **[手間 M / リスク 中 / 実機検証が要る]**
+### A-5. 画面録画 **[実装済]**
 
 RPC: `device.screenrecord` / `.stop`。不具合報告用。
 保存先はスクリーンショットと同じく**ユーザーに尋ねる**形にできるので、
 「永続ストレージを持たない」方針を崩さずに済む。
 
-- ただし**録画中の一時ファイルをどこに置くかは mobilecli 側の裁量**で、
-  拡張からは見えない。CLAUDE.md の「計測できる状態を保つ」に照らすと、
-  録画中であることを UI に出す（赤ドット）ところまでを込みにしたい。
-- 停止し忘れると増え続ける入れ物になる。**上限（時間）と、切断時の自動停止**を
-  セットで入れない限り、この項目は着手すべきでない。
+初版で懸念した「一時ファイルの置き場が拡張から見えない」は解消した。
+**`output` はホスト側の保存先パスで、mobilecli が直接そこへ書く**（上の「補足」参照）。
+保存先を先に尋ねる形にできるので、拡張は一時ファイルを一切持たない。
 
-### A-6. 診断情報のコピー **[手間 S / リスク 低]**
+CLAUDE.md の「上限と破棄条件をセットで書く」に従い、**録画は必ず終わる**ようにした。
+
+- **10 分**で自動停止（`MAX_RECORDING_MS`。タイマーは `unref` する）
+- **切断・デバイス切替・`dispose`** でも止める（別端末を録り続けない）
+- 停止が失敗しても状態は戻す（戻さないと「録画中」のまま二度と止められない）
+- 録画中は Rec ボタンの色と点滅で分かるようにした（無音で走り続けない）
+
+### A-6. 診断情報のコピー **[提案]** *(手間 S / リスク 低)*
 
 `Secondary Simulator: Copy Diagnostics`。
 拡張バージョン・VS Code 版・mobilecli 版・`simhid-server` の有無と `--check` 結果・
@@ -105,7 +138,7 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
 
 ## B. UI / UX の改善
 
-### B-1. エディタタブに開く（Open in Editor）**[手間 M / リスク 中]** ← 効果が最も大きい
+### B-1. エディタタブに開く（Open in Editor）**[見送り]** *(手間 M / リスク 中)*
 
 いまビューは `viewsContainers.activitybar` の **WebviewView 一択**。
 サイドバーの幅（既定 300px 前後）に端末を押し込んでいるため、
@@ -121,7 +154,7 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
 - CLAUDE.md の「確保したものは必ず捨てる」に直結するので、
   `onDidDispose` の扱いを `resolveWebviewView` と揃える必要がある。
 
-### B-2. 筐体の側面ボタンを押せるようにする **[手間 S / リスク 低]**（A-2 と一体）
+### B-2. 筐体の側面ボタンを押せるようにする **[提案]** *(手間 S / リスク 低。A-2 と一体)*
 
 前述のとおり `side-mute` / `side-vol` / `side-power` は装飾のまま。
 押せるようにすると、**UI 要素を増やさずに操作が増える**（狭いサイドバーで貴重）。
@@ -131,7 +164,7 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
 - `title` 属性 + `aria-label` を付ける（現状 `<span>` なのでスクリーンリーダーから見えない。
   `<button>` にするのが正しい）。
 
-### B-3. キーボード入力の穴 **[手間 S / リスク 低]**
+### B-3. キーボード入力の穴 **[実装済]**
 
 `media/webview/main.js` の `keydown` は次を**取りこぼしている**。
 
@@ -148,7 +181,7 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
 `<select>` を開いて機種名を打って絞り込む（ブラウザ標準の type-ahead）と、
 その文字がデバイスにも入る。`e.target` がフォーム要素なら送らない、で解決する。
 
-### B-4. エラー表示に復帰の導線が無い **[手間 S / リスク 低]**
+### B-4. エラー表示に復帰の導線が無い **[実装済]**
 
 `case 'error'` はオーバーレイに**文言を出して終わり**。
 `Failed to initialize mobilecli: ...` のような文字列が黒画面に出るだけで、
@@ -159,7 +192,7 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
 - README の「トラブルシューティング」が「出力チャンネルを見よ」と案内している以上、
   **エラーが出ているその場から辿れる**べき。
 
-### B-5. デバイス一覧が素の `<select>` **[手間 S / リスク 低]**
+### B-5. デバイス一覧が素の `<select>` **[実装済]**
 
 - iOS と Android が混ざって並ぶ。`<optgroup>` で分けられる。
 - `Booted` / `Shutdown` が文字で付くだけ。**停止中を選んでも
@@ -168,13 +201,13 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
   現状は導線によって結果が変わる。
 - 台数が 1 台のときも「Select Device…」から選ばせている。
 
-### B-6. 端末フレームの ON/OFF **[手間 S / リスク 低]**
+### B-6. 端末フレームの ON/OFF **[実装済]**
 
 `.phone-frame` は左右 11px + 角丸 34px を消費する。
 サイドバーが狭いときは**画面そのものを 1px でも広く出したい**。
 `secondarySimulator.showDeviceFrame`（既定 true）で切れるようにする。
 
-### B-7. フッターの情報密度 **[手間 S / リスク 低]**
+### B-7. フッターの情報密度 **[実装済]**
 
 `Host / Heap / Children / Extension` の 4 つが常時出ている。
 **開発者向けの数字が、通常利用では場所を取っている**。
@@ -184,7 +217,7 @@ RPC: `device.screenrecord` / `.stop`。不具合報告用。
 - CLAUDE.md の「計測できる状態を保つ」は**計測を止めろとは言っていない**ので、
   数値の収集は残したまま表示だけ畳む。
 
-### B-8. 入力遅延が見えない **[手間 M / リスク 低 / 実機検証が要る]**
+### B-8. 入力遅延が見えない **[提案]** *(手間 M / リスク 低)*
 
 `docs/sync-research.md` の主題は入力の往復遅延（WDA 経路で約 600ms）だが、
 **フッターに出るのは映像側の数字だけ**。HID なのか WDA なのかは出ているものの、
@@ -198,7 +231,7 @@ HID→WDA の降格が体感でどう変わるかが数字で分かる。
 
 ## C. 既存機能の穴（設定が効いていない）
 
-### C-1. `streamScale` / `streamQuality` が効かない組み合わせがある **[手間 M / リスク 中]**
+### C-1. `streamScale` / `streamQuality` が効かない組み合わせがある **[提案・未対応]** *(手間 S — 下の追記を参照)*
 
 `WdaSettings.apply` の呼び出しは**1 か所しかなく**、
 `startDisplayForDevice` の **`directStream` が ON の分岐の中**にある。
@@ -230,12 +263,33 @@ HID→WDA の降格が体感でどう変わるかが数字で分かる。
 **どちらもやらないなら、効かない設定を UI から消す**（`when` で隠す・説明に条件を書く）
 のが誠実。現状は「設定したのに変わらない」が起きる。
 
-### C-2. webview からは停止中のデバイスを起動できない **[手間 S / リスク 低]**（B-5 と一体）
+### C-1 追記（2026-08-19）— 打ち手 3 が最も安い **[提案・未対応]**
+
+上の「補足」のとおり、**`device.screencapture` は `scale` と `quality` を受ける**。
+`MjpegCapture.startMjpegStream` が投げている JSON は現在これだけ:
+
+```ts
+params: {format: 'mjpeg', deviceId: this.deviceId}
+```
+
+ここに `scale` と `quality` を足せば、**iOS・Android を問わず同じ経路で帯域が絞れる**。
+初版で書いた「Android は adb 経路へ寄せる話になり境界に触る」は成り立たない。
+
+- 手間は **S**（パラメータ 2 つと、設定から読む数行）
+- `WdaSettings`（`lsof` で WDA を探して POST する。§2.2 で誤爆の懸念も挙がっている）は、
+  これが効くなら**要らなくなる可能性がある**。ただし `directStream` 経路は
+  `device.screencapture` を通らないので、消す前に確認が要る
+- 実測での効き目は未検証（mobilecli が iOS で `scale` を無視した前例が
+  `docs/sync-research.md` §1.2 の J 行にある。**Android では未確認**）
+
+**今回は「今は触らない」と判断して未着手。** 上の事実だけ記録しておく。
+
+### C-2. webview からは停止中のデバイスを起動できない **[実装済]**（B-5 と一体）
 
 `selectDevice` は `state !== 'Booted'` で `sendError` して終わる。
 `bootAndConnect` は既にあるので、**同じ確認ダイアログを webview 経路からも出せる**。
 
-### C-3. `MjpegCapture` が `updateConfig` で必ず張り直す **[手間 S / リスク 低]**
+### C-3. `MjpegCapture` が `updateConfig` で必ず張り直す **[提案]** *(手間 S / リスク 低。C-1 と一体)*
 
 `SidecarCapture` は張り直さずに差し替えられる（CLAUDE.md に明記の設計）が、
 `MjpegCapture` は `stop()` → `start()`。効かない設定（C-1）を変えただけでも
@@ -245,19 +299,19 @@ HID→WDA の降格が体感でどう変わるかが数字で分かる。
 
 ## D. 開発基盤
 
-### D-1. Lint / フォーマッタが無い **[手間 S / リスク 低]**
+### D-1. Lint / フォーマッタが無い **[提案]** *(手間 S / リスク 低)*
 
 `docs/project-review.md` §6 から未対応。ESLint も Prettier も設定が無い。
 `npm test` は通るが、スタイルは人の目に頼っている。
 CI に足すなら `quick-check` ジョブへ 1 行。
 
-### D-2. README の二重管理 **[手間 M / リスク 低]**
+### D-2. README の二重管理 **[提案]** *(手間 M / リスク 低)*
 
 `README.md` と `README_JP.md` が同内容を持ち、片方だけ古くなる。
 `docs/project-review.md` §6 でも指摘済み。
 **片方を正にして生成する**か、**差分をテストで落とす**（見出しの数が合うか等）。
 
-### D-3. webview のテストが薄い **[手間 M / リスク 低]**
+### D-3. webview のテストが薄い **[一部対応]** *(手間 M / リスク 低)*
 
 `test/webview-pointer.test.js` はポインタ変換だけ。
 B-3（キー入力の穴）や B-4（エラー導線）を足すなら、
@@ -291,3 +345,38 @@ B-3（キー入力の穴）や B-4（エラー導線）を足すなら、
 6. **A-3**（貼り付け）/ **A-6**（診断コピー）— 小粒だが効く
 7. **A-4**（アプリ起動）/ **A-5**（録画）— 応答形式の実機確認が前提
 8. **D-1〜D-3**（基盤）— いつでも
+
+---
+
+## G. 本ブランチで対応した範囲（2026-08-19）
+
+`claude/extension-improvement-ideas-0er40n`。判断は依頼者が選択したもので、
+**C-1（帯域設定）と B-1（エディタタブ）は「今は触らない」**として未着手。
+
+| 分類 | 対象 |
+|---|---|
+| 追加 | 画面の回転（A-1）、画面録画（A-5）、クリップボード貼り付け（A-3） |
+| UI/UX | キー入力の穴（B-3）、エラーからの復帰導線（B-4）、デバイス一覧（B-5 / C-2）、表示の整理（B-6 / B-7） |
+| 設定 | `showDeviceFrame`（既定 true）、`showResourceStats`（既定 false） |
+| コマンド | `simulator.rotate` / `simulator.record` |
+| テスト | 新規 1 ファイル（`orientation.test.js` 26 項目）＋ webview 30 項目・入力経路 10 項目を追加 |
+
+### 実機で確かめたいこと
+
+コードとしては閉じているが、デバイスに繋いだ確認が要るのは次の 3 点。
+**いずれも「応答の形」であって、RPC 名と引数はバイナリで確定している。**
+
+- **`device.screenrecord` の応答と所要時間** — 開始が即座に返るか（`RecordingSession` を
+  作って返す想定で書いた）。停止は端末からの引き上げがあるので待ちを 180 秒取っている
+- **`device.io.orientation.get` の応答の形** — `decodeOrientation` は 6 通りを受けるが、
+  実際にどれで返るかは未確認。読めなくても「そのまま横へ回す」で動く
+- **iOS Simulator の HID 経路で矢印キーが効くか** — usage（0x4f–0x52）は
+  `docs/ios-hid-injection.md` §6 のとおりだが、実際に送ったことは無い
+
+### 併せて記録
+
+- 初版で「Android の帯域は adb 経路へ寄せる話で境界に触る」と書いたのは**誤り**だった。
+  `device.screencapture` が `scale` / `quality` を受けるので、`MjpegCapture` の
+  パラメータを 2 つ足すだけで済む（→ C-1 追記）。C-1 に着手する場合はここから
+- `ButtonType` に `DPAD_UP/DOWN/LEFT/RIGHT` を足した。A-2（音量・電源）に着手するときは
+  同じ型がそのまま使える

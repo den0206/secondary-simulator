@@ -81,6 +81,18 @@
         "category": "%extension.category%"
       },
       {
+        "command": "simulator.rotate",
+        "title": "%command.rotate.title%",
+        "category": "%extension.category%",
+        "icon": "$(screen-normal)"
+      },
+      {
+        "command": "simulator.record",
+        "title": "%command.record.title%",
+        "category": "%extension.category%",
+        "icon": "$(record)"
+      },
+      {
         "command": "simulator.refresh",
         "title": "%command.refresh.title%",
         "category": "%extension.category%",
@@ -197,6 +209,16 @@
           ],
           "default": "auto",
           "description": "%configuration.captureMode.description%"
+        },
+        "secondarySimulator.showDeviceFrame": {
+          "type": "boolean",
+          "default": true,
+          "description": "%configuration.showDeviceFrame.description%"
+        },
+        "secondarySimulator.showResourceStats": {
+          "type": "boolean",
+          "default": false,
+          "description": "%configuration.showResourceStats.description%"
         },
         "secondarySimulator.logLevel": {
           "type": "string",
