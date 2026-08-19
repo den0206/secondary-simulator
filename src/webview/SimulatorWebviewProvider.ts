@@ -16,6 +16,7 @@ import {WdaSettings} from '../capture/WdaSettings';
 import {SimulatorInputController} from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {defaultRecordingName} from '../simulator/RecordingName';
+import {resolveSaveDirectory, SaveLocation} from '../simulator/SaveDirectory';
 import {Device, DeviceType} from '../simulator/types';
 import {DeviceStatus, renderStatus} from '../ui/DeviceStatusBar';
 import {JsonRpcClient} from '../utils/JsonRpcClient';
@@ -1039,7 +1040,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const target = await vscode.window.showSaveDialog({
       title: vscode.l10n.t('Save recording to'),
       defaultUri: vscode.Uri.joinPath(
-        this.defaultScreenshotDir(),
+        this.defaultSaveDir(),
         defaultRecordingName(deviceName)
       ),
       filters: {[vscode.l10n.t('Videos')]: ['mp4']},
@@ -1221,7 +1222,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const target = await vscode.window.showSaveDialog({
       title: vscode.l10n.t('Save screenshot to'),
       defaultUri: vscode.Uri.joinPath(
-        this.defaultScreenshotDir(),
+        this.defaultSaveDir(),
         defaultScreenshotName(deviceName, shot.ext)
       ),
       filters: {[vscode.l10n.t('Images')]: [shot.ext]},
@@ -1253,10 +1254,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 保存ダイアログの初期位置。ワークスペースがあればその直下、無ければホーム。 */
-  private defaultScreenshotDir(): vscode.Uri {
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    return folder ? folder.uri : vscode.Uri.file(os.homedir());
+  /** 保存ダイアログの初期フォルダ（`secondarySimulator.saveLocation`）。 */
+  private defaultSaveDir(): vscode.Uri {
+    const cfg = vscode.workspace.getConfiguration('secondarySimulator');
+    const dir = resolveSaveDirectory({
+      saveLocation: cfg.get<SaveLocation>('saveLocation', 'desktop'),
+      customPath: cfg.get<string>('saveDirectory', ''),
+      workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      homeDir: os.homedir(),
+    });
+    return vscode.Uri.file(dir);
   }
 
   /**

@@ -214,6 +214,28 @@
           "default": false,
           "description": "%configuration.showResourceStats.description%"
         },
+        "secondarySimulator.saveLocation": {
+          "type": "string",
+          "enum": [
+            "desktop",
+            "workspace",
+            "home",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "%configuration.saveLocation.enum.desktop%",
+            "%configuration.saveLocation.enum.workspace%",
+            "%configuration.saveLocation.enum.home%",
+            "%configuration.saveLocation.enum.custom%"
+          ],
+          "default": "desktop",
+          "description": "%configuration.saveLocation.description%"
+        },
+        "secondarySimulator.saveDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "%configuration.saveDirectory.description%"
+        },
         "secondarySimulator.logLevel": {
           "type": "string",
           "enum": [

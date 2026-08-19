@@ -35,5 +35,11 @@
   "configuration.logLevel.enum.debug": "Verbose, including received messages. Use only while investigating.",
   "command.record.title": "Record Screen",
   "configuration.showDeviceFrame.description": "Draw the phone bezel around the screen. Turn it off to use the full width of a narrow sidebar.",
-  "configuration.showResourceStats.description": "Show memory and extension-size figures in the footer. These are developer diagnostics; the video rate and input path are always shown."
+  "configuration.showResourceStats.description": "Show memory and extension-size figures in the footer. These are developer diagnostics; the video rate and input path are always shown.",
+  "configuration.saveLocation.description": "Initial folder for the screenshot and screen-recording save dialogs.",
+  "configuration.saveLocation.enum.desktop": "Desktop (~/Desktop).",
+  "configuration.saveLocation.enum.workspace": "The first workspace folder. Falls back to the home directory when no folder is open.",
+  "configuration.saveLocation.enum.home": "Home directory.",
+  "configuration.saveLocation.enum.custom": "The path in saveDirectory.",
+  "configuration.saveDirectory.description": "Custom folder path when saveLocation is custom. Ignored otherwise."
 }

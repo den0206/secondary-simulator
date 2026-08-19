@@ -35,5 +35,11 @@
   "configuration.logLevel.enum.debug": "包含收到的消息等详细日志。仅在排查问题时使用。",
   "command.record.title": "录制屏幕",
   "configuration.showDeviceFrame.description": "在屏幕周围绘制手机外框。侧边栏较窄时可关闭，以使用全部宽度。",
-  "configuration.showResourceStats.description": "在页脚显示内存和扩展目录大小。这些是面向开发者的诊断信息；视频速率和输入路径始终显示。"
+  "configuration.showResourceStats.description": "在页脚显示内存和扩展目录大小。这些是面向开发者的诊断信息；视频速率和输入路径始终显示。",
+  "configuration.saveLocation.description": "截图与屏幕录制保存对话框的初始文件夹。",
+  "configuration.saveLocation.enum.desktop": "桌面（~/Desktop）。",
+  "configuration.saveLocation.enum.workspace": "工作区根目录。未打开文件夹时回退到主目录。",
+  "configuration.saveLocation.enum.home": "用户主目录。",
+  "configuration.saveLocation.enum.custom": "使用 saveDirectory 指定的路径。",
+  "configuration.saveDirectory.description": "当 saveLocation 为 custom 时的文件夹路径；其他情况下忽略。"
 }
