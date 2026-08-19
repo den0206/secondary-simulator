@@ -67,11 +67,22 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   約 42ms → 約 20ms。`DOWN`/`UP` が座標を引数に取れるので位置決めの `MOVE` も要らず、
   **離す直前に「止まっている 1 往復」が消えてフリックが効く**）。adb が見つからない・
   シリアルを解決できないときは黙って mobilecli 経路へ落ちる。
-  キー・テキスト・ボタンは `WdaBackend` へ委譲する。
+  キー・テキスト・ボタンは `WdaBackend` へ委譲する。**矢印キーだけは Android で
+  `KEYCODE_DPAD_*`**（`AndroidBackend` → `device.io.button`）。HID usage は元からあったが
+  webview が `e.key.length === 1` に載らず捨てられていたので `special` 経路へ載せた。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
+  **Cmd/Ctrl+V は `paste` でまとめて送る**（`InputBackend.text`。URL 入力用）。
+  デバイス選択の `<select>` などテキスト UI にフォーカスがあるあいだはキーを送らない。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
   デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。
+  一覧は iOS / Android で分ける。停止中を選んだら `bootDevice` で起動確認する
+  （コマンドパレット経由と同じ）。エラー時はオーバーレイに［再試行］［ログを見る］を出す。
+  `secondarySimulator.showDeviceFrame` / `showResourceStats` で筐体とリソース数値の
+  表示を切り替えられる（収集は続ける）。
+- **デバイス操作（mobilecli）**: 録画は `device.screenrecord` / `.stop`。保存先パスはユーザーが選び、拡張は一時ファイルを
+  持たない。10 分・切断・破棄で必ず止める。停止に失敗したら UI は録画中のまま残し、
+  通知から再試行できる。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
   フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、

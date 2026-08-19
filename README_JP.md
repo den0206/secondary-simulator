@@ -96,7 +96,6 @@ VSCodeの設定で以下のオプションを調整できます：
    - **長押し**: 押下したまま静止でロングプレス
    - **Home**: プレビュー下のボタン
    - **Back**: Android のみ（iOS では無効）
-   - **Rotate**: 画面の縦横を切り替える
    - **Shot**: 接続中デバイスの画面を保存
    - **Rec**: 画面を動画ファイルへ録画（もう一度押すと停止）
    - **Trail**: リップルとドラッグ軌跡の表示切替
@@ -118,7 +117,6 @@ VSCodeの設定で以下のオプションを調整できます：
 | `Select Device`       | 一覧から選んで接続する。停止中を選ぶと起動できる             |
 | `Save Screenshot`     | 接続中のデバイスの画面を保存する                             |
 | `Record Screen`       | 画面の録画を開始 / 停止する。10 分経過または切断でも必ず止まる |
-| `Rotate Screen`       | 接続中のデバイスの画面を縦横に切り替える                     |
 | `Open URL on Device`  | 接続中のデバイスでディープリンク / URL を開く                |
 | `Press Home`          | Home ボタン（`Cmd+Shift+H`）                                 |
 | `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
@@ -136,7 +134,7 @@ secondary-simulator/
 │   ├── extension.ts                    # 拡張機能のエントリーポイント
 │   ├── simulator/
 │   │   ├── types.ts                   # 型定義
-│   │   ├── Orientation.ts             # 画面の向きの解釈と録画ファイル名
+│   │   ├── RecordingName.ts           # 録画ファイル名の既定値
 │   │   └── autoConnect.ts             # 自動接続する起動中デバイスの選択
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理

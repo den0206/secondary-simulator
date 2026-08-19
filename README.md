@@ -94,7 +94,6 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Press and hold**: long press
    - **Home**: control below the preview
    - **Back**: Android only (disabled on iOS)
-   - **Rotate**: flip the device between portrait and landscape
    - **Shot**: save a screenshot of the connected device
    - **Rec**: record the screen to a video file (press again to stop)
    - **Trail**: toggle ripple and drag trail overlay
@@ -116,7 +115,6 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 | `Select Device`       | Pick a device from a list and connect. Picking a stopped one offers to boot it |
 | `Save Screenshot`     | Save the connected device's screen to a file                     |
 | `Record Screen`       | Start/stop recording the screen to a video file. Stops automatically after 10 minutes or on disconnect |
-| `Rotate Screen`       | Flip the connected device between portrait and landscape         |
 | `Open URL on Device`  | Open a deep link or URL on the connected device                  |
 | `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
@@ -134,7 +132,7 @@ secondary-simulator/
 │   ├── extension.ts                    # Extension entry point
 │   ├── simulator/
 │   │   ├── types.ts                   # Type definitions
-│   │   ├── Orientation.ts             # Decode device.io.orientation.get / recording file names
+│   │   ├── RecordingName.ts           # Default recording file names
 │   │   └── autoConnect.ts             # Pick a booted device for auto-connect
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview management

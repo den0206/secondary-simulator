@@ -346,20 +346,27 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 |---|---|
 | `touchDown` / `touchMove` / `touchUp` | 1本指。座標は正規化。HID は同名コマンド、WDA は tap/gesture に再構成、Android は押しているあいだ最新点を送り続ける（§7.1） |
 | `touch2Down` / `touch2Move` / `touch2Up` | 2本指（ピンチ等） |
-| `keypress {key, special, modifiers?}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3）。`modifiers`（`command`/`control`/`option`/`shift`）があれば `modifier` で挟んだ `keyDown`/`keyUp` を組む（HID 経路のみ。`text` は使えない — project-review.md §5.7） |
+| `keypress {key, special, modifiers?}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3）。`modifiers`（`command`/`control`/`option`/`shift`）があれば `modifier` で挟んだ `keyDown`/`keyUp` を組む（HID 経路のみ。`text` は使えない — project-review.md §5.7）。`special: true` の `up`/`down`/`left`/`right` は HID usage へ。Android は `KEYCODE_DPAD_*`（`device.io.button`） |
+| `paste {text}` | クリップボードのテキストを 1 回で送る（`InputBackend.text`。URL 入力用。長さはホスト側で上限） |
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
+| `record` | 画面録画の開始/停止をトグル（`device.screenrecord` / `.stop`。保存先はユーザーが選ぶパスを `output` に渡す） |
 | `deviceChange {deviceId}` | 空文字ならキャプチャ停止。一覧から消えた選択もこれを送る |
-| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` 状態も返す |
+| `bootDevice {deviceId}` | 停止中のデバイスを選んだとき。起動確認のあと `device.boot` して接続（コマンドパレット経由と同じ） |
+| `retry` | エラー表示からの復帰。一覧を取り直し、選択中があれば再接続 |
+| `showLogs` | 出力チャンネル「Secondary Simulator」を開く |
+| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
 | `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限） |
 
 | ホスト → webview | 意味 |
 |---|---|
-| `devices` | 一覧。`platform` で Back の有効/無効を決める |
-| `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない） |
+| `devices` | 一覧（`platform` / `state` 付き）。webview は iOS / Android で `<optgroup>` に分ける。`platform` で Back の有効/無効を決める |
+| `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない）。起動を見送ったときも選択を戻す |
+| `settings` | `showDeviceFrame` / `showResourceStats`（`secondarySimulator.*` の見た目設定） |
+| `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目 |
 | `searching` | 未接続で起動中デバイスを探している |
 | `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |
 | `autoConnect` | 設定値。Auto ボタンと揃える |

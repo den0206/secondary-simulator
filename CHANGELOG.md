@@ -10,9 +10,6 @@
 
 ### 追加
 
-- 画面の回転（`Secondary Simulator: Rotate Screen` とサイドバーの Rotate）。
-  `device.io.orientation.get` で今の向きを見て反転させる。読めなかったときは
-  縦だと決めつけず、そのまま横へ回す
 - 画面の録画（`Secondary Simulator: Record Screen` とサイドバーの Rec）。
   保存先を先に尋ね、そのパスを mobilecli に直接書かせるので、拡張は一時ファイルを持たない。
   押し忘れても増え続けないよう、10 分・切断・破棄のいずれでも必ず止まる
