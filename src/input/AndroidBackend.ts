@@ -1,7 +1,7 @@
 import {Logger} from '../utils/Logger';
-import {MobileCliClient} from '../utils/MobileCliClient';
+import {ButtonType, MobileCliClient} from '../utils/MobileCliClient';
 import {AdbTouch} from './AdbTouch';
-import {InputBackend} from './InputBackend';
+import {HidUsage, InputBackend} from './InputBackend';
 
 type Pt = {x: number; y: number};
 
@@ -63,6 +63,13 @@ export class AndroidBackend implements InputBackend {
   static readonly LONG_PRESS_MS = 400;
   /** 1 セッションあたりのエラーログ上限。ドラッグは高頻度パスなので出しすぎない。 */
   static readonly MAX_ERROR_LOGS = 3;
+  /** HID usage → Android のハードウェアキー。矢印は文字にできないのでこちらへ回す。 */
+  static readonly DPAD_BY_USAGE: Readonly<Record<number, ButtonType>> = {
+    [HidUsage.ArrowUp]: 'DPAD_UP',
+    [HidUsage.ArrowDown]: 'DPAD_DOWN',
+    [HidUsage.ArrowLeft]: 'DPAD_LEFT',
+    [HidUsage.ArrowRight]: 'DPAD_RIGHT',
+  };
 
   private phase: 'idle' | 'pending' | 'down' = 'idle';
   private start: Pt = {x: 0, y: 0};
@@ -394,7 +401,22 @@ export class AndroidBackend implements InputBackend {
     return this.keys.button(name);
   }
 
+  /**
+   * 矢印キーだけは `device.io.button` の DPAD へ回す。
+   *
+   * 委譲先の `WdaBackend.key` は usage を文字へ直して `device.io.text` へ流す作りで、
+   * 矢印は対応する文字が無いため**黙って捨てられていた**。Android には
+   * `KEYCODE_DPAD_*` があるので、ここで拾えば実際に効く。
+   * 押し下げだけ送る（`device.io.button` は押して離すまでで 1 回）。
+   */
   key(usage: number, down: boolean): Promise<void> {
+    const dpad = AndroidBackend.DPAD_BY_USAGE[usage];
+    if (dpad) {
+      if (!down) return Promise.resolve();
+      return this.client.pressButton(this.deviceId, dpad).catch((error) => {
+        this.logError(error);
+      });
+    }
     return this.keys.key(usage, down);
   }
 

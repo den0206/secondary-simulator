@@ -4,7 +4,6 @@
   "viewsContainer.title": "Secondary Simulator",
   "view.devicePreview.name": "Device Preview",
   "configuration.title": "Secondary Simulator",
-
   "command.selectDevice.title": "Select Device",
   "command.screenshot.title": "Save Screenshot",
   "command.openUrl.title": "Open URL on Device",
@@ -13,7 +12,6 @@
   "command.refresh.title": "Refresh Device List",
   "command.showLogs.title": "Show Logs",
   "command.clearLogs.title": "Clear Logs",
-
   "configuration.autoConnect.description": "Connect automatically to a running device. While disconnected, looks for devices every 5 seconds and attaches to newly booted simulators too. Kept in sync with the Auto button in the sidebar; pressing Disconnect turns it off.",
   "configuration.directStream.description": "Send frames straight to the webview instead of through the extension host, so Chromium decodes them natively. With sidecar capture on the iOS Simulator the sidecar serves them on 127.0.0.1; otherwise the mobilecli MJPEG stream is relayed. Experimental.",
   "configuration.streamScale.description": "iOS: MJPEG scaling factor (1.0 = original size). Lower values reduce bandwidth (sets WDA's mjpegScalingFactor).",
@@ -34,5 +32,9 @@
   "configuration.logLevel.enum.error": "Errors only.",
   "configuration.logLevel.enum.warn": "Errors and warnings.",
   "configuration.logLevel.enum.info": "Normal activity (default).",
-  "configuration.logLevel.enum.debug": "Verbose, including received messages. Use only while investigating."
+  "configuration.logLevel.enum.debug": "Verbose, including received messages. Use only while investigating.",
+  "command.rotate.title": "Rotate Screen",
+  "command.record.title": "Record Screen",
+  "configuration.showDeviceFrame.description": "Draw the phone bezel around the screen. Turn it off to use the full width of a narrow sidebar.",
+  "configuration.showResourceStats.description": "Show memory and extension-size figures in the footer. These are developer diagnostics; the video rate and input path are always shown."
 }

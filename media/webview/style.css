@@ -281,6 +281,22 @@ body {
   display: none;
 }
 
+/* オーバーレイの中身を縦に積む（文言の下に復帰ボタンを置く） */
+.overlay {
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* エラーのときだけ出す復帰導線。待機中に出すと押しても同じ待ちに戻るだけ。 */
+.overlay-actions {
+  display: none;
+  gap: 6px;
+}
+
+.overlay-actions.shown {
+  display: flex;
+}
+
 /* 文言が「…」で終わる間（Connecting…/Searching…）はスピナーを出す */
 .overlay.busy span::before {
   content: '';
@@ -366,6 +382,57 @@ body {
 
 .control-btn:disabled:hover {
   background: var(--vscode-button-secondaryBackground);
+}
+
+/* 録画中。押せば止まることが分かるよう、色と点滅で状態を出す。 */
+.control-btn.recording {
+  background: var(--vscode-inputValidation-errorBackground, #a1260d);
+  color: var(--vscode-inputValidation-errorForeground, #fff);
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+
+.control-btn.recording:hover {
+  background: var(--vscode-inputValidation-errorBackground, #a1260d);
+}
+
+@keyframes rec-pulse {
+  50% { opacity: 0.62; }
+}
+
+/* ---- 表示の切り替え（設定）-------------------------------------------------- */
+
+/* 端末フレームを畳む。狭いサイドバーでは左右 11px + 角丸 34px が惜しい。 */
+body.no-frame .phone-frame {
+  padding: 0;
+  border-radius: 8px;
+  background: none;
+  box-shadow: none;
+  max-width: none;
+}
+
+body.no-frame .phone-frame::before,
+body.no-frame .phone-frame::after,
+body.no-frame .side-btn {
+  display: none;
+}
+
+body.no-frame .simulator-container {
+  border-radius: 8px;
+}
+
+/* 横向き。筐体の縦長を前提にした角丸と最大幅を緩める。 */
+body.landscape .phone-frame {
+  max-width: none;
+  border-radius: 22px;
+}
+
+body.landscape .simulator-container {
+  border-radius: 10px;
+}
+
+/* リソースの数値は開発者向け。既定では畳み、入力経路（#mode）だけ残す。 */
+body.hide-stats #stats {
+  display: none;
 }
 
 /* ---- リソース表示 ---------------------------------------------------------- */

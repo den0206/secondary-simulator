@@ -212,6 +212,40 @@ async function main() {
   );
   wdaOnly.dispose();
 
+  console.log('\n11) 矢印キーは HID usage として送る');
+  // usage は元から InputBackend にあったのに specialUsage に載っていなかったため、
+  // webview から送っても text 経路へ落ちて何も起きなかった。
+  const {HidUsage} = require('../out/input/InputBackend');
+  for (const [name, usage] of [
+    ['up', HidUsage.ArrowUp],
+    ['down', HidUsage.ArrowDown],
+    ['left', HidUsage.ArrowLeft],
+    ['right', HidUsage.ArrowRight],
+  ]) {
+    calls.length = 0;
+    await c.keypress(name, true);
+    check(
+      `${name} → keyDown/keyUp 0x${usage.toString(16)}`,
+      JSON.stringify(calls) ===
+        JSON.stringify([['keyDown', usage], ['keyUp', usage]]),
+      JSON.stringify(calls)
+    );
+  }
+  // 修飾キー付き（Cmd+→ で行末へ、など）も組み合わせとして通る
+  calls.length = 0;
+  await c.keypress('right', true, ['command']);
+  check(
+    'Cmd+→ は修飾キーで挟む',
+    JSON.stringify(calls) ===
+      JSON.stringify([
+        ['modDown', HidModifier.Command],
+        ['keyDown', HidUsage.ArrowRight],
+        ['keyUp', HidUsage.ArrowRight],
+        ['modUp', HidModifier.Command],
+      ]),
+    JSON.stringify(calls)
+  );
+
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
   process.exit(failures === 0 ? 0 : 1);
 }

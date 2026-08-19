@@ -27,6 +27,7 @@ Secondary Simulator mirrors your device inside the editor, so you never have to 
 - **👆 Interactive control**: raw Pointer Events are streamed through, so tap, swipe, drag, and pinch are recognized on the device itself
 - **⚡ Low latency**: HID injection on the iOS Simulator (`native/simhid-server`), with automatic fallback to WDA
 - **🔄 Unified API**: consistent device control through `mobilecli` (JSON-RPC 2.0)
+- **🎬 Capture**: save a screenshot or record the screen straight to a file you choose
 - **💾 Memory friendly**: streams, listeners, and timers are cleaned up to prevent leaks
 
 ## 📋 Requirements
@@ -73,6 +74,8 @@ npm run build
 - **`secondarySimulator.captureFps`**: sidecar capture fps while idle (default: 30). Doubles (capped at 60) while a finger is down. Unchanged frames are not sent.
 - **`secondarySimulator.captureMaxWidth`**: upper bound for sidecar JPEG width, in px (default: 640). Actual width follows the sidebar size × devicePixelRatio.
 - **`secondarySimulator.captureMode`**: `auto` (default) uses display-change notifications when available, otherwise polling; `poll` stays on the timer. Private API, so pin to `poll` if an Xcode update breaks capture.
+- **`secondarySimulator.showDeviceFrame`**: draw the phone bezel around the screen (default: true). Turn it off to use the full width of a narrow sidebar.
+- **`secondarySimulator.showResourceStats`**: show memory and extension-size figures in the footer (default: false). These are developer diagnostics; the video rate and input path are always shown.
 - **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a _hardware_ keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
 - **`secondarySimulator.logLevel`**: verbosity of the **Secondary Simulator** output channel — `off` / `error` / `warn` / `info` (default) / `debug`. VS Code keeps the channel's full text in memory and offers no way to drop old lines, so keep this at `info` or below unless you are investigating something.
 
@@ -91,10 +94,15 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Press and hold**: long press
    - **Home**: control below the preview
    - **Back**: Android only (disabled on iOS)
+   - **Rotate**: flip the device between portrait and landscape
    - **Shot**: save a screenshot of the connected device
+   - **Rec**: record the screen to a video file (press again to stop)
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
-6. Type with the keyboard while the preview has focus. Shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers.
+6. Type with the keyboard while the preview has focus. Arrow keys and shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers. Keys are not forwarded while a form control (such as the device dropdown) has focus.
+7. Paste with `Cmd+V` / `Ctrl+V` to send clipboard text to the device in one go, instead of a character at a time.
+
+Picking a stopped device from the dropdown offers to boot it, the same as the command palette does.
 
 The status bar (bottom right) shows the connected device and whether input is going through **HID** or **WDA**; the same label appears in the sidebar footer. A silent demotion from HID to WDA is visible there.
 
@@ -107,6 +115,8 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 | --------------------- | ---------------------------------------------------------------- |
 | `Select Device`       | Pick a device from a list and connect. Picking a stopped one offers to boot it |
 | `Save Screenshot`     | Save the connected device's screen to a file                     |
+| `Record Screen`       | Start/stop recording the screen to a video file. Stops automatically after 10 minutes or on disconnect |
+| `Rotate Screen`       | Flip the connected device between portrait and landscape         |
 | `Open URL on Device`  | Open a deep link or URL on the connected device                  |
 | `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
@@ -124,6 +134,7 @@ secondary-simulator/
 │   ├── extension.ts                    # Extension entry point
 │   ├── simulator/
 │   │   ├── types.ts                   # Type definitions
+│   │   ├── Orientation.ts             # Decode device.io.orientation.get / recording file names
 │   │   └── autoConnect.ts             # Pick a booted device for auto-connect
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview management

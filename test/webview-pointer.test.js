@@ -83,10 +83,18 @@ const els = {
   'btn-back': makeEl('btn-back'),
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-trail': makeEl('btn-trail'),
+  'btn-rotate': makeEl('btn-rotate'),
+  'btn-record': makeEl('btn-record'),
+  'btn-retry': makeEl('btn-retry'),
+  'btn-logs': makeEl('btn-logs'),
+  'overlay-actions': makeEl('overlay-actions'),
   lamp: makeEl('lamp'),
   stats: makeEl('stats'),
   mode: makeEl('mode'),
 };
+
+// 見た目の切り替え（端末フレーム・横向き・リソース表示）は body のクラスで持つ
+const body = makeEl('body');
 
 // applyStaticStrings が書き換える対象（HTML の data-i18n 相当）
 const i18nEls = [
@@ -111,6 +119,7 @@ const sandbox = {
     addEventListener(ev, fn) { listeners[`document:${ev}`] = fn; },
     querySelectorAll: () => i18nEls,
     documentElement: {},
+    body,
   },
   window: {
     addEventListener(ev, fn) { listeners[`window:${ev}`] = fn; },
@@ -509,6 +518,171 @@ sent.length = 0;
 resizeCallback();
 check('同じ幅では送り直さない', !sent.some((m) => m.type === 'viewport'),
   JSON.stringify(sent));
+
+console.log('\n17) 矢印キーを送る（以前は e.key.length===1 に一致せず捨てられていた）');
+els.overlay.classList.add('hidden'); // 接続中
+sent.length = 0;
+for (const [dom, name] of [
+  ['ArrowUp', 'up'],
+  ['ArrowDown', 'down'],
+  ['ArrowLeft', 'left'],
+  ['ArrowRight', 'right'],
+]) {
+  sent.length = 0;
+  listeners['document:keydown']({key: dom, preventDefault() {}});
+  check(
+    `${dom} → ${name}`,
+    sent.some((m) => m.type === 'keypress' && m.key === name && m.special === true),
+    JSON.stringify(sent)
+  );
+}
+
+console.log('\n18) 文字を受ける要素にフォーカスがあるときは送らない');
+// <select> の type-ahead（機種名を打って絞り込む）がデバイスにも入っていた
+for (const tag of ['SELECT', 'INPUT', 'TEXTAREA', 'OPTION']) {
+  sent.length = 0;
+  listeners['document:keydown']({key: 'a', target: {tagName: tag}, preventDefault() {}});
+  check(`${tag} 上では送らない`, sent.length === 0, JSON.stringify(sent));
+}
+sent.length = 0;
+listeners['document:keydown']({key: 'a', target: {tagName: 'DIV'}, preventDefault() {}});
+check('画面上では送る', sent.some((m) => m.type === 'keypress'), JSON.stringify(sent));
+
+// ボタンは全部は譲らない。押した操作ボタン（Home / Rec）はフォーカスを保つので、
+// 全部譲ると「Home を押したあと文字が打てない」になる。
+sent.length = 0;
+listeners['document:keydown']({key: 'a', target: {tagName: 'BUTTON'}, preventDefault() {}});
+check(
+  'ボタンにフォーカスがあっても文字は送る',
+  sent.some((m) => m.type === 'keypress' && m.key === 'a'),
+  JSON.stringify(sent)
+);
+for (const key of ['Enter', ' ']) {
+  sent.length = 0;
+  listeners['document:keydown']({key, target: {tagName: 'BUTTON'}, preventDefault() {}});
+  check(
+    `ボタンを起動する ${key === ' ' ? 'Space' : key} は譲る`,
+    sent.length === 0,
+    JSON.stringify(sent)
+  );
+}
+// 画面上なら Enter は従来どおりデバイスへ届く
+sent.length = 0;
+listeners['document:keydown']({key: 'Enter', target: {tagName: 'DIV'}, preventDefault() {}});
+check(
+  '画面上の Enter は送る',
+  sent.some((m) => m.type === 'keypress' && m.key === 'return'),
+  JSON.stringify(sent)
+);
+
+console.log('\n19) 貼り付けは 1 回でまとめて送る');
+sent.length = 0;
+// Cmd+V 自体は文字として送らない（paste イベントに任せる）
+listeners['document:keydown']({key: 'v', metaKey: true, preventDefault() {}});
+check('Cmd+V を keypress にしない', sent.length === 0, JSON.stringify(sent));
+sent.length = 0;
+listeners['document:paste']({
+  clipboardData: {getData: () => 'myapp://path/to/screen'},
+  preventDefault() {},
+});
+check(
+  'paste でテキストをまとめて送る',
+  sent.some((m) => m.type === 'paste' && m.text === 'myapp://path/to/screen'),
+  JSON.stringify(sent)
+);
+// 上限。巨大なテキストを postMessage に載せない
+sent.length = 0;
+listeners['document:paste']({
+  clipboardData: {getData: () => 'x'.repeat(9000)},
+  preventDefault() {},
+});
+check('長すぎる貼り付けは切る', sent[0] && sent[0].text.length === 4096,
+  String(sent[0] && sent[0].text.length));
+// フォーム要素の上では横取りしない（デバイス選択などの通常の貼り付けを壊さない）
+sent.length = 0;
+listeners['document:paste']({
+  target: {tagName: 'INPUT'},
+  clipboardData: {getData: () => 'abc'},
+  preventDefault() {},
+});
+check('フォーム要素では横取りしない', sent.length === 0, JSON.stringify(sent));
+
+console.log('\n20) 回転・録画');
+sent.length = 0;
+listeners['btn-rotate:click']();
+check('Rotate が rotate を送る', sent.some((m) => m.type === 'rotate'));
+sent.length = 0;
+listeners['btn-record:click']();
+check('Rec が record を送る', sent.some((m) => m.type === 'record'));
+// 録画中かどうかはホストが持つ。webview は写すだけ
+listeners['window:message']({data: {type: 'recording', active: true}});
+check('録画中は見た目が変わる', els['btn-record'].classList.contains('recording'));
+check('停止のラベルになる', els['btn-record'].textContent === STRINGS.recordStop,
+  els['btn-record'].textContent);
+listeners['window:message']({data: {type: 'recording', active: false}});
+check('停止で戻る', !els['btn-record'].classList.contains('recording'));
+check('開始のラベルに戻る', els['btn-record'].textContent === STRINGS.recordStart,
+  els['btn-record'].textContent);
+// 向きは body のクラスで持つ（筐体の角丸と最大幅を切り替える）
+listeners['window:message']({data: {type: 'orientation', value: 'landscape'}});
+check('横向きのクラスが付く', body.classList.contains('landscape'));
+listeners['window:message']({data: {type: 'orientation', value: 'portrait'}});
+check('縦向きで外れる', !body.classList.contains('landscape'));
+
+console.log('\n21) エラーからの復帰導線');
+listeners['window:message']({data: {type: 'error', text: 'mobilecli を起動できません'}});
+check('エラー文言を出す', !els.overlay.classList.contains('hidden'));
+check('復帰ボタンを出す', els['overlay-actions'].classList.contains('shown'));
+sent.length = 0;
+listeners['btn-retry:click']();
+check('Retry が retry を送る', sent.some((m) => m.type === 'retry'));
+sent.length = 0;
+listeners['btn-logs:click']();
+check('Show Logs が showLogs を送る', sent.some((m) => m.type === 'showLogs'));
+// 待機中に出すと、押しても同じ待ちに戻るだけなので出さない
+listeners['window:message']({data: {type: 'connecting', name: 'iPhone 15'}});
+check('待機中は出さない', !els['overlay-actions'].classList.contains('shown'));
+
+console.log('\n22) 停止中のデバイスは起動を尋ねる');
+listeners['window:message']({
+  data: {
+    type: 'devices',
+    devices: [
+      {id: 'ios-1', name: 'iPhone', state: 'Booted', platform: 'ios'},
+      {id: 'ios-2', name: 'iPad', state: 'Shutdown', platform: 'ios'},
+      {id: 'and-1', name: 'Pixel', state: 'Booted', platform: 'android'},
+    ],
+  },
+});
+sent.length = 0;
+els.device.value = 'ios-2';
+listeners['device:change']();
+check(
+  '停止中は bootDevice を送る（deviceChange ではない）',
+  sent.some((m) => m.type === 'bootDevice' && m.deviceId === 'ios-2') &&
+    !sent.some((m) => m.type === 'deviceChange'),
+  JSON.stringify(sent)
+);
+sent.length = 0;
+els.device.value = 'and-1';
+listeners['device:change']();
+check(
+  '起動中は従来どおり deviceChange',
+  sent.some((m) => m.type === 'deviceChange' && m.deviceId === 'and-1'),
+  JSON.stringify(sent)
+);
+
+console.log('\n23) 見た目の設定は body のクラスで持つ');
+listeners['window:message']({
+  data: {type: 'settings', showDeviceFrame: false, showResourceStats: false},
+});
+check('端末フレームを畳む', body.classList.contains('no-frame'));
+check('リソース数値を畳む', body.classList.contains('hide-stats'));
+listeners['window:message']({
+  data: {type: 'settings', showDeviceFrame: true, showResourceStats: true},
+});
+check('フレームを戻す', !body.classList.contains('no-frame'));
+check('リソース数値を戻す', !body.classList.contains('hide-stats'));
 
 console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
 process.exit(failures === 0 ? 0 : 1);

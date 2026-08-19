@@ -35,6 +35,14 @@
         <canvas id="touch-overlay"></canvas>
         <div class="overlay" id="overlay">
           <span data-i18n="selectToStart">Select a device to start</span>
+          <!--
+            エラー時だけ出す復帰導線。以前は文言を出して終わりで、そこから
+            何をすればいいかが分からなかった（docs/improvement-proposals.md B-4）。
+          -->
+          <div class="overlay-actions" id="overlay-actions">
+            <button class="control-btn" id="btn-retry" data-i18n="retry">Retry</button>
+            <button class="control-btn" id="btn-logs" data-i18n="showLogs">Show Logs</button>
+          </div>
         </div>
       </div>
     </div>
@@ -43,7 +51,11 @@
       <div class="btn-group">
         <button class="control-btn" id="btn-home" data-i18n="home" data-i18n-icon="⌂" data-i18n-title="home" title="Home">⌂ Home</button>
         <button class="control-btn" id="btn-back" data-i18n="back" data-i18n-icon="‹" data-i18n-title="back" title="Back">‹ Back</button>
+        <button class="control-btn" id="btn-rotate" data-i18n="rotate" data-i18n-icon="⟳" data-i18n-title="rotateTitle" title="Rotate the device screen">⟳ Rotate</button>
+      </div>
+      <div class="btn-group">
         <button class="control-btn" id="btn-shot" data-i18n="shot" data-i18n-icon="◉" data-i18n-title="shotTitle" title="Save a screenshot">◉ Shot</button>
+        <button class="control-btn" id="btn-record" data-i18n-title="recordTitle" title="Record the screen to a video file">● Rec</button>
       </div>
       <div class="btn-group">
         <button class="control-btn" id="btn-trail" data-i18n-title="trailTitle" title="Show tap ripples and drag trails">Trail ON</button>

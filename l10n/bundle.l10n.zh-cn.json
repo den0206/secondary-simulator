@@ -9,14 +9,12 @@
   "Boot and connect": "启动并连接",
   "{0} is not running. Boot it?": "{0} 未在运行。要启动吗？",
   "Cancel": "取消",
-
   "Fast mode (HID)": "高速模式 (HID)",
   "Compatible mode (WDA)": "兼容模式 (WDA)",
   "Secondary Simulator: connecting to {0}": "Secondary Simulator：正在连接 {0}",
   "Secondary Simulator: connected to {0} ({1})": "Secondary Simulator：已连接 {0}（{1}）",
   "Touch and keys are injected directly over HID.": "触摸和按键通过 HID 直接注入。",
   "Through mobilecli/WDA. HID is unavailable or was demoted.": "经由 mobilecli/WDA。HID 不可用或已降级。",
-
   "Select Device…": "选择设备…",
   "Refresh the device list": "重新获取设备列表",
   "Connected": "已连接",
@@ -47,7 +45,6 @@
   "heap": "heap",
   "Child processes": "子进程",
   "Extension": "扩展",
-
   "Secondary Simulator: Could not initialize mobilecli.": "Secondary Simulator：无法初始化 mobilecli。",
   "Secondary Simulator: Booting {0}…": "Secondary Simulator：正在启动 {0}…",
   "Secondary Simulator: Could not boot {0} — {1}": "Secondary Simulator：无法启动 {0} — {1}",
@@ -60,5 +57,23 @@
   "Images": "图像",
   "Secondary Simulator: Could not save — {0}": "Secondary Simulator：无法保存 — {0}",
   "Open": "打开",
-  "Screenshot saved: {0}": "截图已保存：{0}"
+  "Screenshot saved: {0}": "截图已保存：{0}",
+  "iOS": "iOS",
+  "Android": "Android",
+  "stopped": "已停止",
+  "Rotate": "旋转",
+  "Rotate the device screen": "旋转设备屏幕",
+  "● Rec": "● 录制",
+  "■ Stop": "■ 停止",
+  "Record the screen to a video file": "将屏幕录制为视频文件",
+  "Retry": "重试",
+  "Show Logs": "查看日志",
+  "Secondary Simulator: Connect to a device before rotating the screen.": "Secondary Simulator: 旋转屏幕前请先连接设备。",
+  "Secondary Simulator: Could not rotate the screen — {0}": "Secondary Simulator: 无法旋转屏幕 — {0}",
+  "Secondary Simulator: Connect to a device before recording.": "Secondary Simulator: 录制前请先连接设备。",
+  "Save recording to": "录像保存位置",
+  "Videos": "视频",
+  "Secondary Simulator: Could not start recording — {0}": "Secondary Simulator: 无法开始录制 — {0}",
+  "Secondary Simulator: Could not stop the recording — {0}": "Secondary Simulator: 无法停止录制 — {0}",
+  "Recording saved: {0}": "录像已保存: {0}"
 }

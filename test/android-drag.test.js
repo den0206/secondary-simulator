@@ -425,6 +425,59 @@ const makeBackend = (client, screen = SCREEN) =>
     b2.dispose();
   }
 
+  console.log('\n5) 矢印キーは DPAD として送る');
+  {
+    // 委譲先の WdaBackend.key は usage を文字へ直して device.io.text へ流す作りで、
+    // 矢印は対応する文字が無いため黙って捨てられていた。Android には KEYCODE_DPAD_* がある。
+    const buttons = [];
+    const client = fakeClient(0);
+    client.pressButton = async (_dev, button) => {
+      buttons.push(button);
+    };
+    const delegated = [];
+    const keys = {
+      ...keysStub,
+      async key(usage, down) {
+        delegated.push({usage, down});
+      },
+    };
+    const b = new AndroidBackend(client, 'emulator-5554', () => SCREEN, keys);
+
+    const {HidUsage} = require('../out/input/InputBackend');
+    await b.key(HidUsage.ArrowUp, true);
+    await b.key(HidUsage.ArrowDown, true);
+    await b.key(HidUsage.ArrowLeft, true);
+    await b.key(HidUsage.ArrowRight, true);
+    check(
+      '4 方向が DPAD になる',
+      JSON.stringify(buttons) ===
+        JSON.stringify(['DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT']),
+      JSON.stringify(buttons)
+    );
+    check('矢印は委譲しない', delegated.length === 0, JSON.stringify(delegated));
+
+    // device.io.button は押して離すまでで 1 回。keyUp で二重に押さない
+    buttons.length = 0;
+    await b.key(HidUsage.ArrowUp, false);
+    check('離すときは送らない', buttons.length === 0, JSON.stringify(buttons));
+
+    // 矢印以外は従来どおり委譲する（文字はテキストとして送れる）
+    await b.key(HidUsage.Enter, true);
+    check(
+      '矢印以外はこれまでどおり委譲する',
+      delegated.some((d) => d.usage === HidUsage.Enter),
+      JSON.stringify(delegated)
+    );
+
+    // 失敗しても投げない（webview にエラー表示を出さない）
+    client.pressButton = async () => {
+      throw new Error('adb 落ち');
+    };
+    await b.key(HidUsage.ArrowUp, true);
+    check('送信に失敗しても投げない', true);
+    b.dispose();
+  }
+
   assert.strictEqual(failures, 0, `${failures} 件のテストが失敗`);
   console.log('\n全て成功');
 })().catch((err) => {

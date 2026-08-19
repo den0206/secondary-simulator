@@ -4,7 +4,6 @@
   "viewsContainer.title": "Secondary Simulator",
   "view.devicePreview.name": "设备预览",
   "configuration.title": "Secondary Simulator",
-
   "command.selectDevice.title": "选择设备",
   "command.screenshot.title": "保存截图",
   "command.openUrl.title": "在设备上打开 URL",
@@ -13,7 +12,6 @@
   "command.refresh.title": "刷新设备列表",
   "command.showLogs.title": "显示日志",
   "command.clearLogs.title": "清除日志",
-
   "configuration.autoConnect.description": "自动连接到正在运行的设备。未连接时每 5 秒查找一次，新启动的模拟器也会自动连接。与侧边栏的 Auto 按钮联动，按下 Disconnect 后会关闭。",
   "configuration.directStream.description": "让画面直接送到 webview，不经过扩展主机，由 Chromium 原生解码。在 iOS 模拟器的 sidecar 采集下由 sidecar 在 127.0.0.1 上直接分发，其他情况下转发 mobilecli 的 MJPEG。实验性功能。",
   "configuration.streamScale.description": "iOS：MJPEG 的缩放比例（1.0 = 原始尺寸）。数值越小带宽越低（设置 WDA 的 mjpegScalingFactor）。",
@@ -34,5 +32,9 @@
   "configuration.logLevel.enum.error": "仅错误。",
   "configuration.logLevel.enum.warn": "错误和警告。",
   "configuration.logLevel.enum.info": "包含常规运行日志（默认）。",
-  "configuration.logLevel.enum.debug": "包含收到的消息等详细日志。仅在排查问题时使用。"
+  "configuration.logLevel.enum.debug": "包含收到的消息等详细日志。仅在排查问题时使用。",
+  "command.rotate.title": "旋转屏幕",
+  "command.record.title": "录制屏幕",
+  "configuration.showDeviceFrame.description": "在屏幕周围绘制手机外框。侧边栏较窄时可关闭，以使用全部宽度。",
+  "configuration.showResourceStats.description": "在页脚显示内存和扩展目录大小。这些是面向开发者的诊断信息；视频速率和输入路径始终显示。"
 }
