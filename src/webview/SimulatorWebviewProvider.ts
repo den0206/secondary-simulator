@@ -184,6 +184,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           void this.refreshDevices();
         }
       } else {
+        // 非表示のあいだ録画を続けると、止め忘れに気づけない。表示を止める前に止める。
+        if (this.recording) {
+          void this.stopRecording();
+        }
         // 表示だけ止め、入力（サイドカープロセスと HID クライアント）は残す。
         // タブを行き来するたびに作り直すと ready 待ちのぶん復帰が遅い。
         // ただし畳んだまま放置される場合があるので、時間で解放する。
@@ -202,7 +206,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       type: 'mode',
       text: renderStatus(this.status, statusStrings()).mode,
     });
-    // 作り直しても録画は続いている。表示だけ復元する
+    // 作り直しても録画は続いている。表示だけ復元する（非表示で止めた場合は無い）
     if (this.recording) this.postMessage({type: 'recording', active: true});
     this.refreshDevices();
   }
@@ -1430,26 +1434,23 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.disposeListeners();
     this.stopStatsTimer();
     this.stopAutoConnectTimer();
-    // 録画は非同期だが dispose は同期。結果は待てないので送るだけ送る
-    // （待たずに落ちても、次の接続で mobilecli 側のセッションは張り直される）。
     this.clearRecordingTimer();
-    const recording = this.recording;
-    this.recording = null;
-    if (recording) {
-      void this.mobileCliClient
-        ?.stopScreenRecord(recording.deviceId)
-        .catch(() => {});
-    }
+
     this.stopCapture();
     this.mjpegProxy?.dispose();
     this.mjpegProxy = null;
-    this.mobileCliServer.stopServer();
     this.view = undefined;
     // view を落としてから。破棄済みの webview へ postMessage しない。
     this.setStatus({state: 'disconnected'});
     this.currentDeviceId = null;
     this.devices = [];
     this.screenSize = null;
-    this.mobileCliClient = null;
+
+    // mobilecli を先に落とすと stopScreenRecord が届かない。停止を待ってからサーバを止める。
+    const stopRecording = this.recording ? this.stopRecording() : Promise.resolve();
+    void stopRecording.finally(() => {
+      this.mobileCliServer.stopServer();
+      this.mobileCliClient = null;
+    });
   }
 }
