@@ -52,8 +52,6 @@ export function webviewStrings(): Record<string, string> {
     // 操作ボタン
     home: vscode.l10n.t('Home'),
     back: vscode.l10n.t('Back'),
-    rotate: vscode.l10n.t('Rotate'),
-    rotateTitle: vscode.l10n.t('Rotate the device screen'),
     shot: vscode.l10n.t('Shot'),
     shotTitle: vscode.l10n.t('Save a screenshot'),
     recordStart: vscode.l10n.t('● Rec'),

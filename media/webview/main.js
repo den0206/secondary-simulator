@@ -327,7 +327,6 @@ document.addEventListener('paste', (e) => {
 // ---- デバイス選択・ボタン ----------------------------------------------------
 
 const btnBack = document.getElementById('btn-back');
-const btnRotate = document.getElementById('btn-rotate');
 const btnRecord = document.getElementById('btn-record');
 // deviceId -> {platform, booted}。<option> を作り直しても引けるように持つ。
 const deviceById = new Map();
@@ -361,7 +360,6 @@ document
 document
   .getElementById('btn-shot')
   .addEventListener('click', () => post('screenshot'));
-btnRotate.addEventListener('click', () => post('rotate'));
 btnRecord.addEventListener('click', () => post('record'));
 
 // エラー表示からの復帰。オーバーレイの中にだけ出る。
@@ -448,6 +446,10 @@ function clearImage() {
 
 img.addEventListener('load', () => {
   paintedFrames++;
+  if (img.naturalWidth && img.naturalHeight) {
+    lastReportedWidth = 0;
+    reportViewport();
+  }
   setOverlayVisible(false);
 });
 
@@ -584,11 +586,6 @@ window.addEventListener('message', (event) => {
     case 'settings':
       document.body.classList.toggle('no-frame', message.showDeviceFrame === false);
       document.body.classList.toggle('hide-stats', message.showResourceStats === false);
-      break;
-
-    // 画面の向き。ボタンの見た目と、筐体の縦横を合わせる。
-    case 'orientation':
-      document.body.classList.toggle('landscape', message.value === 'landscape');
       break;
 
     case 'recording':

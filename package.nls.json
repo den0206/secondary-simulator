@@ -33,7 +33,6 @@
   "configuration.logLevel.enum.warn": "Errors and warnings.",
   "configuration.logLevel.enum.info": "Normal activity (default).",
   "configuration.logLevel.enum.debug": "Verbose, including received messages. Use only while investigating.",
-  "command.rotate.title": "Rotate Screen",
   "command.record.title": "Record Screen",
   "configuration.showDeviceFrame.description": "Draw the phone bezel around the screen. Turn it off to use the full width of a narrow sidebar.",
   "configuration.showResourceStats.description": "Show memory and extension-size figures in the footer. These are developer diagnostics; the video rate and input path are always shown."

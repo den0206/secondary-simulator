@@ -420,16 +420,6 @@ body.no-frame .simulator-container {
   border-radius: 8px;
 }
 
-/* 横向き。筐体の縦長を前提にした角丸と最大幅を緩める。 */
-body.landscape .phone-frame {
-  max-width: none;
-  border-radius: 22px;
-}
-
-body.landscape .simulator-container {
-  border-radius: 10px;
-}
-
 /* リソースの数値は開発者向け。既定では畳み、入力経路（#mode）だけ残す。 */
 body.hide-stats #stats {
   display: none;

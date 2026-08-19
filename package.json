@@ -81,12 +81,6 @@
         "category": "%extension.category%"
       },
       {
-        "command": "simulator.rotate",
-        "title": "%command.rotate.title%",
-        "category": "%extension.category%",
-        "icon": "$(screen-normal)"
-      },
-      {
         "command": "simulator.record",
         "title": "%command.record.title%",
         "category": "%extension.category%",
