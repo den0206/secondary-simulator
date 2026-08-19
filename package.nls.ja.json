@@ -33,7 +33,6 @@
   "configuration.logLevel.enum.warn": "エラーと警告。",
   "configuration.logLevel.enum.info": "通常の動作ログまで（既定）。",
   "configuration.logLevel.enum.debug": "受信メッセージなども含む詳細ログ。調査時だけ使う。",
-  "command.rotate.title": "画面を回転",
   "command.record.title": "画面を録画",
   "configuration.showDeviceFrame.description": "画面のまわりに端末の筐体を描く。サイドバーが狭いときは OFF にすると横幅をすべて使える。",
   "configuration.showResourceStats.description": "フッターにメモリと拡張ディレクトリのサイズを出す。開発者向けの診断で、映像レートと入力経路は常に表示される。"

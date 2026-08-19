@@ -52,12 +52,6 @@ export function activate(context: vscode.ExtensionContext): void {
       await provider.openUrl(url.trim());
     }),
 
-    vscode.commands.registerCommand('simulator.rotate', async () => {
-      if (provider) {
-        await provider.rotateDevice();
-      }
-    }),
-
     vscode.commands.registerCommand('simulator.record', async () => {
       if (provider) {
         await provider.toggleRecording();

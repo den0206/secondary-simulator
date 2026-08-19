@@ -74,7 +74,10 @@ const els = {
   'l10n-strings': Object.assign(makeEl('l10n-strings'), {
     textContent: JSON.stringify(STRINGS),
   }),
-  'simulator-img': makeEl('simulator-img'),
+  'simulator-img': Object.assign(makeEl('simulator-img'), {
+    naturalWidth: 0,
+    naturalHeight: 0,
+  }),
   overlay: makeEl('overlay'),
   'simulator-container': makeEl('simulator-container'),
   'touch-overlay': makeEl('touch-overlay'),
@@ -83,7 +86,6 @@ const els = {
   'btn-back': makeEl('btn-back'),
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-trail': makeEl('btn-trail'),
-  'btn-rotate': makeEl('btn-rotate'),
   'btn-record': makeEl('btn-record'),
   'btn-retry': makeEl('btn-retry'),
   'btn-logs': makeEl('btn-logs'),
@@ -607,10 +609,7 @@ listeners['document:paste']({
 });
 check('フォーム要素では横取りしない', sent.length === 0, JSON.stringify(sent));
 
-console.log('\n20) 回転・録画');
-sent.length = 0;
-listeners['btn-rotate:click']();
-check('Rotate が rotate を送る', sent.some((m) => m.type === 'rotate'));
+console.log('\n20) 録画');
 sent.length = 0;
 listeners['btn-record:click']();
 check('Rec が record を送る', sent.some((m) => m.type === 'record'));
@@ -623,11 +622,6 @@ listeners['window:message']({data: {type: 'recording', active: false}});
 check('停止で戻る', !els['btn-record'].classList.contains('recording'));
 check('開始のラベルに戻る', els['btn-record'].textContent === STRINGS.recordStart,
   els['btn-record'].textContent);
-// 向きは body のクラスで持つ（筐体の角丸と最大幅を切り替える）
-listeners['window:message']({data: {type: 'orientation', value: 'landscape'}});
-check('横向きのクラスが付く', body.classList.contains('landscape'));
-listeners['window:message']({data: {type: 'orientation', value: 'portrait'}});
-check('縦向きで外れる', !body.classList.contains('landscape'));
 
 console.log('\n21) エラーからの復帰導線');
 listeners['window:message']({data: {type: 'error', text: 'mobilecli を起動できません'}});

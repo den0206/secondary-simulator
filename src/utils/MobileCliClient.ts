@@ -15,13 +15,6 @@ export type ButtonType =
   | 'DPAD_LEFT'
   | 'DPAD_RIGHT';
 
-/**
- * 画面の向き。**mobilecli は小文字しか受けない** — バイナリ内の検証メッセージが
- * `invalid orientation value '%s', must be 'portrait' or 'landscape'` なので、
- * `PORTRAIT` などを送るとエラーになる。
- */
-export type Orientation = 'portrait' | 'landscape';
-
 export interface DeviceDescriptor {
   id: string;
   name: string;
@@ -97,31 +90,6 @@ export class MobileCliClient {
     return this.jsonRpcClient.sendJsonRpcRequest(
       'device.boot',
       {deviceId},
-      timeoutMs
-    );
-  }
-
-  /**
-   * 現在の画面の向きを取る。応答の形は版で変わるので生のまま返し、
-   * `decodeOrientation` に解釈させる（`decodeScreenshotResult` と同じ方針）。
-   */
-  async getOrientation(deviceId: string, timeoutMs = 15_000): Promise<unknown> {
-    return this.jsonRpcClient.sendJsonRpcRequest<unknown>(
-      'device.io.orientation.get',
-      {deviceId},
-      timeoutMs
-    );
-  }
-
-  /** 画面の向きを変える。`orientation` は小文字（{@link Orientation}）。 */
-  async setOrientation(
-    deviceId: string,
-    orientation: Orientation,
-    timeoutMs = 30_000
-  ): Promise<void> {
-    return this.jsonRpcClient.sendJsonRpcRequest(
-      'device.io.orientation.set',
-      {deviceId, orientation},
       timeoutMs
     );
   }

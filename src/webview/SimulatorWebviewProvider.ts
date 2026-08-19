@@ -15,16 +15,12 @@ import {SidecarCapture} from '../capture/SidecarCapture';
 import {WdaSettings} from '../capture/WdaSettings';
 import {SimulatorInputController} from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
-import {
-  decodeOrientation,
-  defaultRecordingName,
-  flipOrientation,
-} from '../simulator/Orientation';
+import {defaultRecordingName} from '../simulator/RecordingName';
 import {Device, DeviceType} from '../simulator/types';
 import {DeviceStatus, renderStatus} from '../ui/DeviceStatusBar';
 import {JsonRpcClient} from '../utils/JsonRpcClient';
 import {Logger} from '../utils/Logger';
-import {MobileCliClient, Orientation} from '../utils/MobileCliClient';
+import {MobileCliClient} from '../utils/MobileCliClient';
 import {MobileCliServer} from '../utils/MobileCliServer';
 import {collectResourceStats} from '../utils/ResourceStats';
 import {statusStrings, webviewStrings} from '../utils/Strings';
@@ -81,11 +77,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * この間 `refreshDevices` → `autoConnect` が別の起動済み端末へ先に繋ぐのを防ぐ。
    */
   private bootWaitDeviceId: string | null = null;
-  /**
-   * 直近に確認できた画面の向き。取れなければ `null` のままにする
-   * （分からないものを「縦」と決めつけると、トグルが逆に回る）。
-   */
-  private orientation: Orientation | null = null;
   /**
    * 録画中のセッション。**増える一方の入れ物にしない**ため、
    * 保持するのは「どの端末を、どこへ書いているか」の 1 件だけ。
@@ -213,9 +204,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     });
     // 作り直しても録画は続いている。表示だけ復元する
     if (this.recording) this.postMessage({type: 'recording', active: true});
-    if (this.orientation) {
-      this.postMessage({type: 'orientation', value: this.orientation});
-    }
     this.refreshDevices();
   }
 
@@ -379,10 +367,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         // （以前は webview からだけ「起動していません」で終わっていた）。
         case 'bootDevice':
           await this.confirmAndBoot(message.deviceId as string);
-          break;
-
-        case 'rotate':
-          await this.rotateDevice();
           break;
 
         case 'record':
@@ -581,12 +565,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.stopCapture({keepInput: reuseInput});
     this.clearInputReleaseTimer();
 
-    // 別の端末へ移るなら、向きの記憶は持ち越さない（端末ごとに違う）
-    if (this.currentDeviceId !== deviceId) {
-      this.orientation = null;
-      this.postMessage({type: 'orientation', value: null});
-    }
-    // 録画中の端末から離れるなら止める（別端末を録り続けることにならない）
+    // 別の端末へ移るなら、録画中の端末から離れるなら止める（別端末を録り続けることにならない）
     if (this.recording && this.recording.deviceId !== deviceId) {
       await this.stopRecording();
     }
@@ -1024,52 +1003,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 画面の向きを 90 度回す。
-   *
-   * 現在の向きは `device.io.orientation.get` で取る。取れなかったときは
-   * **縦だと決めつけず**「横にする」を既定にする（縦のまま横へ回す方が、
-   * 逆に回して何も起きないより気づきやすい）。
-   */
-  async rotateDevice(): Promise<void> {
-    const deviceId = this.currentDeviceId;
-    if (!deviceId || !this.mobileCliClient) {
-      void vscode.window.showWarningMessage(
-        vscode.l10n.t(
-          'Secondary Simulator: Connect to a device before rotating the screen.'
-        )
-      );
-      return;
-    }
-
-    // 取れなければ手元の値を使い、それも無ければ縦→横とみなす
-    try {
-      const current = decodeOrientation(
-        await this.mobileCliClient.getOrientation(deviceId)
-      );
-      if (current) this.orientation = current;
-    } catch (error) {
-      Logger.debug(`画面の向きを取得できなかった: ${(error as Error).message}`);
-    }
-    const next = flipOrientation(this.orientation ?? 'portrait');
-
-    try {
-      await this.mobileCliClient.setOrientation(deviceId, next);
-    } catch (error) {
-      Logger.error('画面の向きを変えられなかった', error as Error);
-      void vscode.window.showErrorMessage(
-        vscode.l10n.t(
-          'Secondary Simulator: Could not rotate the screen — {0}',
-          (error as Error).message
-        )
-      );
-      return;
-    }
-    this.orientation = next;
-    Logger.info(`画面の向きを ${next} にした`);
-    this.postMessage({type: 'orientation', value: next});
-  }
-
-  /**
    * 録画の開始・停止をトグルする。
    *
    * 開始前に保存先を尋ね、そのパスを `device.screenrecord` の `output` に渡す
@@ -1382,7 +1315,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     await this.stopRecording();
     this.stopCapture();
     this.currentDeviceId = null;
-    this.orientation = null;
     this.setStatus({state: 'disconnected'});
     this.postMessage({type: 'disconnected'});
     Logger.info('Device disconnected');
@@ -1516,7 +1448,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // view を落としてから。破棄済みの webview へ postMessage しない。
     this.setStatus({state: 'disconnected'});
     this.currentDeviceId = null;
-    this.orientation = null;
     this.devices = [];
     this.screenSize = null;
     this.mobileCliClient = null;
