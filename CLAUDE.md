@@ -143,6 +143,11 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   例: `feat(input): HID/WDA を切り替える入力バックエンドを追加`
 - 作業ブランチは `feature/**` / `fix/**`。push すると CI（型チェック・テスト・VSIX）が回る。
 - リリースは `release/Ver_X.Y.Z` ブランチを push する（README「リリース」参照）。
+- **CHANGELOG は英語で書く**（コミットメッセージは日本語のまま）。公開ページ
+  （Open VSX / Marketplace）は全世界から読まれるので、日本語が混ざるとその節だけ
+  読めない人が出る。節の見出しは Keep a Changelog の `Added` / `Changed` /
+  `Deprecated` / `Removed` / `Fixed` / `Security` を使う。
+  `test/changelog.test.js` が日本語混入と未知の見出しを落とす。
 - **CHANGELOG は `[Unreleased]` に書き足すだけ**。バージョン見出しへの切り出しは
   リリース時に `scripts/release-changelog.js` がやる。公開ページが表示するのは
   **VSIX 内の CHANGELOG.md** なので、パッケージより前に切っている。

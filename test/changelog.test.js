@@ -161,6 +161,36 @@ check('公開中の版が載っている（package.json の version）', () => {
   );
 });
 
+// 公開ページは全世界から読まれる。日本語が混ざると、その節だけ読めない人が出る。
+// 原文（英語）で書く運用を機械的に守る（コミットメッセージは日本語のままでよい）。
+check('日本語が混ざっていない（英語で書く）', () => {
+  const lines = actual.split('\n');
+  const bad = [];
+  lines.forEach((line, i) => {
+    // ひらがな・カタカナ・漢字。半角カナや全角括弧までは見ない（誤検知を避ける）
+    const m = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]/.exec(line);
+    if (m) bad.push(`${i + 1}行目: ${line.trim().slice(0, 40)}`);
+  });
+  assert.strictEqual(bad.length, 0, `\n  ${bad.slice(0, 5).join('\n  ')}`);
+});
+
+check('節の見出しは Keep a Changelog の英語表記', () => {
+  const known = new Set([
+    'Added',
+    'Changed',
+    'Deprecated',
+    'Removed',
+    'Fixed',
+    'Security',
+  ]);
+  const sections = actual
+    .split('\n')
+    .filter((l) => l.startsWith('### '))
+    .map((l) => l.slice(4).trim());
+  const unknown = [...new Set(sections)].filter((s) => !known.has(s));
+  assert.strictEqual(unknown.length, 0, unknown.join(', '));
+});
+
 check('バージョン見出しが重複していない', () => {
   const seen = new Set();
   for (const h of headings.slice(1)) {

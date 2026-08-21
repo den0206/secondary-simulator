@@ -277,6 +277,10 @@ npm run clean      # 生成物の削除
 
 補足:
 
+- **CHANGELOG は英語で書く**（コミットメッセージは日本語のまま）。公開ページは
+  全世界から読まれるため。節の見出しは Keep a Changelog の `Added` / `Changed` /
+  `Deprecated` / `Removed` / `Fixed` / `Security` を使う。
+  日本語の混入と未知の見出しは `test/changelog.test.js` が落とす
 - **CHANGELOG は手で移し替えない。** 変更は `[Unreleased]` に書き足すだけでよく、
   リリース時に [`scripts/release-changelog.js`](scripts/release-changelog.js) が
   バージョン見出しへ移す。公開ページ（Open VSX / Marketplace）が表示するのは

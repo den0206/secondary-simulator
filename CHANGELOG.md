@@ -1,163 +1,184 @@
 # Changelog
 
-書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、
-バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う。
+Written in English so the public extension pages (Open VSX / Marketplace) read the same
+for everyone. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and versions follow [Semantic Versioning](https://semver.org/).
 
-`[Unreleased]` は次のリリースに入る変更。リリース時（`release/Ver_X.Y.Z` の push）に
-`scripts/release-changelog.js` がバージョン見出しへ切り出すので、**手で移し替えなくてよい**。
+`[Unreleased]` holds changes for the next release. At release time (pushing
+`release/Ver_X.Y.Z`) `scripts/release-changelog.js` moves them under a version heading,
+so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
-### 追加
+### Added
 
-- 画面の録画（`Secondary Simulator: Record Screen` とサイドバーの Rec）。
-  保存先を先に尋ね、そのパスを mobilecli に直接書かせるので、拡張は一時ファイルを持たない。
-  押し忘れても増え続けないよう、10 分・切断・破棄のいずれでも必ず止まる。
-  サイドバーを非表示にしたときも止める。開始/停止とスクリーンショット保存時に短い効果音を鳴らす
-- `secondarySimulator.saveLocation` / `saveDirectory` — スクリーンショットと録画の
-  保存ダイアログの初期フォルダ（既定はデスクトップ。ワークスペース・ホーム・任意パスも可）
-- クリップボードの貼り付け。画面上で Cmd/Ctrl+V すると、1 文字ずつではなく
-  まとめてデバイスへ入る（URL やメールアドレスの入力用）
-- 矢印キーを送れるようにした。HID の usage は元からあったが、
-  `e.key.length === 1` に一致しないため webview で捨てられていた。
-  Android では文字にできないので `KEYCODE_DPAD_*` として送る
-- `secondarySimulator.showDeviceFrame` — 端末の筐体を描くか。
-  狭いサイドバーで横幅をすべて使いたいときに OFF にする
-- `secondarySimulator.showResourceStats` — フッターにメモリと拡張ディレクトリの
-  サイズを出すか（既定 OFF）。映像レートと入力経路は常に出る
+- Screen recording (`Secondary Simulator: Record Screen` and the Rec button in the sidebar).
+  The destination is picked up front and written by mobilecli directly, so the extension
+  keeps no temporary files. Recording always stops after 10 minutes, on disconnect, or on
+  disposal, so a forgotten recording cannot grow without bound. It also stops when the
+  sidebar is hidden. A short sound plays on start, stop, and when a screenshot is saved
+- `secondarySimulator.saveLocation` / `saveDirectory` — the folder the save dialog opens in
+  for screenshots and recordings (defaults to the desktop; workspace, home, or a custom path)
+- Clipboard paste. Pressing Cmd/Ctrl+V over the screen sends the text in one go instead of
+  character by character (for entering URLs and email addresses)
+- Arrow keys. The HID usage codes were already there, but the webview dropped the events
+  because they do not match `e.key.length === 1`. Android has no character for them, so
+  they are sent as `KEYCODE_DPAD_*`
+- `secondarySimulator.showDeviceFrame` — whether to draw the device bezel. Turn it off to
+  use the full width of a narrow sidebar
+- `secondarySimulator.showResourceStats` — whether the footer shows memory and extension
+  directory size (off by default). The video rate and input path are always shown
 
-### 変更
+### Changed
 
-- デバイス一覧を iOS / Android で分けて並べるようにした。起動中は状態を書かない
-- 停止中のデバイスをサイドバーの一覧から選んだときも起動できるようにした。
-  以前は「起動していません」で終わり、コマンドパレット経由とだけ結果が違っていた
+- The device list is grouped into iOS and Android. Running devices no longer repeat their state
+- Picking a stopped device from the sidebar list now boots it. Previously it ended with
+  "not running", which was the only place the result differed from the command palette
 
-### 修正
+### Fixed
 
-- エラー表示から復帰できるようにした（［再試行］［ログを見る］）。
-  以前は黒画面に文言が出るだけで、そこから何をすればいいか分からなかった
-- デバイス選択の `<select>` にフォーカスがあるあいだ、機種名を打って絞り込む操作の
-  文字までデバイスへ送っていたのをやめた
+- Errors can be recovered from in place (Retry / Show Logs). Previously the overlay only
+  showed text on a black screen with no indication of what to do next
+- Characters typed to filter the device `<select>` are no longer forwarded to the device
 
 ## [0.2.0] — 2026-08-18
 
-### 追加
+### Added
 
-- UI の多言語化。既定を英語にし、日本語（`ja`）と簡体字中国語（`zh-cn`）を同梱する。
-  表示言語は VS Code / Cursor の設定に従う。コマンド名と設定の説明は
-  `package.nls*.json`、実行時のメッセージは `l10n/bundle.l10n.*.json` から引く。
-  サイドバーの文言は拡張ホストが翻訳して HTML に埋め込むので、最初に英語が見えてから
-  切り替わることはない。ログ（出力チャンネル）は開発者向けの診断なので翻訳しない
-- サイドカー取り込みを表示幅と操作に追従させるようにした（狭いサイドバーでは幅を下げ、
-  指を置いているあいだだけ fps を最大 2 倍）。静止画面の停止検出と descriptor の取り直し
-- サイドカーが 127.0.0.1 でフレームを直接配信する経路（`directStream` がサイドカー取り込みでも使える）
-- `secondarySimulator.captureMode` — ディスプレイ変更通知で撮るか、ポーリングに固定するか
-- フッターに受信 fps / 描画 fps / 帯域を出すようにした（直結中は描画側だけ）
+- Localized UI. English is the default; Japanese (`ja`) and Simplified Chinese (`zh-cn`)
+  are bundled. The display language follows VS Code / Cursor. Command names and setting
+  descriptions come from `package.nls*.json`; runtime messages come from
+  `l10n/bundle.l10n.*.json`. The sidebar receives strings already translated from the
+  extension host, so nothing flashes in English first. Log output is developer-facing
+  diagnostics and is not translated
+- Sidecar capture now follows the display width and interaction: a narrow sidebar lowers
+  the width, and the frame rate rises up to 2x while a finger is down. Added stall
+  detection for static screens and descriptor re-acquisition
+- The sidecar can serve frames directly on 127.0.0.1, so `directStream` also works with
+  sidecar capture
+- `secondarySimulator.captureMode` — capture on display change notifications, or pin to polling
+- The footer shows received fps, painted fps, and bandwidth (painted only while direct streaming)
 
-### 変更
+### Changed
 
-- canvas + ImageBitmap をやめ、フレームは `<img>` の data URL か直結 MJPEG で出すようにした
-- 非表示や同じデバイスへの繋ぎ直しではサイドカーを作り直さず、表示だけ止める（2 分放置で解放）
+- Dropped canvas + ImageBitmap. Frames are shown as a data URL on an `<img>` or as a
+  direct MJPEG stream
+- Hiding the view or reconnecting to the same device no longer recreates the sidecar; only
+  the display stops (released after 2 minutes idle)
 
-### 修正
+### Fixed
 
-- 表示を閉じるとき `src` 属性ごと外すようにした（`src=""` はページ自身の URL を読みに行く）
-- 直結配信の同時接続数とヘッダ読み取り時間に上限を設けた
-- 経路が変わる設定（取り込み元・転送方法）では取り込みを作り直すようにした
-- 直結時の fps 表示が、描画を数えられていないときに誤った値を出さないようにした
+- Closing the display removes the `src` attribute (`src=""` makes the browser fetch the
+  page's own URL)
+- Bounded the concurrent connections and header read time of the direct stream
+- Settings that change the path (capture source, transport) now recreate the capture
+- The direct-stream fps readout no longer shows a misleading number when painted frames
+  cannot be counted
 
 ## [0.1.1] — 2026-08-18
 
-### 追加
+### Added
 
-- `secondarySimulator.logLevel` — 出力チャンネルへ書くログの詳しさ（既定 info）。
-  VS Code は全文をメモリに持ち行数の上限を設けられないため、書く量そのものを絞れるようにした
-- ステータスバーに接続中のデバイスと入力経路（HID / WDA）を出すようにした。
-  サイドバー下部にも同じラベルを出す（従来 `status` メッセージは webview で捨てられていた）
-- 修飾キー付きの入力（`Cmd+A` / `Cmd+C` など）を送れるようにした。
-  webview が `Shift` / `Control` / `Alt` / `Meta` を捨てていたため送れなかった。HID 経路のみ
-- `Secondary Simulator: Select Device` で停止中のデバイスを選ぶと、その場で起動して接続できるようにした
-  （`device.boot`）。従来は「起動していません」で終わっていた
-- `Secondary Simulator: Open URL on Device` — 接続中のデバイスでディープリンク / URL を開く（`device.url`）
+- `secondarySimulator.logLevel` — how much detail is written to the output channel
+  (default info). VS Code keeps the whole channel in memory with no way to cap the line
+  count, so the only lever is writing less
+- The status bar shows the connected device and the input path (HID / WDA). The same label
+  appears at the bottom of the sidebar (the `status` message used to be dropped by the webview)
+- Modifier key combinations (`Cmd+A`, `Cmd+C`, …) can be sent. The webview was dropping
+  `Shift` / `Control` / `Alt` / `Meta`, so they never arrived. HID path only
+- Picking a stopped device in `Secondary Simulator: Select Device` now boots it and connects
+  (`device.boot`). It used to end with "not running"
+- `Secondary Simulator: Open URL on Device` — open a deep link or URL on the connected
+  device (`device.url`)
 
-### 修正
+### Fixed
 
-- Android のドラッグ／スクロールが実用にならなかった問題を修正。mobilecli の
-  `device.io.gesture` は Android では 1 アクションが `adb shell input ... motionevent`
-  1 回に展開され `duration` も無視されるため、軌跡を貯めて一括送信すると指を離してから
-  数十秒かけて再生され、フリック（慣性スクロール）も効かなかった。押しているあいだ
-  「最新の 1 点だけ」を送り続ける Android 専用バックエンドへ切り替えた（タップ・長押し・
-  長押しドラッグも成立するようにした）。使えるときは `adb shell` を常駐させて motionevent
-  を流し、見つからなければ従来の mobilecli 経路へ落ちる
-- 停止中デバイスの起動待ち中に、自動接続が別の起動済み端末へ先に繋いでしまうことがあった問題を修正
+- Fixed Android drag and scroll being unusable. On Android each mobilecli
+  `device.io.gesture` action expands into one `adb shell input ... motionevent` and
+  `duration` is ignored, so buffering the path and sending it at once replayed it over tens
+  of seconds after the finger was lifted, and flicks (inertial scrolling) never worked.
+  Switched to an Android-specific backend that keeps sending only the latest point while
+  the finger is down (taps, long presses, and long-press drags still work). When available
+  it keeps an `adb shell` session open and streams motionevents into it, falling back to
+  the mobilecli path otherwise
+- Fixed auto-connect attaching to a different running device while waiting for a stopped
+  device to boot
 
-### 変更
+### Changed
 
-- `npm test` を `node --test test/*.test.js` にした。`package.json` へファイルを 1 つずつ
-  並べる形をやめ、テストを足しても登録漏れで素通りしないようにした
-- CI に Linux の型チェック / テストジョブを追加（macOS ランナーが枯渇しても壊れたことに気づける）
+- `npm test` is now `node --test test/*.test.js`. Listing files one by one in `package.json`
+  meant a new test could pass silently by never being registered
+- Added a Linux type check / test job to CI, so breakage is still caught when macOS runners
+  are exhausted
 
 ## [0.1.0] — 2026-08-17
 
-### 追加
+### Added
 
-- `Secondary Simulator: Clear Logs` — 出力チャンネルを空にする（VS Code は全文をメモリに持ち、行数の上限を設けられないため）
-- `simhid-server --check` — HID の私有 API（CoreSimulator / SimulatorKit）が解決できるかだけを見る。
-  CI の毎 push と週次 cron で回し、Xcode 更新で壊れたことに先に気づけるようにした
-- `THIRD-PARTY-NOTICES.md` — 同梱 `@mobilenext/mobilecli` 0.1.64（AGPL-3.0）のライセンス全文と入手先を VSIX に同梱
-- README / README_JP の License 節に mobilecli の AGPL 告知を追記
+- `Secondary Simulator: Clear Logs` — empty the output channel (VS Code holds the whole
+  channel in memory and offers no line limit)
+- `simhid-server --check` — verifies only that the private HID APIs (CoreSimulator /
+  SimulatorKit) still resolve. Runs on every push and a weekly cron so an Xcode update that
+  breaks them is caught before users hit it
+- `THIRD-PARTY-NOTICES.md` — the full license text and source location for the bundled
+  `@mobilenext/mobilecli` 0.1.64 (AGPL-3.0), included in the VSIX
+- An AGPL notice for mobilecli in the License section of README / README_JP
 
-### 変更
+### Changed
 
-- スクリーンショットをビュータイトルのアイコンからプレビュー下の Shot ボタンへ移した（コマンドパレットの `Save Screenshot` は残す）
-- フッターの「ストレージ」表示が拡張ディレクトリしか測っていなかったため「拡張ディレクトリ」へ表記を改めた
-- デモ GIF を README へ追加（VSIX には同梱しない）
+- Moved the screenshot action from the view title icon to a Shot button under the preview
+  (the `Save Screenshot` command remains)
+- Renamed the footer's "storage" figure to "extension directory", since that is all it measured
+- Added a demo GIF to the README (not bundled in the VSIX)
 
 ## [0.0.1] — 2026-08-17
 
-初回リリース。
+First release.
 
-### 追加
+### Added
 
-- iOS Simulator への HID 直接注入（`native/simhid-server`）と WDA へのフォールバック
-- iOS Simulator の画面をサイドカー経由でフレームバッファから直接取り込むようにした
-  （`secondarySimulator.captureSource`）。WDA のスクリーンショットはアプリのウィンドウしか
-  描かないため、ソフトウェアキーボードとステータスバーが写らなかった
-- `secondarySimulator.keyInput` — iOS のキー入力経路を HID / WDA で切り替える。
-  HID のキーはハードウェアキーボード扱いになり、iOS がソフトウェアキーボードを出さない
-- MJPEG 直結ストリーム表示（`secondarySimulator.directStream`）と帯域設定
-- Pointer Events の生配信によるドラッグ / ピンチ追従
-- 起動中デバイスへの自動接続（`secondarySimulator.autoConnect`、Disconnect で OFF）
-- サイドバー UI（ツールバー、端末筐体、待機スピナー、接続ランプ、Refresh、
-  Trail / Auto トグル、リソースチップ）
-- `Secondary Simulator: Save Screenshot` — 接続中デバイスの画面を保存する
-- `Secondary Simulator: Select Device` を QuickPick 化（従来はビューへフォーカスするだけだった）
-- `Secondary Simulator: Show Logs` — 出力チャンネルを開く
-- `docs/project-review.md` — 全体精査の記録と未対応の提案
-- CI（型チェック・テスト・VSIX パッケージ）とリリース自動化
+- Direct HID injection into the iOS Simulator (`native/simhid-server`) with a WDA fallback
+- Capture the iOS Simulator screen straight from the framebuffer through the sidecar
+  (`secondarySimulator.captureSource`). WDA screenshots only draw the application window,
+  so the software keyboard and status bar were missing
+- `secondarySimulator.keyInput` — route iOS keyboard input through HID or WDA. HID keys are
+  treated as a hardware keyboard, so iOS does not show the software keyboard
+- Direct MJPEG stream display (`secondarySimulator.directStream`) and bandwidth settings
+- Raw Pointer Events forwarding, so drags and pinches follow the finger
+- Automatic connection to a running device (`secondarySimulator.autoConnect`, turned off by Disconnect)
+- Sidebar UI: toolbar, device bezel, waiting spinner, connection lamp, Refresh,
+  Trail / Auto toggles, and resource chips
+- `Secondary Simulator: Save Screenshot` — save the connected device's screen
+- `Secondary Simulator: Select Device` as a QuickPick (it used to only focus the view)
+- `Secondary Simulator: Show Logs` — open the output channel
+- `docs/project-review.md` — the record of a full review and the proposals left open
+- CI (type check, tests, VSIX packaging) and release automation
 
-### 修正
+### Fixed
 
-- MJPEG の multipart 解析がバイト位置と文字位置を取り違えていた問題を修正（フレーム破損・取りこぼし）
-- パートごとに `Content-Length` をリセットせず、直前の値を使い回していた問題を修正
-- キーバインドの `when` が `view ==` で一致せず、Cmd+Shift+R / H / B が発火していなかった問題を修正
-- 既存 mobilecli サーバを再利用したとき、接続の度にポート走査を繰り返していた問題を修正
-- MJPEG 直結プロキシの `dispose` で接続とポートが解放されていなかった問題を修正
-- 直結ストリームへトークンを要求し、同じマシンの他プロセスから画面を覗けないようにした
-- 再接続を指数バックオフにし、失敗が続いても出力チャンネルが膨らまないようにした
-- 繋がったままフレームが止まる場合を検出して張り直すようにした
-- WDA 経路の軌跡バッファが無制限に伸びていた問題を修正（60 秒のドラッグで 3,601 点・190KB の RPC）
-- サイドカーの stdout バッファに上限が無かった問題を修正
-- 閉じた WebviewView を provider が保持し続けていた問題を修正
-- mobilecli / simhid-server が SIGTERM を無視した場合に孤児として残る問題を修正
-- webview が取りこぼした pointerId を保持し続けていた問題を修正
-- オーバーレイの DOM をフレーム毎に書き換えていたのをやめた
+- Fixed the MJPEG multipart parser confusing byte offsets with character offsets
+  (corrupted and dropped frames)
+- Fixed `Content-Length` not being reset per part, so the previous value was reused
+- Fixed keybindings never firing: the `when` clause used `view ==`, which does not match,
+  so Cmd+Shift+R / H / B were dead
+- Fixed the port scan repeating on every connection when an existing mobilecli server was reused
+- Fixed `MjpegProxy.dispose()` leaving connections and the port open
+- Required a token on the direct stream so other processes on the same machine cannot watch the screen
+- Made reconnection use exponential backoff so repeated failures do not inflate the output channel
+- Detected streams that stall while still connected and re-established them
+- Fixed the WDA path's gesture buffer growing without bound (3,601 points and a 190KB RPC
+  after a 60 second drag)
+- Fixed the sidecar's stdout buffer having no limit
+- Fixed the provider holding on to a closed WebviewView
+- Fixed mobilecli / simhid-server surviving as orphans when they ignore SIGTERM
+- Fixed the webview holding on to pointer IDs it never saw released
+- Stopped rewriting the overlay DOM on every frame
 
-### 変更
+### Changed
 
-- フレームを base64 の文字列で webview へ渡すようにした（形式が環境依存だったため）
-- 未使用の入力 API（`tap` / `swipe` / `gesture` ほか）と `ScreenInfo` 型を削除
-- `.d.ts` の生成を止めた（VSIX に同梱されていた）
+- Frames are passed to the webview as base64 strings (the previous form varied by environment)
+- Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
+- Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
 [Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.2.0...HEAD
 [0.2.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.1.1...Ver_0.2.0

@@ -269,6 +269,9 @@ See [CLAUDE.md](CLAUDE.md) for working conventions and architecture notes, and [
 
 Notes:
 
+- **The changelog is written in English** so the public pages read the same for everyone.
+  Use the Keep a Changelog section names (`Added` / `Changed` / `Deprecated` / `Removed` /
+  `Fixed` / `Security`); `test/changelog.test.js` enforces both
 - **Do not move changelog entries by hand.** Add them under `[Unreleased]`;
   [`scripts/release-changelog.js`](scripts/release-changelog.js) moves them under a
   version heading at release time. The public page (Open VSX / Marketplace) renders
