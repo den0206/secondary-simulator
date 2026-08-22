@@ -84,6 +84,80 @@ jobs:
           path: vsix/*.vsix
           retention-days: 7
 
+      # ここから先はシミュレータを実際に動かす。単体テストは HID コマンドを組み立てる
+      # ところまでしか見ないので、注入そのものが壊れても気づけない
+      # （check-xcode-hid.sh もシンボルが解決できるかしか見ていない）。
+      # VSIX の upload より後に置いてあるのは、ここが落ちても成果物は残るようにするため。
+      - name: シミュレータを起動
+        id: sim
+        run: |
+          # Pro / Max / e を除いた標準モデルの最新。Xcode が更新されて機種が
+          # 入れ替わっても拾えるように、固定名では書かない。
+          # **15 で下限を切っている** — tap-effect の TOP_CELL_Y は設定トップの
+          # 縦配分に依存していて、それ以前の機種では比が合わない
+          TYPE=$(xcrun simctl list devicetypes \
+            | grep -oE 'com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-[0-9]+\)' \
+            | tr -d ')' | sort -t- -k2,2n | awk -F- '$NF >= 15' | tail -1)
+          # unavailable なランタイムも列挙されるので先に外す。並び順は保証されない
+          # ので、識別子の major/minor で数値ソートしてから最新を採る
+          RT=$(xcrun simctl list runtimes \
+            | grep -v unavailable \
+            | grep -oE 'com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]+(-[0-9]+)?' \
+            | sort -t- -k2,2n -k3,3n | tail -1)
+          echo "device type: $TYPE / runtime: $RT"
+          [ -n "$TYPE" ] || { echo "::error::iPhone 15 以降の device type がありません"; exit 1; }
+          [ -n "$RT" ] || { echo "::error::利用可能な iOS runtime がありません"; exit 1; }
+          UDID=$(xcrun simctl create ci-device "$TYPE" "$RT")
+          # boot が転けても「後片付け」が消せるように、作った直後に出す
+          echo "udid=$UDID" >> $GITHUB_OUTPUT
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      # HID 注入が実際に画面を動かすか（操作の前後をスクリーンショットで比べる）
+      - name: 実操作テスト（HID 注入）
+        id: tap
+        env:
+          # 落ちたときに比べた 2 枚が残る。変化の割合だけでは、注入が届かなかったのか
+          # 想定した画面が出ていなかったのかが分からない。ランナーの temp に寄せて
+          # 次のステップで拾えるようにする
+          TMPDIR: ${{ runner.temp }}
+        run: node test/tap-effect.device-test.js "${{ steps.sim.outputs.udid }}"
+
+      - name: 失敗した画面を残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tap-effect-screens
+          path: ${{ runner.temp }}/tap-effect-*/*.bmp
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # tap-effect はスクリーンショット差分に依存するぶん揺れやすい。そこが落ちても
+      # MJPEG のライフサイクル検証まで道連れにしないよう、独立して走らせる
+      - name: mobilecli サーバを起動
+        if: success() || steps.tap.conclusion == 'failure'
+        run: |
+          ARCH=$([ "$(uname -m)" = "arm64" ] && echo arm64 || echo amd64)
+          BIN="node_modules/@mobilenext/mobilecli/bin/mobilecli-darwin-$ARCH"
+          nohup "$BIN" -v server start --listen localhost:12099 > mobilecli.log 2>&1 &
+          for _ in $(seq 30); do
+            curl -sf http://localhost:12099/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::mobilecli サーバが起動しません"; cat mobilecli.log; exit 1
+
+      # MJPEG ストリームの切断・復帰（mobilecli 経由）
+      - name: ストリームのライフサイクル
+        if: success() || steps.tap.conclusion == 'failure'
+        run: node test/stream-lifecycle.device-test.js "${{ steps.sim.outputs.udid }}"
+
+      - name: 後片付け
+        if: always()
+        run: |
+          pkill -f 'mobilecli-darwin' || true
+          xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
+          xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
+
   # build-and-test は macos-14 固定なので、新しい Xcode を積んだイメージでは回らない。
   # こちらは macos-latest（＝より新しい Xcode）で私有 API の解決だけを確認する。
   # 週次 cron で回るので、push が無い週の Xcode 更新にも気づける。
