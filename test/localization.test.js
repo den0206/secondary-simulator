@@ -186,5 +186,44 @@ console.log('\n3) webview へ渡す辞書');
   check('辞書に使われていないキーが無い', unused.length === 0, unused.join(', '));
 }
 
+console.log('\n4) walkthrough の貢献点');
+{
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const steps = (pkg.contributes.walkthroughs ?? []).flatMap((w) => w.steps ?? []);
+  check('ステップがある', steps.length > 0, String(steps.length));
+
+  // VS Code はステップの説明を parseLinkedText で読む（リンクだけ）。
+  // **強調** や `コード` は字面のまま出るので、原文にも訳にも混ぜない。
+  const nls = ['package.nls.json', ...LOCALES.map((l) => `package.nls.${l}.json`)];
+  for (const file of nls) {
+    const loc = readJson(path.join(ROOT, file));
+    const bad = steps
+      .map((s) => s.description.replace(/^%|%$/g, ''))
+      .filter((k) => /\*\*|`/.test(loc[k] ?? ''));
+    check(`${file}: 説明に markdown が無い`, bad.length === 0, bad.join(', '));
+  }
+
+  // media が欠けると 1 枚目が空になる。コミットし忘れもここで落ちる。
+  for (const step of steps) {
+    const media = step.media.svg ?? step.media.image ?? step.media.markdown;
+    check(`${step.id}: ${media} がある`, fs.existsSync(path.join(ROOT, media)));
+    if (!step.media.svg) continue;
+    // SVG は CSP style-src 'nonce-…' の webview へ直に埋め込まれる。
+    // <style> も style="" も落とされるので、色は必ず属性で書く。
+    const raw = fs.readFileSync(path.join(ROOT, step.media.svg), 'utf8');
+    // XML のコメントは `--` を含めてはいけない。テーマ変数名（--vscode-…）を
+    // そのままコメントに書くと、SVG が丸ごとパースできなくなる。
+    check(
+      `${step.media.svg}: コメントに -- が無い`,
+      [...raw.matchAll(/<!--([\s\S]*?)-->/g)].every((m) => !m[1].includes('--'))
+    );
+    const svg = raw.replace(/<!--[\s\S]*?-->/g, '');
+    check(
+      `${step.media.svg}: <style> / style="" が無い`,
+      !/<style[\s>]/.test(svg) && !/\sstyle=/.test(svg)
+    );
+  }
+}
+
 console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
 process.exit(failures === 0 ? 0 : 1);
