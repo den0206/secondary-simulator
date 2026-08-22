@@ -16,6 +16,13 @@ import {WdaBackend} from './WdaBackend';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * ログに載せてよいキーの呼び名。特殊キー名（`return` など）は内容ではないので
+ * そのまま出すが、打った文字は決して載せない（出力チャンネルは消えない）。
+ */
+export const keyLabel = (key: string, special?: boolean): string =>
+  special ? key : 'char';
+
 export interface ControllerOptions {
   deviceId: string;
   platform: 'ios' | 'android';
@@ -232,7 +239,7 @@ export class SimulatorInputController {
     const backend = this.keyBackend();
     if (backend.kind !== 'hid') {
       Logger.warn(
-        `修飾キー付きの入力は HID 経路でしか送れない（無視: ${key}）。` +
+        `修飾キー付きの入力は HID 経路でしか送れない（無視: ${keyLabel(key, special)}）。` +
           'secondarySimulator.keyInput を hid にすると送れる。'
       );
       return;
@@ -250,7 +257,9 @@ export class SimulatorInputController {
       }
     }
     if (usage === undefined) {
-      Logger.warn(`HID の usage に対応しないキーなので送らない: ${key}`);
+      Logger.warn(
+        `HID の usage に対応しないキーなので送らない: ${keyLabel(key, special)}`
+      );
       return;
     }
 

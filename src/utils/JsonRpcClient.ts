@@ -47,11 +47,13 @@ export class JsonRpcClient {
       if (error.name === 'TimeoutError') {
         throw new Error(`Request timeout after ${timeoutMs}ms for method: ${method}`);
       }
-      // エラーメッセージにメソッド名とパラメータを追加
+      // 診断に要るのはメソッド名と deviceId だけ。params を丸ごと載せると
+      // `device.io.text` の貼り付け内容（パスワード等）が例外メッセージに入り、
+      // ログと webview のオーバーレイの両方へ出てしまう。
       if (error.message && !error.message.includes(method)) {
-        throw new Error(
-          `${error.message} (method: ${method}, params: ${JSON.stringify(params)})`
-        );
+        const deviceId = params && typeof params === 'object' ? params.deviceId : undefined;
+        const where = deviceId ? `${method}, device: ${deviceId}` : method;
+        throw new Error(`${error.message} (method: ${where})`);
       }
       throw error;
     }
