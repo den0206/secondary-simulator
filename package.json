@@ -2,7 +2,7 @@
   "name": "secondary-simulator",
   "displayName": "Secondary Simulator",
   "description": "%extension.description%",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "yuuki-sakai",
   "icon": "media/icon.png",
   "license": "MIT",
