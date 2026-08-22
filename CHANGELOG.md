@@ -21,6 +21,38 @@ so **there is no need to move entries by hand**.
   1.106 and later, and Cursor rejects it outright because it reserves that side bar for its
   agent UI, which would drop the view into the Explorer instead
 
+### Security
+
+- The mobilecli RPC server no longer starts with `--cors`. With CORS enabled, any page open
+  in a browser on the same machine could call the RPC and read the replies: list devices,
+  take screenshots of whatever the simulator shows, drive the device, and write a recording
+  to an arbitrary path on the host. The extension never needed it — the extension host calls
+  it through Node's `fetch`, which has no origin, and the webview only loads an `<img>`,
+  which is not subject to CORS
+- Key presses are no longer written to the output channel. What used to be one line per
+  keystroke at the default log level meant every password typed into an app under
+  development stayed in memory for the session and travelled along with any log attached to
+  a bug report. Only the kind of key is logged now, at debug level; the names of special
+  keys stay because they are not content
+- JSON-RPC errors no longer carry the request parameters. A failing `device.io.text` used to
+  put the pasted text into the exception message, which is both logged and shown in the
+  webview overlay. The method name and the device id are kept, since that is what diagnosis
+  needs
+- The scan for a running mobilecli server covers 10 ports instead of 101, which narrows the
+  range of unrelated local services that receive a JSON POST
+- Labels in the resource footer are escaped before being placed in the webview, so a
+  translation bundle containing markup cannot break the layout
+
+### Fixed
+
+- The MJPEG proxy is now shut down when direct streaming is turned off and on disconnect,
+  instead of holding its HTTP listener and token until the session ends
+- Starting the MJPEG proxy no longer replaces the webview port mapping, which could drop the
+  permission granted to the sidecar stream port
+- Looking for the bundled mobilecli binary no longer runs it during `activate`. Spawning a
+  child process there blocks the extension host, and on macOS the first run of a quarantined
+  binary waits on Gatekeeper. Executability is checked with `access` instead
+
 ## [0.3.0] — 2026-08-21
 
 ### Added
