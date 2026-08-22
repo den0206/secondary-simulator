@@ -124,6 +124,39 @@
         }
       ]
     },
+    "walkthroughs": [
+      {
+        "id": "secondarySimulator.setup",
+        "title": "%walkthrough.setup.title%",
+        "description": "%walkthrough.setup.description%",
+        "steps": [
+          {
+            "id": "moveToSecondarySideBar",
+            "title": "%walkthrough.setup.move.title%",
+            "description": "%walkthrough.setup.move.description%",
+            "media": {
+              "svg": "media/walkthrough/move.svg",
+              "altText": "%walkthrough.setup.move.altText%"
+            },
+            "completionEvents": [
+              "onStepSelected"
+            ]
+          },
+          {
+            "id": "connectDevice",
+            "title": "%walkthrough.setup.connect.title%",
+            "description": "%walkthrough.setup.connect.description%",
+            "media": {
+              "image": "media/icon.png",
+              "altText": "%walkthrough.setup.connect.altText%"
+            },
+            "completionEvents": [
+              "onCommand:simulator.selectDevice"
+            ]
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "%configuration.title%",
       "properties": {
