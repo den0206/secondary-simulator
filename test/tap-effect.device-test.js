@@ -122,10 +122,20 @@ async function shot(udid) {
 }
 
 /**
+ * 待ち時間の予算。**1 枚撮るのにかかる時間から決める。**
+ *
+ * ローカルは 1 枚 0.2 秒ほどだが、GitHub の macOS ランナーは 3 秒を超える（実測）。
+ * 固定の 6 秒にすると CI では比較が 1〜2 回しかできず、**アニメーションの途中で
+ * 「止まらなかった」と誤判定する**（実測: 設定アプリの起動中に 97% の差分を拾った）。
+ * 比較を十数回まわせるだけの幅を、実測から取る。
+ */
+let budgetMs = 6000;
+
+/**
  * 画面が止まるまで待つ。スクロールの慣性やアニメーションが残ったまま差分を取ると、
  * 操作の効果と区別できない。**閾値は固定ではなく、ここで実測した床を後段が使う。**
  */
-async function waitStill(udid, maxMs = 6000) {
+async function waitStill(udid, maxMs = budgetMs) {
   let prev = await shot(udid);
   const until = Date.now() + maxMs;
   let last = 1;
@@ -164,7 +174,7 @@ async function stillOrBail(udid, label) {
  * まず `before` から変わるのを待ち、変わってから静止を待つ。
  * 最後まで変わらなければ操作が届かなかったということなので、そのまま返して呼び手が落とす。
  */
-async function settle(udid, before, threshold, maxMs = 6000) {
+async function settle(udid, before, threshold, maxMs = budgetMs) {
   const until = Date.now() + maxMs;
   while (Date.now() < until) {
     const cur = await shot(udid);
@@ -226,7 +236,15 @@ function wdaTrap() {
     console.error('起動中のシミュレータがありません（UDID を引数で渡すこともできます）');
     process.exit(2);
   }
-  console.log(`device: ${udid}\n`);
+  console.log(`device: ${udid}`);
+
+  // 待ちの予算を実測から決める（budgetMs のコメント参照）
+  const t0 = Date.now();
+  await shot(udid);
+  await shot(udid);
+  const shotMs = Math.round((Date.now() - t0) / 2);
+  budgetMs = Math.max(6000, shotMs * 14);
+  console.log(`スクリーンショット 1 枚 ${shotMs}ms → 待ちの予算 ${budgetMs}ms\n`);
 
   let backendKind = null;
   controller = new SimulatorInputController({
