@@ -144,29 +144,9 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      # tap-effect はスクリーンショット差分に依存するぶん揺れやすい。そこが落ちても
-      # MJPEG のライフサイクル検証まで道連れにしないよう、独立して走らせる
-      - name: mobilecli サーバを起動
-        if: success() || steps.tap.conclusion == 'failure'
-        run: |
-          ARCH=$([ "$(uname -m)" = "arm64" ] && echo arm64 || echo amd64)
-          BIN="node_modules/@mobilenext/mobilecli/bin/mobilecli-darwin-$ARCH"
-          nohup "$BIN" -v server start --listen localhost:12099 > mobilecli.log 2>&1 &
-          for _ in $(seq 30); do
-            curl -sf http://localhost:12099/health > /dev/null && exit 0
-            sleep 1
-          done
-          echo "::error::mobilecli サーバが起動しません"; cat mobilecli.log; exit 1
-
-      # MJPEG ストリームの切断・復帰（mobilecli 経由）
-      - name: ストリームのライフサイクル
-        if: success() || steps.tap.conclusion == 'failure'
-        run: node test/stream-lifecycle.device-test.js "${{ steps.sim.outputs.udid }}"
-
       - name: 後片付け
         if: always()
         run: |
-          pkill -f 'mobilecli-darwin' || true
           xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
           xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 

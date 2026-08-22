@@ -22,11 +22,19 @@ npm run clean      # out/ と native/simhid-server を削除
 `npm test` は `node --test test/*.test.js`。**ファイルを置けば走る**（登録は要らない）。
 各テストは node 標準のみの素の script で、`process.exit` の終了コードが結果になる。
 `test/*.device-test.js` は `*.test.js` に一致しないので `npm test` では走らない
-（起動中のシミュレータが要る）。**CI の macOS ジョブがシミュレータを作って実行する**ので、
-手で回すのは調査のときだけでよい（`node test/tap-effect.device-test.js [UDID]`）。
-`tap-effect.device-test.js` は操作の前後をスクリーンショットで比べ、**HID 注入が実際に
-画面を動かすか**を見る（差分の計算は `test/helpers/screen-diff.js`）。単体テストは
-コマンドを組み立てるところまでしか見ないので、注入そのものが壊れても気づけない。
+（起動中のシミュレータが要る）。ログを読めるように `vscode-stub` は
+`installVerbose()` を使う（`install()` は `Logger` を捨てるので、HID から WDA へ
+降格した理由が消える）。
+
+- **`tap-effect.device-test.js` は CI の macOS ジョブが回す。** 操作の前後を
+  スクリーンショットで比べ、**HID 注入が実際に画面を動かすか**を見る
+  （差分は `test/helpers/screen-diff.js`）。単体テストはコマンドを組み立てる
+  ところまでしか見ないので、注入そのものが壊れても気づけない。
+- **`stream-lifecycle.device-test.js` は手元だけ**（`node test/stream-lifecycle.device-test.js <UDID>`。
+  起動中のシミュレータと mobilecli(:12099) が要る）。**CI に載せない** — mobilecli+WDA の
+  MJPEG 経路が GitHub の macOS ランナーで安定しないため（実測: ローカルは約 27fps
+  出るのに CI は 60 秒で 2 枚、`device.screencapture` が 500 を返すこともある）。
+  載せるとランナーの調子を測るだけのテストになる。
 
 `sh scripts/check-xcode-hid.sh` はインストール済み Xcode すべてに
 `native/simhid-server --check` を当て、HID の私有シンボル（CoreSimulator /
