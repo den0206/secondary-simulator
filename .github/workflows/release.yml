@@ -135,7 +135,7 @@ jobs:
       # +N 再ビルドは VSIX 内の version が X.Y.Z のままで Open VSX が重複として弾くため、
       # 初回の Ver_X.Y.Z (version == marketing) だけを公開対象にする。
       # 名前空間 (package.json の publisher) は初回のみ手動で作る:
-      #   npx ovsx create-namespace yuuki-sakai -p <token>
+      #   npx ovsx@1.1.1 create-namespace yuuki-sakai -p <token>
       - name: Publish to Open VSX
         if: steps.meta.outputs.tag && steps.meta.outputs.version == steps.meta.outputs.marketing
         env:
@@ -147,7 +147,9 @@ jobs:
             echo "::warning::OVSX_TOKEN が未設定のため Open VSX への公開をスキップしました"
             exit 0
           fi
-          npx --yes ovsx publish vsix/secondary-simulator.vsix --skip-duplicate
+          # 版を固定する。ここは公開トークンを持つステップなので、latest を取りに行くと
+          # ovsx 側の侵害がそのままトークンの窃取になる（npm を狙うワームの定石）。
+          npx --yes ovsx@1.1.1 publish vsix/secondary-simulator.vsix --skip-duplicate
 
       # 版上げを main へ直接コミットする。release ブランチにコミットすると main の
       # version が古いまま取り残され、手動マージ待ちの運用が生まれるため。
