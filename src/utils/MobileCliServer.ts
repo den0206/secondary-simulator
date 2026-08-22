@@ -1,4 +1,4 @@
-import {ChildProcess, execFileSync, spawn} from 'node:child_process';
+import {ChildProcess, spawn} from 'node:child_process';
 import {Logger} from './Logger';
 
 export class MobileCliServer {
@@ -6,6 +6,11 @@ export class MobileCliServer {
   private static SERVER_STARTUP_TIMEOUT_MS = 10000; // 10 seconds
   private static SERVER_HEALTH_CHECK_INTERVAL_MS = 200; // 200ms between checks
   private static KILL_GRACE_MS = 2000; // SIGTERM から SIGKILL までの猶予
+  /**
+   * 走査するポート数。無関係なローカルサービスへ JSON を投げる範囲でもあるので
+   * 広げない（同時に 10 個 mobilecli が立つことはない）。
+   */
+  private static PORT_RANGE = 10;
 
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
@@ -54,7 +59,9 @@ export class MobileCliServer {
         const binaryPath = path.join(binDir, binaryName);
         if (fs.existsSync(binaryPath)) {
           try {
-            execFileSync(binaryPath, ['--version']);
+            // 実行可否は access で見る。この constructor は activate から呼ばれるので、
+            // ここで子プロセスを起こすと拡張ホストが Gatekeeper 検証の分だけ止まる。
+            fs.accessSync(binaryPath, fs.constants.X_OK);
             Logger.info(`Found mobilecli at: ${binaryPath}`);
             return binaryPath;
           } catch {
@@ -66,7 +73,11 @@ export class MobileCliServer {
       }
 
       // 2. npx経由で実行（フォールバック）
-      Logger.info('Using npx to run mobilecli');
+      // 実行時にネットワークから取得して実行することになるので、info では埋もれる。
+      Logger.warn(
+        'mobilecli の同梱バイナリが見つからないので npx で実行する' +
+          '（版は固定するが、パッケージをネットワークから取得して実行する）'
+      );
       return 'npx';
     } catch (error) {
       Logger.error('Failed to find mobilecli path', error as Error);
@@ -179,7 +190,7 @@ export class MobileCliServer {
     this.serverReady = false;
 
     const rangeStart = MobileCliServer.DEFAULT_SERVER_PORT;
-    const rangeEnd = MobileCliServer.DEFAULT_SERVER_PORT + 100;
+    const rangeEnd = MobileCliServer.DEFAULT_SERVER_PORT + MobileCliServer.PORT_RANGE - 1;
 
     // 既存の稼働中サーバを範囲全体から探して再利用する（default ポートだけでなく、
     // 過去に別ポートで起動したものも拾えるようにする）。
@@ -210,6 +221,10 @@ export class MobileCliServer {
     this.serverPort = rangeStart + freeIndex;
     Logger.info(`Launching mobilecli server on port ${this.serverPort}...`);
 
+    // `--cors` は付けない。付けると任意のブラウザタブから RPC を叩けて応答まで読める
+    // （画面窃取・端末操作・録画の任意パス書き込み）。この拡張は CORS を要らない
+    // ——拡張ホストは Node の fetch（オリジン無し）、webview は <img> だけで、
+    // 画像読み込みは CORS の対象外（`MjpegProxy` 冒頭）。
     const args =
       this.mobilecliPath === 'npx'
         ? [
@@ -219,7 +234,6 @@ export class MobileCliServer {
             this.npxPackageSpec(),
             'server',
             'start',
-            '--cors',
             '--listen',
             `localhost:${this.serverPort}`,
           ]
@@ -227,7 +241,6 @@ export class MobileCliServer {
             '-v',
             'server',
             'start',
-            '--cors',
             '--listen',
             `localhost:${this.serverPort}`,
           ];

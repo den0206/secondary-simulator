@@ -43,7 +43,9 @@ Secondary Simulator mirrors your device inside the editor, so you never have to 
 - **VS Code / Cursor**: VS Code 1.90.0 or later (Node 20)
 - **Node.js**: 20 or later (to run the extension host)
 - **macOS**: required for the iOS Simulator and HID injection (Android-only use may work on other platforms, but is untested)
-- **mobilecli**: `@mobilenext/mobilecli` ships inside the VSIX (falls back to `npx` if not found)
+- **mobilecli**: `@mobilenext/mobilecli` ships inside the VSIX. Only the darwin binaries are
+  bundled, so on other platforms the extension falls back to `npx -y @mobilenext/mobilecli@<pinned version>`,
+  which downloads and runs the package from the network. The fallback is logged as a warning
 - **iOS Simulator**: Xcode and the `simctl` command line tools
 - **Android Emulator**: Android SDK and the `adb` command line tool
 
