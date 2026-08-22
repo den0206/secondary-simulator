@@ -2,14 +2,7 @@
 //  (a) pauseStream で <img> の GET が実際に閉じ、サーバ側の接続も切れるか
 //  (b) 再度 streamUrl を受けたら復帰するか
 //  (c) MjpegCapture の streamGen が stop→start の競合を防ぐか
-const Module = require('module');
-const orig = Module._load;
-Module._load = function (r, ...a) {
-  if (r === 'vscode') {
-    return {window: {createOutputChannel: () => ({appendLine: () => {}, show() {}, dispose() {}})}};
-  }
-  return orig.call(this, r, ...a);
-};
+require('./helpers/vscode-stub').install();
 const path = require('path');
 const http = require('http');
 const ROOT = path.join(__dirname, '..');
@@ -42,11 +35,11 @@ const check = (n, c, d) => {
 (async () => {
   console.log('(a)(b) 直結ストリームの切断と復帰');
   const proxy = new MjpegProxy(12099);
-  const port = await proxy.start(12400);
+  await proxy.start(12400);
 
   // 接続1: <img src=...> 相当
   let f1 = 0;
-  const r1 = http.get(`http://localhost:${port}/stream?device=${UDID}`, (res) => {
+  const r1 = http.get(proxy.streamUrl(UDID), (res) => {
     let tail = '';
     res.on('data', (c) => {
       const s = tail + c.toString('latin1');
@@ -69,7 +62,7 @@ const check = (n, c, d) => {
 
   // 再開: 新しい streamUrl 相当
   let f2 = 0;
-  const r2 = http.get(`http://localhost:${port}/stream?device=${UDID}`, (res) => {
+  const r2 = http.get(proxy.streamUrl(UDID), (res) => {
     let tail = '';
     res.on('data', (c) => {
       const s = tail + c.toString('latin1');
