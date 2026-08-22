@@ -39,24 +39,12 @@ const check = (n, c, d) => {
   const proxy = new MjpegProxy(12099);
   await proxy.start(12400);
 
-  // **測る前に温める。** mobilecli は最初の接続で端末側の WDA を起動する。
-  // CI の macOS ランナーではこれだけで 1 分近くかかることがあり、その待ちを
-  // 各判定に含めると「切断して復帰するか」ではなく「起動が速いか」を測ってしまう。
-  // ここは判定しない（起動の遅さでテストを落とさない）。
-  let warm = 0;
-  const rw = http.get(proxy.streamUrl(UDID), (res) => {
-    res.on('data', (c) => {
-      const m = c.toString('latin1').match(/--BoundaryString/g);
-      if (m) warm += m.length;
-    });
-  });
-  rw.on('error', () => {});
-  const warmed = await waitFor(() => warm > 0, 180000);
-  console.log(`  ウォームアップ: ${warmed ? `${warm} フレーム受信` : '3 分で 1 枚も来なかった'}`);
-  rw.destroy();
-  await sleep(1500);
-
-  // 接続1: <img src=...> 相当
+  // 接続1: <img src=...> 相当。**これが起動待ちも兼ねる。**
+  //
+  // 別に「ウォームアップ用の接続」を張って捨てると、その破棄が終わる前に次の接続が
+  // 来ることになり、mobilecli 側のセッションが競合して**新しい接続にフレームが
+  // 流れなくなる**（CI 実測: ウォームアップを挟むと接続1が 60 秒で 2 枚、
+  // その接続を捨てたあとの再接続は 8 秒で 10 枚超）。張り直さずに待つ。
   let f1 = 0;
   const r1 = http.get(proxy.streamUrl(UDID), (res) => {
     let tail = '';
@@ -68,9 +56,13 @@ const check = (n, c, d) => {
     });
   });
   r1.on('error', () => {});
-  await waitFor(() => f1 > 10);
+  // 枚数の下限が 2 なのは、**この経路が「動いているか」しか見ていない**から。
+  // CI の端末は誰も触らないので画面が静止していて、フレームはほとんど流れない
+  // （実測で 60 秒に数枚）。ここで fps を要求すると、検証したい切断・復帰ではなく
+  // 端末の暇さを測ることになる。
+  await waitFor(() => f1 > 2, 180000);
   const framesBefore = f1;
-  check('接続1がフレームを受信', framesBefore > 10, `frames=${framesBefore}`);
+  check('接続1がフレームを受信', framesBefore > 2, `frames=${framesBefore}`);
 
   // pauseStream 相当: img.src='' → GET を破棄
   r1.destroy();
