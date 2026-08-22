@@ -42,6 +42,10 @@ so **there is no need to move entries by hand**.
   range of unrelated local services that receive a JSON POST
 - Labels in the resource footer are escaped before being placed in the webview, so a
   translation bundle containing markup cannot break the layout
+- The `npx` fallback for mobilecli now runs with `--ignore-scripts`. It is the one path
+  where the extension executes code fetched from the network on the user's machine (it is
+  taken on every platform other than macOS, since only the darwin binaries are bundled), so
+  it should not also run install hooks. The version stays pinned, as before
 
 ### Fixed
 

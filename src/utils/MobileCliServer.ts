@@ -228,6 +228,9 @@ export class MobileCliServer {
     const args =
       this.mobilecliPath === 'npx'
         ? [
+            // 取得したパッケージのインストールスクリプトは走らせない
+            // （利用者のマシンでネットワーク越しのコードを実行する唯一の経路）
+            '--ignore-scripts',
             '-y',
             // RPC 名は版で変わるので @latest は使わない。
             // ピンは package.json / インストール済み版から取る
