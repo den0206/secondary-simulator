@@ -2,7 +2,7 @@
 //  (a) pauseStream で <img> の GET が実際に閉じ、サーバ側の接続も切れるか
 //  (b) 再度 streamUrl を受けたら復帰するか
 //  (c) MjpegCapture の streamGen が stop→start の競合を防ぐか
-require('./helpers/vscode-stub').install();
+require('./helpers/vscode-stub').installVerbose();
 const path = require('path');
 const http = require('http');
 const ROOT = path.join(__dirname, '..');
@@ -18,7 +18,9 @@ if (!UDID) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 初回接続は mobilecli が WDA を起動するまで数秒かかる。固定 sleep だと不安定なので
 // 条件が満たされるまでポーリングする。
-const waitFor = async (fn, timeoutMs = 20000, stepMs = 250) => {
+// **既定を 60 秒にしてあるのは CI の macOS ランナーが遅いから** — 20 秒では
+// 温まる前に判定してしまい、切断・復帰ではなく起動の速さを測ることになる。
+const waitFor = async (fn, timeoutMs = 60000, stepMs = 250) => {
   const until = Date.now() + timeoutMs;
   while (Date.now() < until) {
     if (fn()) return true;
@@ -36,6 +38,23 @@ const check = (n, c, d) => {
   console.log('(a)(b) 直結ストリームの切断と復帰');
   const proxy = new MjpegProxy(12099);
   await proxy.start(12400);
+
+  // **測る前に温める。** mobilecli は最初の接続で端末側の WDA を起動する。
+  // CI の macOS ランナーではこれだけで 1 分近くかかることがあり、その待ちを
+  // 各判定に含めると「切断して復帰するか」ではなく「起動が速いか」を測ってしまう。
+  // ここは判定しない（起動の遅さでテストを落とさない）。
+  let warm = 0;
+  const rw = http.get(proxy.streamUrl(UDID), (res) => {
+    res.on('data', (c) => {
+      const m = c.toString('latin1').match(/--BoundaryString/g);
+      if (m) warm += m.length;
+    });
+  });
+  rw.on('error', () => {});
+  const warmed = await waitFor(() => warm > 0, 180000);
+  console.log(`  ウォームアップ: ${warmed ? `${warm} フレーム受信` : '3 分で 1 枚も来なかった'}`);
+  rw.destroy();
+  await sleep(1500);
 
   // 接続1: <img src=...> 相当
   let f1 = 0;

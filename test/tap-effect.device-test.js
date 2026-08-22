@@ -8,7 +8,7 @@
 //   node test/tap-effect.device-test.js [UDID]
 //
 // UDID 省略時は起動中のシミュレータを使う。npm run build が済んでいること。
-require('./helpers/vscode-stub').install();
+require('./helpers/vscode-stub').installVerbose();
 const {execFile} = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
