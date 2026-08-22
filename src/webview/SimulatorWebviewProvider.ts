@@ -13,7 +13,10 @@ import {
 } from '../capture/Screenshot';
 import {SidecarCapture} from '../capture/SidecarCapture';
 import {WdaSettings} from '../capture/WdaSettings';
-import {SimulatorInputController} from '../input/SimulatorInputController';
+import {
+  keyLabel,
+  SimulatorInputController,
+} from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {defaultRecordingName} from '../simulator/RecordingName';
 import {resolveSaveDirectory, SaveLocation} from '../simulator/SaveDirectory';
@@ -405,8 +408,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
 
         case 'keypress':
-          Logger.info(
-            `Key pressed: ${message.key}${message.special ? ' (special)' : ''}`
+          // 内容は載せない。既定レベルで 1 打鍵 1 行を出力チャンネル（＝この拡張で
+          // 唯一の無制限バッファ）へ書くと、パスワードまでセッション中残り続ける。
+          Logger.debug(
+            `keypress: ${keyLabel(message.key as string, message.special as boolean)}`
           );
           await this.handleKeypress(
             message.key as string,
@@ -463,6 +468,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     };
   }
 
+  /**
+   * 直結プロキシを畳む。HTTP リスナーとトークンを、使わなくなったあとも
+   * セッション終了まで抱え続けない（CLAUDE.md「確保したものは必ず捨てる」）。
+   */
+  private disposeProxy(): void {
+    if (!this.mjpegProxy) return;
+    this.mjpegProxy.dispose();
+    this.mjpegProxy = null;
+  }
+
   // MJPEG 直結プロキシを起動して返す（未起動なら起動）
   private async ensureProxy(): Promise<MjpegProxy> {
     if (this.mjpegProxy?.isRunning()) return this.mjpegProxy;
@@ -471,12 +486,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const port = await this.mjpegProxy.start(
       SimulatorWebviewProvider.PROXY_BASE_PORT
     );
-    if (this.view) {
-      this.view.webview.options = {
-        ...this.view.webview.options,
-        portMapping: [{webviewPort: port, extensionHostPort: port}],
-      };
-    }
+    // 上書きにするとサイドカー配信の許可を消してしまう。追記に寄せる。
+    this.allowStreamPort(port);
     return this.mjpegProxy;
   }
 
@@ -1326,6 +1337,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 切断で録画を宙に浮かせない（止めないと mobilecli 側のセッションが残る）
     await this.stopRecording();
     this.stopCapture();
+    this.disposeProxy();
     this.currentDeviceId = null;
     this.setStatus({state: 'disconnected'});
     this.postMessage({type: 'disconnected'});
@@ -1405,6 +1417,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    *   （`autoConnect` / `logLevel` / `keyInput`）で画面を切らないため。
    */
   onConfigurationChanged(event?: vscode.ConfigurationChangeEvent): void {
+    // 直結を切ったらプロキシも畳む（張り直しは ensureProxy がやる）
+    if (!this.isDirectStreamEnabled()) {
+      this.disposeProxy();
+    }
     const action = captureConfigAction(
       event && ((s) => event.affectsConfiguration(s))
     );
@@ -1445,8 +1461,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.clearRecordingTimer();
 
     this.stopCapture();
-    this.mjpegProxy?.dispose();
-    this.mjpegProxy = null;
+    this.disposeProxy();
     this.view = undefined;
     // view を落としてから。破棄済みの webview へ postMessage しない。
     this.setStatus({state: 'disconnected'});
