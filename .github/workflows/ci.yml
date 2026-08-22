@@ -112,6 +112,18 @@ jobs:
           echo "udid=$UDID" >> $GITHUB_OUTPUT
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
+          # **bootstatus は Data Migration の途中でも Finished を返すことがある**
+          # （実測: "Waiting on Data Migration / Gathering plugins" のまま
+          # Status=4294967295, isTerminal=YES）。その状態では HID クライアントを
+          # 張れずに WDA へ降格するので、実際にアプリを起動できるまで待つ
+          for _ in $(seq 60); do
+            xcrun simctl launch "$UDID" com.apple.Preferences > /dev/null 2>&1 && break
+            sleep 2
+          done
+          xcrun simctl terminate "$UDID" com.apple.Preferences > /dev/null 2>&1 || true
+          xcrun simctl launch "$UDID" com.apple.Preferences > /dev/null \
+            || { echo "::error::シミュレータがアプリを起動できる状態になりません"; exit 1; }
+          xcrun simctl terminate "$UDID" com.apple.Preferences > /dev/null 2>&1 || true
 
       # HID 注入が実際に画面を動かすか（操作の前後をスクリーンショットで比べる）
       - name: 実操作テスト（HID 注入）
