@@ -86,6 +86,11 @@ const check = (n, c, d) => {
   check('再接続でフレームが再開', f2 > 1, `frames=${f2}`);
   r2.destroy();
   proxy.dispose();
+  // **プロキシを畳んだ直後に別のセッションを開かない。** mobilecli 側の後始末と
+  // 競合して `device.screencapture` が 500 を返す（CI 実測）。実際の拡張では
+  // MjpegCapture が指数バックオフで張り直すので表には出ないが、ここは
+  // 「1 回目で開けること」を見ているので、待ってから次へ行く
+  await sleep(5000);
 
   console.log('\n(c) MjpegCapture: stop→start の連続で二重ストリームにならない');
   const cap = new MjpegCapture(12099);
