@@ -1,0 +1,67 @@
+<svg width="640" height="260" viewBox="0 0 640 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t">
+  <title id="t">Right-clicking the Secondary Simulator icon in the Activity Bar, then Move To, then Secondary Side Bar</title>
+
+  <!-- Labels are English on purpose. VS Code inlines this file into a webview and has no
+       per locale lookup for walkthrough SVGs (only .md media gets a .nls.LOCALE variant),
+       so the translated menu names live in the step description instead.
+       That webview runs under CSP style-src 'nonce-...', which drops a style block and
+       style attributes alike, so every color here is a presentation attribute. -->
+
+  <!-- activity bar, with the extension icon circled -->
+  <rect x="8" y="8" width="44" height="244" rx="6" stroke-width="1"
+        fill="var(--vscode-activityBar-background, #181818)"
+        stroke="var(--vscode-widget-border, #454545)"/>
+  <rect x="22" y="57" width="16" height="26" rx="3" fill="none" stroke-width="1.5"
+        stroke="var(--vscode-activityBar-foreground, #d7d7d7)"/>
+  <circle cx="30" cy="70" r="19" fill="none" stroke-width="2" stroke-dasharray="4 3"
+          stroke="var(--vscode-textLink-foreground, #4daafc)"/>
+  <circle cx="30" cy="116" r="11" fill="var(--vscode-textLink-foreground, #4daafc)"/>
+  <text x="30" y="121" text-anchor="middle" font-size="13" font-weight="600"
+        font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-editor-background, #1f1f1f)">1</text>
+
+  <!-- context menu; Move To is hovered -->
+  <rect x="100" y="18" width="268" height="176" rx="6" stroke-width="1"
+        fill="var(--vscode-menu-background, #1f1f1f)"
+        stroke="var(--vscode-menu-border, #454545)"/>
+  <text x="118" y="44" font-size="13" font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-foreground, #cccccc)">Configure Keybinding</text>
+  <text x="118" y="72" font-size="13" font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-foreground, #cccccc)">Hide 'Secondary Simulator'</text>
+  <text x="118" y="100" font-size="13" font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-foreground, #cccccc)">Hide Badge</text>
+  <line x1="108" y1="112" x2="360" y2="112" stroke-width="1"
+        stroke="var(--vscode-menu-separatorBackground, #454545)"/>
+  <rect x="100" y="122" width="268" height="28"
+        fill="var(--vscode-list-hoverBackground, #2a2d2e)"/>
+  <text x="118" y="141" font-size="13" font-weight="600"
+        font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-foreground, #cccccc)">Move To</text>
+  <path d="M344 135 l6 6 -6 6" fill="none" stroke-width="1.5" stroke-linecap="round"
+        stroke-linejoin="round" stroke="var(--vscode-menu-foreground, #cccccc)"/>
+  <text x="118" y="178" font-size="13" font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-foreground, #cccccc)">Search</text>
+  <text x="350" y="178" font-size="13" text-anchor="end"
+        font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-descriptionForeground, #9d9d9d)">&#8679;&#8984;F</text>
+  <circle cx="112" cy="222" r="11" fill="var(--vscode-textLink-foreground, #4daafc)"/>
+  <text x="112" y="227" text-anchor="middle" font-size="13" font-weight="600"
+        font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-editor-background, #1f1f1f)">2</text>
+
+  <!-- submenu; Secondary Side Bar is selected -->
+  <rect x="386" y="110" width="200" height="72" rx="6" stroke-width="1"
+        fill="var(--vscode-menu-background, #1f1f1f)"
+        stroke="var(--vscode-menu-border, #454545)"/>
+  <rect x="387" y="116" width="198" height="28"
+        fill="var(--vscode-menu-selectionBackground, #0078d4)"/>
+  <text x="404" y="135" font-size="13" font-weight="600"
+        font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-selectionForeground, #ffffff)">Secondary Side Bar</text>
+  <text x="404" y="168" font-size="13" font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-menu-foreground, #cccccc)">Panel</text>
+  <circle cx="398" cy="222" r="11" fill="var(--vscode-textLink-foreground, #4daafc)"/>
+  <text x="398" y="227" text-anchor="middle" font-size="13" font-weight="600"
+        font-family="var(--vscode-font-family, sans-serif)"
+        fill="var(--vscode-editor-background, #1f1f1f)">3</text>
+</svg>
