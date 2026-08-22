@@ -405,7 +405,8 @@ webview 側も同じラベルをフッターに出す。**HID→WDA の降格は
 - **[修正済] テストの登録が手作業** — `package.json` の `test` が個々のファイルを
   直列に並べる形で、足し忘れても気づけなかった。`node --test test/*.test.js` にして
   ファイルを置くだけで走るようにした。`*.device-test.js` は `*.test.js` に一致しないので
-  従来どおり除外される。各テストは `process.exit` で結果を返す素の script のままで、
+  従来どおり `npm test` からは除外される（CI の macOS ジョブが別途回す）。
+  各テストは `process.exit` で結果を返す素の script のままで、
   `node --test` は終了コードと未捕捉例外の両方を失敗として扱う（動作確認済み）。
 - **[修正済] CI が macOS だけ** — ネイティブビルドと VSIX には macOS が要るが、
   型チェックとテストは Linux でも走る。`quick-check`（ubuntu-latest）を足したので、
