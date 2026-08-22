@@ -10,6 +10,17 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- A walkthrough under **Help → Welcome**, which also opens on its own right after installing
+  from the Marketplace. The preview lands in the Activity Bar, where it covers the file tree,
+  and moving it to the Secondary Side Bar was a step nobody could guess. The walkthrough
+  spells it out: right-click the icon in the Activity Bar, then Move To, then Secondary
+  Side Bar. Placing the view there from the manifest is not an
+  option — the `viewsContainers.secondarySidebar` contribution point only exists in VS Code
+  1.106 and later, and Cursor rejects it outright because it reserves that side bar for its
+  agent UI, which would drop the view into the Explorer instead
+
 ## [0.3.0] — 2026-08-21
 
 ### Added

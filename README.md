@@ -16,6 +16,14 @@ A VS Code / Cursor extension that shows iOS Simulators and Android Emulators in 
   <img src="media/demo.gif" width="1200" alt="Driving an iOS Simulator from the sidebar">
 </p>
 
+> **First step after installing**: move the preview to the Secondary Side Bar so the device sits beside your code instead of covering the file tree.
+> **Right-click the Secondary Simulator icon in the Activity Bar → Move To → Secondary Side Bar.**
+> Dragging the icon to the right edge of the window does the same. The bundled walkthrough shows these steps too — **Help → Welcome**, and it opens on its own right after installing from the Marketplace.
+
+<p align="center">
+  <img src="media/walkthrough/move.png" width="560" alt="Right-clicking the Secondary Simulator icon in the Activity Bar, then Move To, then Secondary Side Bar">
+</p>
+
 ## 🎯 Overview
 
 Secondary Simulator mirrors your device inside the editor, so you never have to bring the Xcode or Android Studio window forward. The screen arrives over MJPEG streaming, and on the iOS Simulator input is injected directly as HID events for minimal latency.
@@ -85,9 +93,10 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 
 1. Open VS Code and activate the extension
 2. The **Secondary Simulator** activity bar appears in the sidebar (view name: Device Preview)
-3. Pick a device from the dropdown (↻ refreshes the list). With Auto ON, a booted device is selected for you.
-4. The device screen is mirrored in real time
-5. Interact with the mouse or touchpad:
+3. Move it to the Secondary Side Bar so the device sits beside your code instead of covering the file tree: **right-click the Secondary Simulator icon in the Activity Bar → Move To → Secondary Side Bar** (dragging the icon to the right edge of the window does the same). The bundled walkthrough (**Help → Welcome**) shows the same steps. To undo it, right-click again and pick Move To → Side Bar
+4. Pick a device from the dropdown (↻ refreshes the list). With Auto ON, a booted device is selected for you.
+5. The device screen is mirrored in real time
+6. Interact with the mouse or touchpad:
    - **Click / tap**: single tap
    - **Double click**: double tap
    - **Click & drag**: swipe and drag (follows your pointer)
@@ -98,8 +107,8 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Rec**: record the screen to a video file (press again to stop)
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
-6. Type with the keyboard while the preview has focus. Arrow keys and shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers. Keys are not forwarded while a form control (such as the device dropdown) has focus.
-7. Paste with `Cmd+V` / `Ctrl+V` to send clipboard text to the device in one go, instead of a character at a time.
+7. Type with the keyboard while the preview has focus. Arrow keys and shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers. Keys are not forwarded while a form control (such as the device dropdown) has focus.
+8. Paste with `Cmd+V` / `Ctrl+V` to send clipboard text to the device in one go, instead of a character at a time.
 
 Picking a stopped device from the dropdown offers to boot it, the same as the command palette does.
 
