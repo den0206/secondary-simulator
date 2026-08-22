@@ -183,7 +183,7 @@ export class MobileCliServer {
     }
 
     // 既に掴んだサーバが生きていれば走査ごと省く。ここを飛ばすと、外部サーバを
-    // 再利用したときに接続の度へ 101 ポートの走査が戻ってくる。
+    // 再利用したときに接続の度へ PORT_RANGE 分の走査が戻ってくる。
     if (this.serverReady && (await this.checkServerHealth(this.serverPort))) {
       return;
     }
@@ -194,7 +194,7 @@ export class MobileCliServer {
 
     // 既存の稼働中サーバを範囲全体から探して再利用する（default ポートだけでなく、
     // 過去に別ポートで起動したものも拾えるようにする）。
-    // /health は並列に叩いて待ち時間を畳む（直列だと最悪 101 秒かかる）。
+    // /health は並列に叩いて待ち時間を畳む（直列だと 1 ポート 1 秒待ちが積み上がる）。
     const health = await Promise.all(
       Array.from({length: rangeEnd - rangeStart + 1}, (_, i) =>
         this.checkServerHealth(rangeStart + i)
