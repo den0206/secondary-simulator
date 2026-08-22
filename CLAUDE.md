@@ -159,7 +159,17 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 ## 注意
 
 - `@mobilenext/mobilecli` は VSIX に darwin 版バイナリだけ同梱する（`.vscodeignore`）。
-  見つからない場合は `npx` 実行にフォールバックする。
+  見つからない場合は `npx` 実行にフォールバックする。**版は必ず固定する**
+  （`npxPackageSpec()`）。`@latest` にすると、実行の度にネットワークから
+  取ってきたコードを利用者のマシンで走らせることになる。
+- **`.npmrc` の `ignore-scripts=true` を外さない。** 依存パッケージの install /
+  postinstall は、npm を狙うワーム（Shai-Hulud 系）が資格情報を盗んで自己増殖する
+  足場そのもの。CI と開発者マシンの両方で既定として塞いでいる。`npm run` は
+  影響を受けない（compile / build / package / test はそのまま動く）。
+  ネイティブ依存を足してビルドが要るときは、その場で `npm rebuild <pkg>` する。
+- **CI で使う外部 Action はコミット SHA で固定する。** `@main` や可変タグは、
+  上流が侵害された瞬間にこちらのジョブで任意コードが走る。
+  公開トークンを持つステップで `npx` を使うときも版を固定する（`ovsx@X.Y.Z`）。
 - webview は CSP 下で動く。外部 CDN・インライン script は使えない。
 
 ## 多言語化
