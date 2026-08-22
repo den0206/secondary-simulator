@@ -719,7 +719,11 @@ window.addEventListener('message', (event) => {
 
     case 'resources': {
       // 値は拡張ホストが作った数値のみ。<b> ラベル付きのチップに並べる。
-      const chip = (label, value) => `<span class="chip"><b>${label}</b> ${value}</span>`;
+      // ラベルは l10n バンドル由来なので、markup として解釈させない
+      // （テキスト位置なので `<` と `&` を潰せば足りる）。
+      const esc = (s) => String(s).replace(/[<&]/g, (c) => (c === '<' ? '&lt;' : '&amp;'));
+      const chip = (label, value) =>
+        `<span class="chip"><b>${esc(label)}</b> ${esc(value)}</span>`;
       // 受信（拡張ホストが数えた fps）と描画（この webview が描けた数）を並べる。
       // 差がそのまま落としたフレームで、同期の質はここに出る。
       const painted = takePaintedFps();
