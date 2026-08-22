@@ -21,7 +21,12 @@ npm run clean      # out/ と native/simhid-server を削除
 
 `npm test` は `node --test test/*.test.js`。**ファイルを置けば走る**（登録は要らない）。
 各テストは node 標準のみの素の script で、`process.exit` の終了コードが結果になる。
-`test/*.device-test.js` は `*.test.js` に一致しないので走らない（実機/シミュレータが要る）。手動実行する。
+`test/*.device-test.js` は `*.test.js` に一致しないので `npm test` では走らない
+（起動中のシミュレータが要る）。**CI の macOS ジョブがシミュレータを作って実行する**ので、
+手で回すのは調査のときだけでよい（`node test/tap-effect.device-test.js [UDID]`）。
+`tap-effect.device-test.js` は操作の前後をスクリーンショットで比べ、**HID 注入が実際に
+画面を動かすか**を見る（差分の計算は `test/helpers/screen-diff.js`）。単体テストは
+コマンドを組み立てるところまでしか見ないので、注入そのものが壊れても気づけない。
 
 `sh scripts/check-xcode-hid.sh` はインストール済み Xcode すべてに
 `native/simhid-server --check` を当て、HID の私有シンボル（CoreSimulator /
@@ -167,8 +172,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   足場そのもの。CI と開発者マシンの両方で既定として塞いでいる。`npm run` は
   影響を受けない（compile / build / package / test はそのまま動く）。
   ネイティブ依存を足してビルドが要るときは、その場で `npm rebuild <pkg>` する。
-- **CI で使う外部 Action はコミット SHA で固定する。** `@main` や可変タグは、
-  上流が侵害された瞬間にこちらのジョブで任意コードが走る。
+- **CI で使う第三者 Action はコミット SHA で固定する。** `@main` や可変タグは、
+  上流が侵害された瞬間にこちらのジョブで任意コードが走る
+  （`trufflesecurity/trufflehog` はリリースの SHA で止め、版はコメントに残す）。
+  **GitHub 公式の `actions/*` はメジャータグ（`@v4`）のまま**にしている。
   公開トークンを持つステップで `npx` を使うときも版を固定する（`ovsx@X.Y.Z`）。
 - webview は CSP 下で動く。外部 CDN・インライン script は使えない。
 
