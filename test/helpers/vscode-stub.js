@@ -35,25 +35,50 @@ function defaultStub() {
   };
 }
 
-/** 'vscode' の require をスタブへ差し替える。多重呼び出しは無害。 */
+let current = null;
+
+/** 'vscode' の require をスタブへ差し替える。多重呼び出しは無害（後の指定で上書き）。 */
 function install(overrides = {}) {
-  const stub = {...defaultStub(), ...overrides};
+  current = {...defaultStub(), ...overrides};
   if (!origLoad) {
     origLoad = Module._load;
     Module._load = function (request, ...args) {
-      if (request === 'vscode') return stub;
+      if (request === 'vscode') return current;
       return origLoad.call(this, request, ...args);
     };
   }
-  return stub;
+  return current;
+}
+
+/**
+ * ログを console へ流すスタブ。**device-test はこちらを使う。**
+ *
+ * 既定のスタブは `appendLine` が no-op なので、`Logger` の出力が丸ごと消える。
+ * HID サイドカーの起動に失敗して WDA へ降格したときの**理由はそこにしか出ない**ため、
+ * CI では「なぜ wda になったのか」が分からないまま落ちることになる。
+ */
+function installVerbose() {
+  const base = defaultStub();
+  return install({
+    window: {
+      ...base.window,
+      createOutputChannel: () => ({
+        appendLine: (line) => console.log(`    [log] ${line}`),
+        show() {},
+        clear() {},
+        dispose() {},
+      }),
+    },
+  });
 }
 
 /** 元の require へ戻す（テスト間で差し替えを残したくない場合に使う）。 */
 function uninstall() {
+  current = null;
   if (origLoad) {
     Module._load = origLoad;
     origLoad = null;
   }
 }
 
-module.exports = {install, uninstall};
+module.exports = {install, installVerbose, uninstall};
