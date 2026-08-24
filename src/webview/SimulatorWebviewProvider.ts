@@ -93,6 +93,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    */
   private recordingTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly MAX_RECORDING_MS = 10 * 60_000;
+  /** 開始前に webview が出す秒読み。押した直後の画面が頭に写らないための猶予。 */
+  private static readonly RECORDING_COUNTDOWN_SEC = 3;
   /**
    * 開始／停止の RPC が飛んでいる最中か。停止は端末からの引き上げがあり数秒かかるので、
    * その間にもう一度押されると**止め終える前に新しい録画を始めて**しまう。
@@ -1059,9 +1061,27 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     });
     if (!target) return; // キャンセル
 
+    // 画面を整える猶予。保存ダイアログを閉じた直後の画面が必ず頭に写るのを避ける。
+    // 待っている間に破棄されうるので、クライアントはここで押さえる。
+    const client = this.mobileCliClient;
+    // 「隠されたら始めない」を判定するための基準。コマンドパレットから畳んだまま
+    // 始める使い方は従来どおり通す（元から見えていなければ比べない）。
+    const visibleAtStart = this.view?.visible === true;
     this.recordingBusy = true;
     try {
-      await this.mobileCliClient.startScreenRecord(deviceId, target.fsPath);
+      await this.countdownBeforeRecording();
+      // 秒読みのあいだに状況が変わったら始めない。非表示・切替・破棄の見張りは
+      // `this.recording` を見るので、まだ載っていないこの数秒は素通りする
+      // （隠したのに録り始める・切り替える前の端末を録る、が起きる）。
+      if (
+        this.currentDeviceId !== deviceId ||
+        !this.mobileCliClient ||
+        (visibleAtStart && !this.view?.visible)
+      ) {
+        Logger.info('秒読み中に状況が変わったので録画を始めない');
+        return;
+      }
+      await client.startScreenRecord(deviceId, target.fsPath);
     } catch (error) {
       Logger.error('録画を開始できなかった', error as Error);
       void vscode.window.showErrorMessage(
@@ -1086,6 +1106,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       void this.stopRecording();
     }, SimulatorWebviewProvider.MAX_RECORDING_MS);
     this.recordingTimer.unref?.();
+  }
+
+  /**
+   * 開始前のカウントダウン。webview が数字と音を出すだけで、進行はここが持つ
+   * （webview にタイマーを置くと、非表示や再読み込みで置き去りになる）。
+   */
+  private async countdownBeforeRecording(): Promise<void> {
+    for (let n = SimulatorWebviewProvider.RECORDING_COUNTDOWN_SEC; n > 0; n--) {
+      this.postMessage({type: 'countdown', value: n});
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 1000);
+        timer.unref?.();
+      });
+    }
+    this.postMessage({type: 'countdown', value: 0});
   }
 
   /**

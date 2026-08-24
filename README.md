@@ -106,7 +106,8 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Home**: control below the preview
    - **Back**: Android only (disabled on iOS)
    - **Shot**: save a screenshot of the connected device
-   - **Rec**: record the screen to a video file (press again to stop)
+   - **Rec**: record the screen to a video file. Recording begins after a three-second
+     countdown shown over the screen, so you can get the device ready (press again to stop)
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
 7. Type with the keyboard while the preview has focus. Arrow keys and shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers. Keys are not forwarded while a form control (such as the device dropdown) has focus.
@@ -125,7 +126,7 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 | --------------------- | ---------------------------------------------------------------- |
 | `Select Device`       | Pick a device from a list and connect. Picking a stopped one offers to boot it |
 | `Save Screenshot`     | Save the connected device's screen to a file                     |
-| `Record Screen`       | Start/stop recording the screen to a video file. Stops automatically after 10 minutes or on disconnect |
+| `Record Screen`       | Start/stop recording the screen to a video file. Starts after a three-second countdown; stops automatically after 10 minutes or on disconnect |
 | `Open URL on Device`  | Open a deep link or URL on the connected device                  |
 | `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |

@@ -258,6 +258,31 @@ body {
   100% { transform: scale(2); opacity: 0; }
 }
 
+/* ---- 録画前の秒読み ---------------------------------------------------------- */
+
+/* 画面は隠さない（何が録られるか見えていないと構えられない）ので、
+   数字だけを重ねる。pointer は下へ通す。 */
+.countdown {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.countdown.hidden {
+  display: none;
+}
+
 /* ---- オーバーレイ（未接続・接続待ち）---------------------------------------- */
 
 .overlay {

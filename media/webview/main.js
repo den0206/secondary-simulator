@@ -10,6 +10,7 @@ const img = document.getElementById('simulator-img');
 const overlay = document.getElementById('overlay');
 const container = document.getElementById('simulator-container');
 const touchOverlay = document.getElementById('touch-overlay');
+const countdown = document.getElementById('countdown');
 const octx = touchOverlay.getContext('2d');
 const deviceSelect = document.getElementById('device');
 // フッターは「入力経路（#mode）」と「リソース（#stats）」の 2 つに分かれている。
@@ -94,7 +95,7 @@ function playTone(freq, start, duration, peak = 0.12) {
   osc.stop(start + duration + 0.02);
 }
 
-/** @param {'shutter' | 'recordStart' | 'recordStop'} name */
+/** @param {'shutter' | 'recordStart' | 'recordStop' | 'countdown'} name */
 function playUiSound(name) {
   try {
     const ctx = uiAudioContext();
@@ -105,6 +106,9 @@ function playUiSound(name) {
     if (name === 'shutter') {
       playTone(1400, t0, 0.035, 0.14);
       playTone(900, t0 + 0.028, 0.05, 0.07);
+    } else if (name === 'countdown') {
+      // 秒読みは 1 音だけ。開始音（上昇 2 音）と紛れないよう低めに。
+      playTone(620, t0, 0.05, 0.08);
     } else {
       // 録画の開始/停止: 短いピコン（上昇 2 音）
       playTone(740, t0, 0.07, 0.11);
@@ -664,6 +668,18 @@ window.addEventListener('message', (event) => {
       // 壊れたファイルで鳴らすと気づく手がかりが消える（ホストが警告を出す）。
       else if (!recording && wasRecording && message.ok !== false)
         playUiSound('recordStop');
+      break;
+    }
+
+    // 録画開始前の秒読み。進行はホストが持ち、ここは数字と音を出すだけ
+    // （タイマーを持つと非表示・再読み込みで置き去りになる）。0 で消す。
+    case 'countdown': {
+      const left = Number(message.value) || 0;
+      countdown.classList.toggle('hidden', left <= 0);
+      if (left > 0) {
+        countdown.textContent = String(left);
+        playUiSound('countdown');
+      }
       break;
     }
 
