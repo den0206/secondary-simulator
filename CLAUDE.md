@@ -171,10 +171,18 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 ## 注意
 
-- `@mobilenext/mobilecli` は VSIX に darwin 版バイナリだけ同梱する（`.vscodeignore`）。
+- `mobilecli` は VSIX に darwin 版バイナリだけ同梱する（`.vscodeignore`）。
   見つからない場合は `npx` 実行にフォールバックする。**版は必ず固定する**
-  （`npxPackageSpec()`）。`@latest` にすると、実行の度にネットワークから
-  取ってきたコードを利用者のマシンで走らせることになる。
+  （`npxPackageSpec()`。`package.json` も `^` を付けず完全固定）。`@latest` に
+  すると、実行の度にネットワークから取ってきたコードを利用者のマシンで走らせる
+  ことになる。**追随は実行時ではなくビルド時にやる** — Dependabot が版上げの PR を
+  出すので、CI を通してから利用者へ出す（`.github/dependabot.yml`）。
+- **`mobilecli` は FSL-1.1-ALv2**（ソース公開型。OSI 承認のオープンソースではない）。
+  同梱して再配布する以上、全文と著作権表示を `THIRD-PARTY-NOTICES.md` で運ぶ必要が
+  あり、`.vscodeignore` はこれを VSIX に入れている。**版を上げたら
+  `THIRD-PARTY-NOTICES.md` の版・対応ソース SHA も一緒に直す。**
+  なお `@mobilenext/mobilecli`（旧・0.1.x、AGPL-3.0）は 2026-04 で更新が止まり、
+  開発はスコープ無しの `mobilecli` へ移った。戻らない。
 - **`.npmrc` の `ignore-scripts=true` を外さない。** 依存パッケージの install /
   postinstall は、npm を狙うワーム（Shai-Hulud 系）が資格情報を盗んで自己増殖する
   足場そのもの。CI と開発者マシンの両方で既定として塞いでいる。`npm run` は

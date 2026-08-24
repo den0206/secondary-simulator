@@ -43,8 +43,8 @@ Secondary Simulatorは、XcodeやAndroid Studioのシミュレータウィンド
 - **VSCode / Cursor**: VSCode バージョン 1.90.0 以上（Node 20）
 - **Node.js**: 20 以上（拡張機能ホストの実行に必要）
 - **macOS**: iOS Simulator の利用と HID 直接注入に必要（Android のみなら他 OS でも動作しますが未検証）
-- **mobilecli**: `@mobilenext/mobilecli` を VSIX に同梱。同梱するのは darwin 版バイナリだけなので、
-  他 OS では `npx -y @mobilenext/mobilecli@<固定版>` にフォールバックする（パッケージを
+- **mobilecli**: `mobilecli` を VSIX に同梱。同梱するのは darwin 版バイナリだけなので、
+  他 OS では `npx -y mobilecli@<固定版>` にフォールバックする（パッケージを
   ネットワークから取得して実行する）。フォールバックした場合は警告としてログに残る
 - **iOS Simulator**: Xcodeと`simctl`コマンドラインツールが必要
 - **Android Emulator**: Android SDKと`adb`コマンドラインツールが必要
@@ -195,7 +195,7 @@ secondary-simulator/
 - **言語**: TypeScript / Objective-C（サイドカー）
 - **ランタイム**: Node.js (VSCode Extension Host)
 - **主要ライブラリ**:
-  - `@mobilenext/mobilecli`: デバイス操作とストリーミング
+  - `mobilecli`: デバイス操作とストリーミング
 - **通信プロトコル**: JSON-RPC 2.0（mobilecli）/ JSON Lines（サイドカー）
 - **ストリーミング**: MJPEG
 
@@ -306,9 +306,12 @@ npm run clean      # 生成物の削除
 
 [MIT](LICENSE.md)
 
-VSIX には `@mobilenext/mobilecli` 0.1.64 を同梱しており、こちらは **AGPL-3.0** です
-（npm のメタデータは MIT ですが、該当タグの upstream `LICENSE` は AGPL-3.0）。
-別プロセスとして起動するだけで、改変せずそのまま同梱しています。全文と入手先は
+VSIX には `mobilecli` 1.0.2 を同梱しており、こちらは **FSL-1.1-ALv2** です
+（npm のメタデータは MIT ですが、該当タグの upstream `LICENSE` は FSL）。
+FSL は OSI 承認のオープンソースではなく、*Competing Use*（同様の機能を持つ
+**商用の**製品・サービスとして他者へ提供すること）だけを禁じるソース公開型の
+ライセンスです。この拡張は無償で、mobilecli を別プロセスとして起動するだけで、
+改変せずそのまま同梱しています。全文と入手先は
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
 
 ## 🤝 コントリビューション

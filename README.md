@@ -43,8 +43,8 @@ Secondary Simulator mirrors your device inside the editor, so you never have to 
 - **VS Code / Cursor**: VS Code 1.90.0 or later (Node 20)
 - **Node.js**: 20 or later (to run the extension host)
 - **macOS**: required for the iOS Simulator and HID injection (Android-only use may work on other platforms, but is untested)
-- **mobilecli**: `@mobilenext/mobilecli` ships inside the VSIX. Only the darwin binaries are
-  bundled, so on other platforms the extension falls back to `npx -y @mobilenext/mobilecli@<pinned version>`,
+- **mobilecli**: `mobilecli` ships inside the VSIX. Only the darwin binaries are
+  bundled, so on other platforms the extension falls back to `npx -y mobilecli@<pinned version>`,
   which downloads and runs the package from the network. The fallback is logged as a warning
 - **iOS Simulator**: Xcode and the `simctl` command line tools
 - **Android Emulator**: Android SDK and the `adb` command line tool
@@ -192,7 +192,7 @@ secondary-simulator/
 
 - **Languages**: TypeScript / Objective-C (sidecar)
 - **Runtime**: Node.js (VS Code extension host)
-- **Key dependency**: `@mobilenext/mobilecli` for device control and streaming
+- **Key dependency**: `mobilecli` for device control and streaming
 - **Protocols**: JSON-RPC 2.0 (mobilecli) / JSON Lines (sidecar)
 - **Streaming**: MJPEG
 
@@ -297,9 +297,13 @@ Notes:
 
 [MIT](LICENSE.md)
 
-The VSIX bundles `@mobilenext/mobilecli` 0.1.64, which is licensed under **AGPL-3.0**
+The VSIX bundles `mobilecli` 1.0.2, which is licensed under **FSL-1.1-ALv2**
 (the npm metadata says MIT, but the upstream `LICENSE` at that tag does not).
-It runs as a separate process and is shipped unmodified. See
+FSL is a source-available licence, not an OSI-approved open source one: it
+permits any use except a *Competing Use*, meaning making the software available
+to others in a commercial product or service with substantially similar
+functionality. Secondary Simulator is free of charge and merely invokes
+mobilecli as a separate process, and ships it unmodified. See
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for the full text and where to
 get its source.
 
