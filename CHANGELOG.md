@@ -10,6 +10,12 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- Recording now starts after a three-second countdown shown over the device screen,
+  so the moment the save dialog closes no longer ends up as the first frame. The
+  extension host drives the count and the webview only draws the number and ticks
+
 ### Fixed
 
 - Android screen recordings could not be played back. Every file came out with no `moov`

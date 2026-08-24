@@ -81,6 +81,7 @@ const els = {
   overlay: makeEl('overlay'),
   'simulator-container': makeEl('simulator-container'),
   'touch-overlay': makeEl('touch-overlay'),
+  countdown: makeEl('countdown'),
   device: makeEl('device'),
   'btn-home': makeEl('btn-home'),
   'btn-back': makeEl('btn-back'),
@@ -658,6 +659,15 @@ listeners['window:message']({data: {type: 'recording', active: false, ok: false}
 check('書き出せなかったら停止音は鳴らさない', tones.length === 0, `tones=${tones.length}`);
 check('それでも見た目は停止に戻る',
   !els['btn-record'].classList.contains('recording'));
+
+// 開始前の秒読み。進行はホストが持つので、webview は数字と音を出して 0 で消すだけ。
+tones.length = 0;
+listeners['window:message']({data: {type: 'countdown', value: 3}});
+check('秒読みの数字を出す', els.countdown.textContent === '3' &&
+  !els.countdown.classList.contains('hidden'), els.countdown.textContent);
+check('秒読みは 1 秒に 1 音', tones.length === 1, `tones=${tones.length}`);
+listeners['window:message']({data: {type: 'countdown', value: 0}});
+check('0 で消す', els.countdown.classList.contains('hidden'));
 
 // 効果音は Web Audio。Node では AudioContext が無くても落ちない
 listeners['window:message']({data: {type: 'sound', sound: 'shutter'}});
