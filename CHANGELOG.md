@@ -10,6 +10,38 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Android screen recordings could not be played back. Every file came out with no `moov`
+  atom and an unfinalized `mdat` box, which QuickTime and `ffprobe` both refuse. The cause
+  was upstream: mobilecli 0.1.64 sent `SIGINT` to the local `adb` client when stopping a
+  recording, but `adb` does not forward signals to the remote shell, so the on-device
+  `screenrecord` was never told to finalize the MP4 and the half-written file was pulled
+  anyway. The recording was reported as saved regardless. This was unrelated to what
+  happened on screen while recording, contrary to how it first looked
+
+### Changed
+
+- The bundled mobilecli moved from `@mobilenext/mobilecli` 0.1.64 to `mobilecli` 1.0.2.
+  Upstream stopped publishing the scoped package in April 2026 and continued under the
+  unscoped name, so the fix above was only reachable by following that move. The RPC
+  surface the extension uses is unchanged: all eleven methods it calls still exist, the
+  HTTP routes and the screen-capture session response are byte-identical, and 1.0.x only
+  adds methods
+- The mobilecli version is now pinned exactly instead of with a caret, and a Dependabot
+  configuration keeps it current. Version bumps arrive as pull requests that run CI before
+  reaching users, rather than being resolved at install or run time
+
+### Security
+
+- The bundled mobilecli is now covered by **FSL-1.1-ALv2** rather than AGPL-3.0. Upstream
+  relicensed at 0.3.75, before the fix landed at 0.3.77, so no AGPL-licensed release
+  contains it. FSL is a source-available licence: it permits every use except a *Competing
+  Use*, meaning offering substantially similar functionality to others in a commercial
+  product or service. This extension is free of charge and runs mobilecli unmodified as a
+  separate process. `THIRD-PARTY-NOTICES.md` carries the full licence text and the
+  corresponding source revision, and ships inside the VSIX as redistribution requires
+
 ## [0.3.1] — 2026-08-22
 
 ### Added
