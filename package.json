@@ -323,12 +323,12 @@
     "clean": "rm -rf out native/simhid-server"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.9.2",
     "@types/node": "^26.2.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@mobilenext/mobilecli": "^0.1.64"
+    "mobilecli": "1.0.2"
   }
 }

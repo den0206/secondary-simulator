@@ -18,8 +18,8 @@ const {
   fs.symlinkSync(path.join(tmp, 'a.bin'), path.join(tmp, 'link.bin'));
   fs.mkdirSync(path.join(tmp, '.git'));
   fs.writeFileSync(path.join(tmp, '.git', 'objects'), Buffer.alloc(10000));
-  fs.mkdirSync(path.join(tmp, 'node_modules', '@mobilenext', 'pkg'), {recursive: true});
-  fs.writeFileSync(path.join(tmp, 'node_modules', '@mobilenext', 'pkg', 'bin'), Buffer.alloc(400));
+  fs.mkdirSync(path.join(tmp, 'node_modules', 'mobilecli'), {recursive: true});
+  fs.writeFileSync(path.join(tmp, 'node_modules', 'mobilecli', 'bin'), Buffer.alloc(400));
   fs.mkdirSync(path.join(tmp, 'node_modules', 'typescript'), {recursive: true});
   fs.writeFileSync(path.join(tmp, 'node_modules', 'typescript', 'lib.js'), Buffer.alloc(8000));
 
