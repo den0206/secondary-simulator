@@ -71,5 +71,6 @@
   "Videos": "视频",
   "Secondary Simulator: Could not start recording — {0}": "Secondary Simulator: 无法开始录制 — {0}",
   "Secondary Simulator: Could not stop the recording — {0}": "Secondary Simulator: 无法停止录制 — {0}",
-  "Recording saved: {0}": "录像已保存: {0}"
+  "Recording saved: {0}": "录像已保存: {0}",
+  "Secondary Simulator: The recording was not finalized and cannot be played — {0}": "Secondary Simulator: 录制未能完成，无法播放 — {0}"
 }
