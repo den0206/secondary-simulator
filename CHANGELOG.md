@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-24
+
 ### Added
 
 - Recording now starts after a three-second countdown shown over the device screen,
@@ -281,7 +283,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.3.1...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.4.0...HEAD
+[0.4.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.3.1...Ver_0.4.0
 [0.3.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.3.0...Ver_0.3.1
 [0.3.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.2.0...Ver_0.3.0
 [0.2.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.1.1...Ver_0.2.0
