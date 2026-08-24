@@ -33,9 +33,7 @@ export class MobileCliServer {
 
       // 1. node_modulesから探す（npmパッケージとしてインストールされた場合）
       try {
-        const packageJsonPath = require.resolve(
-          '@mobilenext/mobilecli/package.json'
-        );
+        const packageJsonPath = require.resolve('mobilecli/package.json');
         const packageDir = path.dirname(packageJsonPath);
         const binDir = path.join(packageDir, 'bin');
 
@@ -120,16 +118,17 @@ export class MobileCliServer {
     }
   }
 
-  // npx フォールバック用。ハードコードすると package.json の ^ と乖離する。
+  // npx フォールバック用。package.json は版を完全固定しているので、そこから引く
+  // （`@latest` にすると起動の度に未検証のコードを利用者のマシンで走らせることになる）。
   private npxPackageSpec(): string {
     const path = require('path') as typeof import('path');
     const fs = require('fs') as typeof import('fs');
     try {
-      const installed = require('@mobilenext/mobilecli/package.json') as {
+      const installed = require('mobilecli/package.json') as {
         version?: string;
       };
       if (installed.version) {
-        return `@mobilenext/mobilecli@${installed.version}`;
+        return `mobilecli@${installed.version}`;
       }
     } catch {
       // node_modules に無いときだけ下へ
@@ -139,14 +138,14 @@ export class MobileCliServer {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
         dependencies?: Record<string, string>;
       };
-      const spec = pkg.dependencies?.['@mobilenext/mobilecli'];
+      const spec = pkg.dependencies?.['mobilecli'];
       if (spec) {
-        return `@mobilenext/mobilecli@${spec.replace(/^[~^]/, '')}`;
+        return `mobilecli@${spec.replace(/^[~^]/, '')}`;
       }
     } catch {
       // 読めなければ最後の手段
     }
-    return '@mobilenext/mobilecli@0.1.64';
+    return 'mobilecli@1.0.2';
   }
 
   private async waitForServerReady(

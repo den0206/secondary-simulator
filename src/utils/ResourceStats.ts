@@ -30,7 +30,7 @@ let storageInflight: Promise<number> | null = null;
 const toMb = (bytes: number): number => Math.round(bytes / 1024 / 102.4) / 10;
 
 // F5 時のリポジトリ直下を全部辿ると .git / 開発用 node_modules で数秒〜数十秒かかる。
-// 配布物に入る依存（@mobilenext）だけ node_modules から拾う。
+// 配布物に入る依存（mobilecli）だけ node_modules から拾う。
 const SKIP_DIRS = new Set(['.git', '.cursor']);
 
 /** ディレクトリの実ファイル合計サイズ。シンボリックリンクは辿らない。 */
@@ -42,7 +42,7 @@ export async function dirSizeBytes(dir: string): Promise<number> {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
       if (entry.name === 'node_modules') {
-        const bundled = path.join(p, '@mobilenext');
+        const bundled = path.join(p, 'mobilecli');
         try {
           total += await dirSizeBytes(bundled);
         } catch {
