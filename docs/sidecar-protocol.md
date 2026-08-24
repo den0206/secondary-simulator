@@ -366,7 +366,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `devices` | 一覧（`platform` / `state` 付き）。webview は iOS / Android で `<optgroup>` に分ける。`platform` で Back の有効/無効を決める |
 | `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない）。起動を見送ったときも選択を戻す |
 | `settings` | `showDeviceFrame` / `showResourceStats`（`secondarySimulator.*` の見た目設定） |
-| `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音 |
+| `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
 | `sound` | 効果音（`shutter`）。スクリーンショット保存時など |
 | `searching` | 未接続で起動中デバイスを探している |
 | `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |

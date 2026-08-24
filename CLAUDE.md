@@ -97,7 +97,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **デバイス操作（mobilecli）**: 録画は `device.screenrecord` / `.stop`。保存先パスはユーザーが選び、拡張は一時ファイルを
   持たない。10 分・切断・破棄で必ず止める。**サイドバー非表示でも止める**（止め忘れ防止）。
   停止に失敗したら UI は録画中のまま残し、通知から再試行できる。拡張の `dispose` は
-  録画停止を待ってから mobilecli を止める。
+  録画停止を待ってから mobilecli を止める。**停止が成功しても中身を検証する**
+  （`RecordingFile.ts` の `verifyRecording`）。端末側で finalize されないと
+  `moov` の無い mp4 が残り、映像は入っているのに再生できない。検証に落ちたら
+  警告を出し、`recording` メッセージに `ok: false` を載せて**停止音も鳴らさない**
+  （音と通知が「保存できた」の合図なので、黙って通すと気づけない）。
+  ファイル全体は読まない — 先頭から box を辿って 128 個で打ち切る。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
   フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
