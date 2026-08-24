@@ -1,0 +1,33 @@
+# 版の追随は「実行時」ではなく「ビルド時」にやる、が方針（CLAUDE.md「注意」）。
+# `@latest` で実行の度に取りに行く代わりに、Dependabot が版上げの PR を出し、
+# CI（型チェック・テスト・VSIX）を通してから利用者へ出す。
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      # コミットは Conventional Commit の日本語一行が原則だが、Dependabot は
+      # 英語しか吐けない。せめて prefix だけ揃える。
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    groups:
+      # 開発依存はまとめて 1 本にする（型定義や lint が個別に PR を作らないように）。
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # VS Code の型は engines.vscode（サポートする最低版）と揃える必要があるので、
+      # Dependabot に上げさせない。上げるときは package.json の engines と一緒に手で直す。
+      - dependency-name: '@types/vscode'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: 'chore(ci)'
