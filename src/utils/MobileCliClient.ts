@@ -100,11 +100,17 @@ export class MobileCliClient {
    * `output` は**ホスト側の保存先パス**で、mobilecli が自分で書く。
    * 拡張が一時ファイルを抱えないので「永続ストレージを持たない」方針を崩さない
    * （保存先はスクリーンショットと同じくユーザーが選ぶ）。
+   *
+   * **録画が始まったと確認できるまで応答が返らない**（mobilecli 1.0.x）。
+   * iOS 実機は ReplayKit のブロードキャストピッカーを利用者が押すまで待つので、
+   * 待ちは mobilecli 側の上限（60 秒）より長く取る。**先に諦めると、拡張は
+   * 「開始できなかった」と言いながら端末では録画が始まる**（追跡していないので
+   * 停止も 10 分の上限も効かない）。
    */
   async startScreenRecord(
     deviceId: string,
     output: string,
-    timeoutMs = 30_000
+    timeoutMs = 90_000
   ): Promise<void> {
     return this.jsonRpcClient.sendJsonRpcRequest(
       'device.screenrecord',

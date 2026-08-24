@@ -35,6 +35,11 @@ so **there is no need to move entries by hand**.
   surface the extension uses is unchanged: all eleven methods it calls still exist, the
   HTTP routes and the screen-capture session response are byte-identical, and 1.0.x only
   adds methods
+- Starting a recording now waits up to 90 seconds for mobilecli to confirm it is live,
+  rather than 30. mobilecli 1.0.x only answers `device.screenrecord` once recording has
+  actually begun, and on a physical iOS device that means waiting for the ReplayKit
+  broadcast picker to be tapped. Giving up first left the extension reporting a failed
+  start while the device kept recording untracked
 - The mobilecli version is now pinned exactly instead of with a caret, and a Dependabot
   configuration keeps it current. Version bumps arrive as pull requests that run CI before
   reaching users, rather than being resolved at install or run time
