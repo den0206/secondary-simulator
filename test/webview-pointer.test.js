@@ -108,6 +108,9 @@ const i18nEls = [
   makeEl('i18n-unknown', {attrs: {'data-i18n': 'noSuchKey'}}),
 ];
 
+// 鳴った音の数（AudioContext スタブが積む）
+const tones = [];
+
 const sandbox = {
   console,
   acquireVsCodeApi: () => ({
@@ -136,6 +139,28 @@ const sandbox = {
   },
   requestAnimationFrame: (fn) => { fn(); return 1; },
   cancelAnimationFrame: () => {},
+  // 効果音の有無を数えるためだけの最小スタブ。playTone が触る分だけ生やす。
+  AudioContext: class {
+    constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
+    resume() {}
+    createOscillator() {
+      tones.push(1);
+      return {
+        frequency: {setValueAtTime() {}},
+        connect() {}, start() {}, stop() {},
+      };
+    }
+    createGain() {
+      return {
+        gain: {
+          setValueAtTime() {},
+          linearRampToValueAtTime() {},
+          exponentialRampToValueAtTime() {},
+        },
+        connect() {},
+      };
+    }
+  },
   setTimeout, clearTimeout, performance, Date,
 };
 
@@ -618,10 +643,22 @@ listeners['window:message']({data: {type: 'recording', active: true}});
 check('録画中は見た目が変わる', els['btn-record'].classList.contains('recording'));
 check('停止のラベルになる', els['btn-record'].textContent === STRINGS.recordStop,
   els['btn-record'].textContent);
-listeners['window:message']({data: {type: 'recording', active: false}});
+tones.length = 0;
+listeners['window:message']({data: {type: 'recording', active: false, ok: true}});
 check('停止で戻る', !els['btn-record'].classList.contains('recording'));
 check('開始のラベルに戻る', els['btn-record'].textContent === STRINGS.recordStart,
   els['btn-record'].textContent);
+check('書き出せたら停止音が鳴る', tones.length > 0, `tones=${tones.length}`);
+
+// 壊れたファイルで鳴らすと「保存できた」の合図になってしまう。
+// ホストが警告を出すので、音は黙る（ok: false）。
+listeners['window:message']({data: {type: 'recording', active: true}});
+tones.length = 0;
+listeners['window:message']({data: {type: 'recording', active: false, ok: false}});
+check('書き出せなかったら停止音は鳴らさない', tones.length === 0, `tones=${tones.length}`);
+check('それでも見た目は停止に戻る',
+  !els['btn-record'].classList.contains('recording'));
+
 // 効果音は Web Audio。Node では AudioContext が無くても落ちない
 listeners['window:message']({data: {type: 'sound', sound: 'shutter'}});
 

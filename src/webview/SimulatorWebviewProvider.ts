@@ -19,6 +19,7 @@ import {
 } from '../input/SimulatorInputController';
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {defaultRecordingName} from '../simulator/RecordingName';
+import {verifyRecording} from '../simulator/RecordingFile';
 import {resolveSaveDirectory, SaveLocation} from '../simulator/SaveDirectory';
 import {Device, DeviceType} from '../simulator/types';
 import {DeviceStatus, renderStatus} from '../ui/DeviceStatusBar';
@@ -1127,7 +1128,29 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.clearRecordingTimer();
     this.recording = null;
-    this.postMessage({type: 'recording', active: false});
+
+    // 停止が成功しても、端末側で finalize されていなければ moov の無い mp4 が残る
+    // （映像は入っているのに再生できない）。**成功と言い切る前に中身を見る** —
+    // 音と通知が「保存できた」の合図になっているので、黙って通すと利用者は
+    // 壊れたことに気づけない（`RecordingFile.ts`）。
+    const check = await verifyRecording(session.target.fsPath);
+    this.postMessage({type: 'recording', active: false, ok: check.ok});
+
+    if (!check.ok) {
+      Logger.error(
+        `録画が完成していない（${check.reason}）: ${session.target.fsPath}`
+      );
+      const showLogs = vscode.l10n.t('Show Logs');
+      const answer = await vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: The recording was not finalized and cannot be played — {0}',
+          session.target.fsPath
+        ),
+        showLogs
+      );
+      if (answer === showLogs) Logger.show();
+      return;
+    }
 
     Logger.info(`録画を保存: ${session.target.fsPath}`);
     const openLabel = vscode.l10n.t('Open');

@@ -71,5 +71,6 @@
   "Videos": "動画",
   "Secondary Simulator: Could not start recording — {0}": "Secondary Simulator: 録画を開始できませんでした — {0}",
   "Secondary Simulator: Could not stop the recording — {0}": "Secondary Simulator: 録画を停止できませんでした — {0}",
-  "Recording saved: {0}": "録画を保存しました: {0}"
+  "Recording saved: {0}": "録画を保存しました: {0}",
+  "Secondary Simulator: The recording was not finalized and cannot be played — {0}": "Secondary Simulator: 録画が完成しなかったため再生できません — {0}"
 }

@@ -660,7 +660,10 @@ window.addEventListener('message', (event) => {
       recording = message.active === true;
       syncRecordButton();
       if (recording && !wasRecording) playUiSound('recordStart');
-      else if (!recording && wasRecording) playUiSound('recordStop');
+      // 書き出しに失敗したときは鳴らさない。この音が「保存できた」の合図なので、
+      // 壊れたファイルで鳴らすと気づく手がかりが消える（ホストが警告を出す）。
+      else if (!recording && wasRecording && message.ok !== false)
+        playUiSound('recordStop');
       break;
     }
 
