@@ -20,6 +20,13 @@ so **there is no need to move entries by hand**.
   anyway. The recording was reported as saved regardless. This was unrelated to what
   happened on screen while recording, contrary to how it first looked
 
+- A recording that fails to finalize is no longer reported as saved. Stopping a recording
+  now checks the written file for an MP4 `moov` atom before claiming success; when it is
+  missing the extension raises a warning with a link to the log instead of the "Recording
+  saved" notice, and the webview stays silent rather than playing the chime that signals a
+  good save. The check walks the file's top-level boxes and stops after 128 of them, so it
+  reads a few hundred bytes regardless of how long the recording is
+
 ### Changed
 
 - The bundled mobilecli moved from `@mobilenext/mobilecli` 0.1.64 to `mobilecli` 1.0.2.
