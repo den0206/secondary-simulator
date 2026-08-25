@@ -609,23 +609,19 @@ sent.length = 0;
 listeners['document:keydown']({key: 'v', metaKey: true, preventDefault() {}});
 check('Cmd+V を keypress にしない', sent.length === 0, JSON.stringify(sent));
 sent.length = 0;
+let readClipboard = 0;
 listeners['document:paste']({
-  clipboardData: {getData: () => 'myapp://path/to/screen'},
+  clipboardData: {getData: () => { readClipboard++; return 'myapp://path/to/screen'; }},
   preventDefault() {},
 });
-check(
-  'paste でテキストをまとめて送る',
-  sent.some((m) => m.type === 'paste' && m.text === 'myapp://path/to/screen'),
-  JSON.stringify(sent)
-);
-// 上限。巨大なテキストを postMessage に載せない
-sent.length = 0;
-listeners['document:paste']({
-  clipboardData: {getData: () => 'x'.repeat(9000)},
-  preventDefault() {},
-});
-check('長すぎる貼り付けは切る', sent[0] && sent[0].text.length === 4096,
-  String(sent[0] && sent[0].text.length));
+check('paste を 1 通送る', sent.some((m) => m.type === 'paste'), JSON.stringify(sent));
+
+// ここが本題。webview の clipboardData は、外部アプリでコピーした内容が
+// **ひとつ前のまま**返る（VS Code 内でコピーしたときだけ最新になる）。
+// 中身はホストが vscode.env.clipboard で読むので、webview は触ってはいけない。
+check('clipboardData を読まない', readClipboard === 0, `読んだ回数=${readClipboard}`);
+check('テキストを載せない', sent[0] && sent[0].text === undefined, JSON.stringify(sent));
+
 // フォーム要素の上では横取りしない（デバイス選択などの通常の貼り付けを壊さない）
 sent.length = 0;
 listeners['document:paste']({

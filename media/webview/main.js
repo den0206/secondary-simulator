@@ -376,16 +376,17 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// 貼り付け。1 文字ずつのキー送出では URL の入力が現実的でないため、
-// まとめてホストへ渡す（ホスト側が経路に応じて HID / WDA へ流す）。
-// 長さの上限はホストも持つが、巨大なテキストを postMessage に載せない。
-const MAX_PASTE_CHARS = 4096;
+// 貼り付け。1 文字ずつのキー送出では URL の入力が現実的でないため、まとめて送る。
+//
+// **中身はここで読まない。** webview は sandbox 化された iframe で、`clipboardData`
+// には外部アプリ（ブラウザ・エディタ）でコピーした内容が**ひとつ前のまま**返る。
+// VS Code 内でコピーしたときだけ最新になるので、動いているように見えて古い。
+// 送るのは「貼れ」という合図だけにして、クリップボードはホストが
+// `vscode.env.clipboard` で読む（そちらは OS のペーストボードを直接見る）。
 document.addEventListener('paste', (e) => {
   if (!overlay.classList.contains('hidden')) return;
   if (isEditingUi(e.target, 'v')) return;
-  const text = e.clipboardData && e.clipboardData.getData('text');
-  if (!text) return;
-  post('paste', {text: text.slice(0, MAX_PASTE_CHARS)});
+  post('paste');
   e.preventDefault();
 });
 
