@@ -44,6 +44,7 @@
   "command.record.title": "Record Screen",
   "configuration.showDeviceFrame.description": "Draw the phone bezel around the screen. Turn it off to use the full width of a narrow sidebar.",
   "configuration.showResourceStats.description": "Show memory and extension-size figures in the footer. These are developer diagnostics; the video rate and input path are always shown.",
+  "configuration.showTouchesInRecording.description": "Turn on Android’s \"Show taps\" while recording, so the video shows where the screen was touched. The ripples drawn in the sidebar are not part of the recording — Android records on the device itself. The previous value is restored when the recording stops; if the editor is killed mid-recording, the setting stays on until the next recording. Android only.",
   "configuration.saveLocation.description": "Initial folder for the screenshot and screen-recording save dialogs.",
   "configuration.saveLocation.enum.desktop": "Desktop (~/Desktop).",
   "configuration.saveLocation.enum.workspace": "The first workspace folder. Falls back to the home directory when no folder is open.",

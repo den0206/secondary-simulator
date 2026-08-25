@@ -247,6 +247,11 @@
           "default": false,
           "description": "%configuration.showResourceStats.description%"
         },
+        "secondarySimulator.showTouchesInRecording": {
+          "type": "boolean",
+          "default": true,
+          "description": "%configuration.showTouchesInRecording.description%"
+        },
         "secondarySimulator.saveLocation": {
           "type": "string",
           "enum": [

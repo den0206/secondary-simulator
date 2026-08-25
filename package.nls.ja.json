@@ -44,6 +44,7 @@
   "command.record.title": "画面を録画",
   "configuration.showDeviceFrame.description": "画面のまわりに端末の筐体を描く。サイドバーが狭いときは OFF にすると横幅をすべて使える。",
   "configuration.showResourceStats.description": "フッターにメモリと拡張ディレクトリのサイズを出す。開発者向けの診断で、映像レートと入力経路は常に表示される。",
+  "configuration.showTouchesInRecording.description": "録画のあいだ Android の「タップを表示」を有効にし、どこを触ったかを動画に残します。サイドバーに描かれるリップルは録画に入りません（Android は端末側で録画するため）。停止時に元の値へ戻します。録画中にエディタが強制終了した場合は、次の録画まで設定が残ります。Android のみ。",
   "configuration.saveLocation.description": "スクリーンショットと画面録画の保存ダイアログで最初に開くフォルダ。",
   "configuration.saveLocation.enum.desktop": "デスクトップ（~/Desktop）。",
   "configuration.saveLocation.enum.workspace": "ワークスペースのルート。フォルダを開いていないときはホーム。",

@@ -44,6 +44,7 @@
   "command.record.title": "录制屏幕",
   "configuration.showDeviceFrame.description": "在屏幕周围绘制手机外框。侧边栏较窄时可关闭，以使用全部宽度。",
   "configuration.showResourceStats.description": "在页脚显示内存和扩展目录大小。这些是面向开发者的诊断信息；视频速率和输入路径始终显示。",
+  "configuration.showTouchesInRecording.description": "录制期间启用 Android 的\"显示点按操作反馈\"，让视频中能看到触摸位置。侧边栏中绘制的波纹不会包含在录制内容中（Android 在设备端录制）。停止时会恢复原有设置。若录制中编辑器被强制退出，该设置会保留到下次录制。仅限 Android。",
   "configuration.saveLocation.description": "截图与屏幕录制保存对话框的初始文件夹。",
   "configuration.saveLocation.enum.desktop": "桌面（~/Desktop）。",
   "configuration.saveLocation.enum.workspace": "工作区根目录。未打开文件夹时回退到主目录。",

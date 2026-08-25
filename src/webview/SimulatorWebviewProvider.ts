@@ -20,6 +20,7 @@ import {
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {defaultRecordingName} from '../simulator/RecordingName';
 import {verifyRecording} from '../simulator/RecordingFile';
+import * as ShowTouches from '../simulator/ShowTouches';
 import {resolveSaveDirectory, SaveLocation} from '../simulator/SaveDirectory';
 import {Device, DeviceType} from '../simulator/types';
 import {DeviceStatus, renderStatus} from '../ui/DeviceStatusBar';
@@ -87,6 +88,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * 保持するのは「どの端末を、どこへ書いているか」の 1 件だけ。
    */
   private recording: {deviceId: string; target: vscode.Uri} | null = null;
+  /**
+   * 録画のあいだだけ立てた Android の「タップを表示」。復元するまで持つ。
+   *
+   * **`recording` とは別に持つ。** 秒読み中や停止失敗時など `recording` が
+   * 載っていない・降りない瞬間があり、そこに相乗りすると復元が漏れる
+   * （利用者の端末に設定が残る）。
+   */
+  private showTouches: {deviceId: string; previous: string} | null = null;
   /**
    * 止め忘れの保険。CLAUDE.md「上限と破棄条件をセットで書く」に従い、
    * 録画は必ず時間で終わる（切断・破棄でも止める）。
@@ -1081,8 +1090,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         Logger.info('秒読み中に状況が変わったので録画を始めない');
         return;
       }
+      // タップ表示は録画の直前に立てる（頭のフレームから写るように）。
+      // ここから先の抜け道は必ず restoreShowTouches() を通す。
+      await this.enableShowTouches(deviceId);
       await client.startScreenRecord(deviceId, target.fsPath);
     } catch (error) {
+      await this.restoreShowTouches();
       Logger.error('録画を開始できなかった', error as Error);
       void vscode.window.showErrorMessage(
         vscode.l10n.t(
@@ -1135,6 +1148,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (!this.mobileCliClient) {
       this.clearRecordingTimer();
       this.recording = null;
+      await this.restoreShowTouches();
       this.postMessage({type: 'recording', active: false});
       return;
     }
@@ -1163,6 +1177,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.clearRecordingTimer();
     this.recording = null;
+    // 端末側の録画が止まってから戻す（止める前に戻すと末尾が素のまま写る）。
+    await this.restoreShowTouches();
 
     // 停止が成功しても、端末側で finalize されていなければ moov の無い mp4 が残る
     // （映像は入っているのに再生できない）。**成功と言い切る前に中身を見る** —
@@ -1196,6 +1212,35 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (open === openLabel) {
       await vscode.commands.executeCommand('vscode.open', session.target);
     }
+  }
+
+  /**
+   * Android のときだけ「タップを表示」を立てる。
+   *
+   * 録画は端末側で完結するので、webview のリップルは動画に入らない
+   * （`ShowTouches.ts`）。設定で切れるようにしてあるが、既定は表示する
+   * （どこを触ったか分からない動画は不具合報告の役に立たない）。
+   */
+  private async enableShowTouches(deviceId: string): Promise<void> {
+    const device = this.devices.find((d) => d.id === deviceId);
+    if (device?.platform !== 'android') return;
+    const enabled = vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .get<boolean>('showTouchesInRecording', true);
+    if (!enabled) return;
+
+    const previous = await ShowTouches.enable(deviceId);
+    // null は「触っていないので戻す必要も無い」。覚えない。
+    if (previous !== null) this.showTouches = {deviceId, previous};
+  }
+
+  /** 立てた「タップを表示」を元の値へ戻す。二重に呼ばれても無害。 */
+  private async restoreShowTouches(): Promise<void> {
+    const pending = this.showTouches;
+    if (!pending) return;
+    // 先に降ろす。復元の待ち中にもう一度来ても二度書きしない。
+    this.showTouches = null;
+    await ShowTouches.restore(pending.deviceId, pending.previous);
   }
 
   private clearRecordingTimer(): void {
@@ -1528,7 +1573,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.screenSize = null;
 
     // mobilecli を先に落とすと stopScreenRecord が届かない。停止を待ってからサーバを止める。
-    const stopRecording = this.recording ? this.stopRecording() : Promise.resolve();
+    const stopRecording = this.recording
+      ? this.stopRecording()
+      : this.restoreShowTouches();
     void stopRecording.finally(() => {
       this.mobileCliServer.stopServer();
       this.mobileCliClient = null;
