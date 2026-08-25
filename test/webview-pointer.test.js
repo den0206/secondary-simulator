@@ -54,13 +54,18 @@ function makeEl(id, opts = {}) {
     removeChild() {},
     // removeAttribute('src') は .src も空にする（実 DOM と同じ）
     removeAttribute(name) { if (name === 'src') this.src = ''; },
+    // ビュー録画は canvas.captureStream で 1 枚ずつ出す（requestFrame）
+    captureStream() {
+      const track = {requestFrame() { framesRequested++; }, stop() { tracksStopped++; }};
+      return {getVideoTracks: () => [track], getTracks: () => [track]};
+    },
     remove() {},
     querySelector: () => ({textContent: ''}),
     getContext: () => ({
       clearRect() {}, drawImage() {}, beginPath() {}, moveTo() {}, lineTo() {},
-      stroke() {}, save() {}, restore() {},
+      stroke() {}, save() {}, restore() {}, arc() {}, fill() {},
       set strokeStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {},
-      set lineJoin(v) {}, set globalAlpha(v) {},
+      set lineJoin(v) {}, set globalAlpha(v) {}, set fillStyle(v) {},
     }),
     width: 300,
     height: 600,
@@ -113,6 +118,46 @@ const i18nEls = [
 // 鳴った音の数（AudioContext スタブが積む）
 const tones = [];
 
+// ---- ビュー録画のスタブ ------------------------------------------------------
+// 実際の符号化はしない。**チャンクの出し方（順番・未 ack の上限・後始末）**だけを見る。
+let framesRequested = 0;
+let tracksStopped = 0;
+const recorders = [];
+
+class MediaRecorderStub {
+  static isTypeSupported(mime) {
+    return mime === 'video/mp4;codecs=avc1.42E01E';
+  }
+  constructor(stream, options) {
+    this.stream = stream;
+    this.mimeType = (options || {}).mimeType;
+    this.videoBitsPerSecond = (options || {}).videoBitsPerSecond;
+    this.state = 'inactive';
+    recorders.push(this);
+  }
+  start(timeslice) {
+    this.state = 'recording';
+    this.timeslice = timeslice;
+  }
+  stop() {
+    this.state = 'inactive';
+    if (this.onstop) this.onstop();
+  }
+  /** テストから 1 チャンク吐かせる。 */
+  emit(base64) {
+    if (this.ondataavailable) {
+      this.ondataavailable({data: {size: base64.length, base64}});
+    }
+  }
+}
+
+class FileReaderStub {
+  readAsDataURL(blob) {
+    this.result = `data:video/mp4;base64,${blob.base64}`;
+    setTimeout(() => this.onload && this.onload(), 0);
+  }
+}
+
 const sandbox = {
   console,
   acquireVsCodeApi: () => ({
@@ -164,6 +209,11 @@ const sandbox = {
     }
   },
   setTimeout, clearTimeout, performance, Date,
+  // 心拍は実際に回さない（テストプロセスを生かし続けない）
+  setInterval: () => 0,
+  clearInterval: () => {},
+  MediaRecorder: MediaRecorderStub,
+  FileReader: FileReaderStub,
 };
 
 sandbox.globalThis = sandbox;
@@ -185,7 +235,9 @@ function check(name, cond, detail) {
 }
 
 console.log('1) 起動時に init を送る');
-check('init 送信', sent.some((m) => m.type === 'init'));
+// 後続のケースで sent を空にするので、ここで控えておく
+const initMessage = sent.find((m) => m.type === 'init');
+check('init 送信', initMessage !== undefined);
 
 console.log('\n2) 1本指ドラッグ: down → move → up');
 sent.length = 0;
@@ -733,5 +785,115 @@ fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
 fire('simulator-container', 'pointerup', {clientX: 150, clientY: 300});
 check('pointerdown でコンテナに focus する', focused === 1, `回数=${focused}`);
 
-console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
-process.exit(failures === 0 ? 0 : 1);
+// ---- ここから先は非同期（チャンクの送信が FileReader を挟む）------------------
+// 送信は Promise の鎖 + FileReader（setTimeout）を経由するので、数回まわす
+const tick = async () => {
+  for (let i = 0; i < 4; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+};
+
+async function viewRecordingCases() {
+  console.log('\n25) ビュー録画: 対応状況を init で報告する');
+  check(
+    '録れるコンテナを報告する',
+    initMessage && initMessage.viewRecordingMime === 'video/mp4;codecs=avc1.42E01E',
+    JSON.stringify(initMessage)
+  );
+
+  console.log('\n26) ビュー録画: 開始 → チャンク → ack → 停止');
+  // 合成元のフレームが要る（1 枚も来ていなければ始めない）
+  els['simulator-img'].naturalWidth = 320;
+  els['simulator-img'].naturalHeight = 640;
+  els['simulator-img'].src = 'data:image/jpeg;base64,AAAA';
+  sent.length = 0;
+  recorders.length = 0;
+  framesRequested = 0;
+  tracksStopped = 0;
+  listeners['window:message']({
+    data: {
+      type: 'startViewRecording',
+      mimeType: 'video/mp4;codecs=avc1.42E01E',
+      bitsPerSecond: 4000000,
+      timesliceMs: 1000,
+      maxUnacked: 2,
+    },
+  });
+  check('開始を返す', sent.some((m) => m.type === 'viewRecordingStarted'));
+  const recorder = recorders[recorders.length - 1];
+  check('timeslice を渡して刻ませる', recorder && recorder.timeslice === 1000, String(recorder && recorder.timeslice));
+  check('最初の 1 枚を出す', framesRequested >= 1, String(framesRequested));
+
+  sent.length = 0;
+  recorder.emit('QUJD');
+  await tick();
+  const chunk = sent.find((m) => m.type === 'viewRecordingChunk');
+  check('チャンクを連番で送る', chunk && chunk.seq === 0 && chunk.data === 'QUJD', JSON.stringify(chunk));
+
+  console.log('\n27) ビュー録画: 未 ack が上限に達したら捨てずに止める');
+  sent.length = 0;
+  recorder.emit('QUJD'); // seq 1（未 ack 2 件目）
+  await tick();
+  recorder.emit('QUJD'); // 上限（2）に達しているので止まる
+  await tick();
+  check(
+    'チャンクを捨てずにエラーで止める',
+    sent.some((m) => m.type === 'viewRecordingError') &&
+      sent.filter((m) => m.type === 'viewRecordingChunk').length === 1,
+    JSON.stringify(sent.map((m) => m.type))
+  );
+  check('トラックを止める（確保したものは捨てる）', tracksStopped >= 1, String(tracksStopped));
+
+  console.log('\n28) ビュー録画: ack が返れば続けられる');
+  sent.length = 0;
+  recorders.length = 0;
+  listeners['window:message']({
+    data: {
+      type: 'startViewRecording',
+      mimeType: 'video/mp4;codecs=avc1.42E01E',
+      bitsPerSecond: 4000000,
+      timesliceMs: 1000,
+      maxUnacked: 1,
+    },
+  });
+  const rec2 = recorders[recorders.length - 1];
+  sent.length = 0;
+  rec2.emit('QUJD');
+  await tick();
+  listeners['window:message']({data: {type: 'viewRecordingAck', seq: 0}});
+  rec2.emit('REVG');
+  await tick();
+  check(
+    'ack のぶんだけ次を送れる',
+    sent.filter((m) => m.type === 'viewRecordingChunk').length === 2 &&
+      !sent.some((m) => m.type === 'viewRecordingError'),
+    JSON.stringify(sent.map((m) => m.type))
+  );
+
+  console.log('\n29) ビュー録画: 停止は最後のチャンクを出し切ってから返す');
+  sent.length = 0;
+  listeners['window:message']({data: {type: 'viewRecordingAck', seq: 1}});
+  listeners['window:message']({data: {type: 'stopViewRecording'}});
+  await tick();
+  check('停止を返す', sent.some((m) => m.type === 'viewRecordingStopped'));
+  check('レコーダーを止める', rec2.state === 'inactive');
+
+  console.log('\n30) ビュー録画: 表示が切れたら符号化も止める');
+  sent.length = 0;
+  recorders.length = 0;
+  listeners['window:message']({
+    data: {
+      type: 'startViewRecording',
+      mimeType: 'video/mp4;codecs=avc1.42E01E',
+      bitsPerSecond: 4000000,
+      timesliceMs: 1000,
+      maxUnacked: 8,
+    },
+  });
+  const rec3 = recorders[recorders.length - 1];
+  listeners['window:message']({data: {type: 'disconnected'}});
+  check('切断で止まる', rec3.state === 'inactive');
+}
+
+viewRecordingCases().then(() => {
+  console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
+  process.exit(failures === 0 ? 0 : 1);
+});
