@@ -1,11 +1,6 @@
-import {ChildProcess, execFile, spawn} from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import {promisify} from 'util';
+import {ChildProcess, spawn} from 'child_process';
+import {findAdb, resolveSerial} from './Adb';
 import {Logger} from '../utils/Logger';
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Android のタッチだけを `adb shell` の常駐セッションへ流す送信口。
@@ -109,14 +104,14 @@ export class AdbTouch {
 
   private async spawnShell(): Promise<boolean> {
     if (this.dead) return false;
-    const adb = AdbTouch.findAdb();
+    const adb = findAdb();
     if (!adb) {
       this.kill('adb が見つからない');
       return false;
     }
     let serial: string;
     try {
-      serial = await AdbTouch.resolveSerial(adb, this.deviceId);
+      serial = await resolveSerial(adb, this.deviceId);
     } catch (error) {
       this.kill(`adb のシリアル解決に失敗: ${(error as Error).message}`);
       return false;
@@ -168,46 +163,5 @@ export class AdbTouch {
     for (const resolve of waiting) resolve();
     proc?.stdin?.end();
     proc?.kill();
-  }
-
-  // ---- adb の場所とシリアル ------------------------------------------------
-
-  /** `ANDROID_HOME` → `ANDROID_SDK_ROOT` → macOS の既定位置 → PATH の順に探す。 */
-  static findAdb(): string | null {
-    const roots = [
-      process.env.ANDROID_HOME,
-      process.env.ANDROID_SDK_ROOT,
-      path.join(os.homedir(), 'Library', 'Android', 'sdk'),
-    ];
-    for (const root of roots) {
-      if (!root) continue;
-      const p = path.join(root, 'platform-tools', 'adb');
-      if (fs.existsSync(p)) return p;
-    }
-    return process.env.PATH ? 'adb' : null;
-  }
-
-  /**
-   * mobilecli のデバイス ID を adb のシリアルに直す。
-   * mobilecli はエミュレータだけ **AVD 名** を ID に使う（`devices/android.go`）。
-   */
-  static async resolveSerial(adb: string, deviceId: string): Promise<string> {
-    const {stdout} = await execFileAsync(adb, ['devices'], {timeout: 5000});
-    const serials = stdout
-      .split('\n')
-      .slice(1)
-      .map((line) => line.trim().split(/\s+/))
-      .filter((parts) => parts.length === 2 && parts[1] === 'device')
-      .map((parts) => parts[0]);
-
-    if (serials.includes(deviceId)) return deviceId;
-    for (const serial of serials) {
-      if (!serial.startsWith('emulator-')) continue;
-      const avd = await execFileAsync(adb, ['-s', serial, 'emu', 'avd', 'name'], {
-        timeout: 5000,
-      });
-      if (avd.stdout.split('\n')[0].trim() === deviceId) return serial;
-    }
-    throw new Error(`${deviceId} に対応する adb デバイスが無い`);
   }
 }
