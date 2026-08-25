@@ -49,5 +49,8 @@
   "configuration.saveLocation.enum.workspace": "工作区根目录。未打开文件夹时回退到主目录。",
   "configuration.saveLocation.enum.home": "用户主目录。",
   "configuration.saveLocation.enum.custom": "使用 saveDirectory 指定的路径。",
-  "configuration.saveDirectory.description": "当 saveLocation 为 custom 时的文件夹路径；其他情况下忽略。"
+  "configuration.saveDirectory.description": "当 saveLocation 为 custom 时的文件夹路径；其他情况下忽略。",
+  "configuration.recordingSource.description": "屏幕录制的来源。",
+  "configuration.recordingSource.enum.device": "在设备端录制（使用设备分辨率，但不会录到点击和指针）。",
+  "configuration.recordingSource.enum.view": "录制此视图（包含点击、拖动轨迹和指针；画质取决于此处显示的画面）。"
 }

@@ -85,6 +85,8 @@ export function webviewStrings(): Record<string, string> {
       'Updated every 30 seconds. The extension host process is shared with other extensions. The extension directory is the size of the bundled files and does not grow at runtime (this extension keeps no persistent storage). WebDriverAgent installed by mobilecli is not included.'
     ),
     video: vscode.l10n.t('Video'),
+    // 録画中だけ出るチップ。書けている量と実効ビットレート。
+    recording: vscode.l10n.t('Recording'),
     direct: vscode.l10n.t('direct'),
     host: vscode.l10n.t('Host'),
     heap: vscode.l10n.t('heap'),

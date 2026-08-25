@@ -72,5 +72,9 @@
   "Secondary Simulator: Could not start recording — {0}": "Secondary Simulator: 録画を開始できませんでした — {0}",
   "Secondary Simulator: Could not stop the recording — {0}": "Secondary Simulator: 録画を停止できませんでした — {0}",
   "Recording saved: {0}": "録画を保存しました: {0}",
-  "Secondary Simulator: The recording was not finalized and cannot be played — {0}": "Secondary Simulator: 録画が完成しなかったため再生できません — {0}"
+  "Secondary Simulator: The recording was not finalized and cannot be played — {0}": "Secondary Simulator: 録画が完成しなかったため再生できません — {0}",
+  "Recording": "録画",
+  "Secondary Simulator: This view cannot be recorded here, so the device recorder is used instead (taps and the pointer will not appear).": "Secondary Simulator: この画面は録画できないため、端末側の録画を使います（タップとポインタは写りません）。",
+  "Secondary Simulator: The recording was cut short and may be missing the end — {0}": "Secondary Simulator: 録画が途中で切れました。末尾が欠けている可能性があります — {0}",
+  "Recording stopped at the size limit and was saved: {0}": "サイズの上限で録画を止めて保存しました: {0}"
 }
