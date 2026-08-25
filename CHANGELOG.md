@@ -10,6 +10,17 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Pasting into the device inserted the previous clipboard entry whenever the text had been
+  copied from outside the editor — a browser, another app, a file. Text copied inside VS Code
+  pasted correctly, which is what made it look like it worked. The webview read the clipboard
+  itself, and a webview is a sandboxed iframe whose `clipboardData` lags the system pasteboard
+  for writes it did not see. The clipboard is now read on the extension host with
+  `vscode.env.clipboard.readText()`, which asks the OS at the moment of the paste; the webview
+  only signals that a paste happened. An empty clipboard is now logged rather than dropped in
+  silence
+
 ## [0.4.0] — 2026-08-24
 
 ### Added

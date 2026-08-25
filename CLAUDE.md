@@ -86,6 +86,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   **Cmd/Ctrl+V は `paste` でまとめて送る**（`InputBackend.text`。URL 入力用）。
+  **中身は webview から送らない** — `clipboardData` は外部アプリでコピーした内容が
+  ひとつ前のまま返る（VS Code 内でコピーしたときだけ最新になるので、動いて見えて古い）。
+  webview は合図だけ送り、ホストが `vscode.env.clipboard.readText()` で読む。
   デバイス選択の `<select>` などテキスト UI にフォーカスがあるあいだはキーを送らない。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
   デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。
