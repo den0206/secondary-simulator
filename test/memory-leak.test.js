@@ -284,6 +284,38 @@ const fakeClient = () => {
       /SIGKILL/.test(sidecar)
     );
 
+    const viewRecording = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'simulator', 'ViewRecording.ts'),
+      'utf8'
+    );
+    check(
+      'ViewRecordingWriter が総量の上限を持つ',
+      /maxBytes/.test(viewRecording) && /reason: 'size'/.test(viewRecording)
+    );
+    check(
+      'ViewRecordingWriter が途切れたら打ち切る（webview が消えても残らない）',
+      /stallMs/.test(viewRecording) && /reason: 'stalled'/.test(viewRecording)
+    );
+    check(
+      'ViewRecordingWriter が見張りのタイマーを外す',
+      /clearTimeout\(this\.stallTimer\)/.test(viewRecording)
+    );
+
+    const provider = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'webview', 'SimulatorWebviewProvider.ts'),
+      'utf8'
+    );
+    check(
+      'ビュー録画に総量と未 ack の上限が定義されている',
+      /MAX_VIEW_RECORDING_BYTES\s*=/.test(provider) &&
+        /VIEW_RECORDING_MAX_UNACKED\s*=\s*\d+/.test(provider)
+    );
+    check(
+      'MediaRecorder に timeslice を渡す（無指定は停止まで全部抱える）',
+      /VIEW_RECORDING_TIMESLICE_MS\s*=\s*\d/.test(provider) &&
+        /timesliceMs:/.test(provider)
+    );
+
     const server = require('fs').readFileSync(
       require('path').join(__dirname, '..', 'src', 'utils', 'MobileCliServer.ts'),
       'utf8'
@@ -295,6 +327,20 @@ const fakeClient = () => {
       'utf8'
     );
     check('webview の pointer 保持に上限がある', /MAX_POINTERS\s*=\s*\d+/.test(main));
+    // ビュー録画は「捨てられないもの」なので、上限に当たったら録画自体を止める。
+    // 捨てると壊れたファイルが残り、溜めると webview のメモリが伸びる。
+    check(
+      'ビュー録画が未 ack の上限で止まる（捨てない・溜めない）',
+      /unacked >= rec\.maxUnacked/.test(main) && /failViewRecording/.test(main)
+    );
+    check(
+      'ビュー録画の心拍タイマーを必ず外す',
+      /clearInterval\(rec\.heartbeat\)/.test(main)
+    );
+    check(
+      'ビュー録画がトラックを止める（確保したものは捨てる）',
+      /getTracks\(\)\.forEach\(\(t\) => t\.stop\(\)\)/.test(main)
+    );
     // フレームは <img> へ直接渡すので、webview 側にキューを持たない
     // （溜める入れ物が無ければ上限も要らない。間引きは Chromium がやる）。
     check('webview がフレームを溜め込まない', !/frameQueue/.test(main));

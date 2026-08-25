@@ -151,6 +151,47 @@ function unfinalizedMdat(dataLength) {
     (await verifyRecording(largePath)).ok === true
   );
 
+  console.log('\nビュー録画（webm）は Cluster の有無で見る');
+
+  // MediaRecorder の webm は EBML ヘッダ → Segment → Tracks → Cluster… と並ぶ。
+  // 長さも Cues も入らない（＝mp4 の moov に当たるものが無い）ので、
+  // 「絵が 1 つも入っていない」だけを落とす。
+  const ebml = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+  const cluster = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+
+  const webmPath = write(
+    'view.webm',
+    Buffer.concat([ebml, Buffer.alloc(256, 0x42), cluster, Buffer.alloc(4096, 0x11)])
+  );
+  check('Cluster を含む webm を通す', (await verifyRecording(webmPath)).ok === true);
+
+  // 頭だけ書けて止まった（＝1 フレームも符号化されていない）形
+  const headOnlyPath = write(
+    'head-only.webm',
+    Buffer.concat([ebml, Buffer.alloc(256, 0x42)])
+  );
+  const headOnly = await verifyRecording(headOnlyPath);
+  check(
+    '映像の入っていない webm を落とす',
+    headOnly.ok === false && headOnly.reason === 'no-cluster',
+    JSON.stringify(headOnly)
+  );
+
+  // 64KB の読み境界をまたぐ Cluster を取りこぼさない（重ねて読んでいるか）
+  const straddlePath = write(
+    'straddle.webm',
+    Buffer.concat([
+      ebml,
+      Buffer.alloc(64 * 1024 - 4 - 2, 0x42), // Cluster ID が境界の直前から始まる
+      cluster,
+      Buffer.alloc(1024, 0x11),
+    ])
+  );
+  check(
+    '読み境界をまたぐ Cluster も見つける',
+    (await verifyRecording(straddlePath)).ok === true
+  );
+
   fs.rmSync(tmp, {recursive: true, force: true});
 
   if (failures > 0) {
