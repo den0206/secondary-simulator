@@ -10,6 +10,17 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- Android screen recordings now show where the screen was touched. The ripples the sidebar
+  draws are its own optimistic feedback and never reach the video — Android records on the
+  device itself — so the extension turns on Android's "Show taps" for the duration of the
+  recording, which the system draws into the display and `screenrecord` therefore captures.
+  The previous value is read first and restored when the recording stops, so a device that
+  already had it on is left alone. Set `secondarySimulator.showTouchesInRecording` to false
+  to keep recordings clean. Android only: neither `simctl` nor the iOS Simulator has an
+  equivalent
+
 ## [0.4.0] — 2026-08-24
 
 ### Added

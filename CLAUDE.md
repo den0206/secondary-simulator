@@ -104,6 +104,13 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   警告を出し、`recording` メッセージに `ok: false` を載せて**停止音も鳴らさない**
   （音と通知が「保存できた」の合図なので、黙って通すと気づけない）。
   ファイル全体は読まない — 先頭から box を辿って 128 個で打ち切る。
+  **Android は録画中だけ「タップを表示」を立てる**（`ShowTouches.ts`。
+  `secondarySimulator.showTouchesInRecording`、既定 ON）。録画は端末側で完結するので
+  webview のリップルは動画に入らない。`show_touches` はシステムがディスプレイへ描くため
+  `screenrecord` に写る。mobilecli に口が無いので adb を使う（`device.settings.apply` は
+  `animations` だけ）。**必ず元の値へ戻す** — 立てる前に読み、その値へ戻す。
+  復元対象は `recording` とは別のフィールドで持つ（秒読み中や停止失敗時に
+  `recording` が載っていない・降りない瞬間があり、相乗りすると復元が漏れる）。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
   フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
@@ -123,7 +130,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **私有 API は `native/` の中だけ**。TypeScript 側から直接触らない。
 - **HID は iOS Simulator 限定**。iOS 実機は `WdaBackend`（mobilecli 経由）、
   Android は `AndroidBackend`（タッチだけ `AdbTouch` の adb 直叩き、それ以外は mobilecli）。
-  **adb を直接叩くのは `AdbTouch` の中だけ**。他から `adb` を生やさない。
+  **adb を起こすのは `src/input/Adb.ts` の中だけ**。他から `adb` を生やさない
+  （`AdbTouch` の常駐セッションと、録画中の `show_touches` がここを通る）。
+  mobilecli で足りるものを adb へ逃がさない — 逃がすなら理由をここに書く。
 - 入力経路を増やすときは `InputBackend` を実装する。webview から個別経路を生やさない。
 - `native/simhid-server` は macOS 専用。ビルドは `scripts/build-native.sh` が
   非 macOS を自動スキップするので、拡張は WDA だけでも動く状態を保つ。
