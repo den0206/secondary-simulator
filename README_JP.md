@@ -86,6 +86,7 @@ VSCodeの設定で以下のオプションを調整できます：
 - **`secondarySimulator.captureFps`**: サイドカー取り込みの通常時 fps（デフォルト: 30）。指を置いているあいだは最大 2 倍・60fps。変化のないフレームは送られない。
 - **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG 幅の上限 px（デフォルト: 640）。実際の幅はサイドバーの表示幅 × devicePixelRatio に追従する。
 - **`secondarySimulator.captureMode`**: `auto`（デフォルト）はディスプレイの変更通知が使えれば使い、駄目ならポーリング。`poll` はタイマ固定。私有 API なので、Xcode 更新で取り込みが不調なときは `poll` に固定する。
+- **`secondarySimulator.recordingSource`**: 録画の作り方 — `device`（既定）は端末側で録るので端末の解像度で残せるが、タップとマウスカーソルは端末の画面そのものには無いため写らない。`view` はサイドバーに出ている映像を、タップ・ドラッグの軌跡・ポインタごと録る。`view` は webview で符号化するので画質は表示中の映像に従い、ファイルは Chromium が符号化できるほうに応じて MP4 か WebM になる。
 - **`secondarySimulator.showDeviceFrame`**: 画面のまわりに端末の筐体を描く（デフォルト: true）。サイドバーが狭いときは OFF にすると横幅をすべて使える。
 - **`secondarySimulator.showResourceStats`**: フッターにメモリと拡張ディレクトリのサイズを出す（デフォルト: false）。開発者向けの診断で、映像レートと入力経路は常に出る。
 - **`secondarySimulator.keyInput`**: iOS Simulator へのキー入力経路。`hid`（デフォルト・高速）または `wda`（1文字あたり約 370ms）。HID のキーはハードウェアキーボード扱いになるためソフトウェアキーボードが出ない。サイドバーにソフトキーボードを映したいときは `wda`。タッチは常に HID。
@@ -109,7 +110,9 @@ VSCodeの設定で以下のオプションを調整できます：
    - **Back**: Android のみ（iOS では無効）
    - **Shot**: 接続中デバイスの画面を保存
    - **Rec**: 画面を動画ファイルへ録画。保存先を選ぶと画面に 3 秒の秒読みが出て、
-     数え終わってから録り始める（もう一度押すと停止）
+     数え終わってから録り始める（もう一度押すと停止）。
+     `secondarySimulator.recordingSource` を `view` にすると、タップ・軌跡・
+     ポインタも一緒に録れる
    - **Trail**: リップルとドラッグ軌跡の表示切替
    - **Auto**: 起動中デバイスへの自動接続の切替
 7. プレビューにフォーカスがあるあいだはキーボードで入力できます。矢印キーと、`Cmd` / `Ctrl` / `Option` を伴うショートカット（`Cmd+A`・`Cmd+C` など）は修飾キー付きの組み合わせとして送られます（HID 経路のみ。WDA は修飾キーを扱えません）。デバイス選択などのフォーム要素にフォーカスがあるあいだは送りません
@@ -128,7 +131,7 @@ VSCodeの設定で以下のオプションを調整できます：
 | --------------------- | ------------------------------------------------------------ |
 | `Select Device`       | 一覧から選んで接続する。停止中を選ぶと起動できる             |
 | `Save Screenshot`     | 接続中のデバイスの画面を保存する                             |
-| `Record Screen`       | 画面の録画を 3 秒の秒読みのあと開始 / 停止する。10 分経過または切断でも必ず止まる |
+| `Record Screen`       | 画面の録画を 3 秒の秒読みのあと開始 / 停止する。10 分経過または切断でも必ず止まる。操作（タップ・ポインタ）が写るかは `secondarySimulator.recordingSource` で決まる |
 | `Open URL on Device`  | 接続中のデバイスでディープリンク / URL を開く                |
 | `Press Home`          | Home ボタン（`Cmd+Shift+H`）                                 |
 | `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
@@ -147,6 +150,8 @@ secondary-simulator/
 │   ├── simulator/
 │   │   ├── types.ts                   # 型定義
 │   │   ├── RecordingName.ts           # 録画ファイル名の既定値
+│   │   ├── RecordingFile.ts           # 書き出し後の検査（mp4 の moov / webm の Cluster）
+│   │   ├── ViewRecording.ts           # ビュー録画のチャンク受け口（上限・逆圧）
 │   │   └── autoConnect.ts             # 自動接続する起動中デバイスの選択
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理

@@ -100,7 +100,17 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `secondarySimulator.showDeviceFrame` / `showResourceStats` で筐体とリソース数値の
   表示を切り替えられる（収集は続ける）。スクリーンショット保存・録画の開始/停止は
   webview 内の Web Audio で短い効果音を鳴らす。
-- **デバイス操作（mobilecli）**: 録画は `device.screenrecord` / `.stop`。保存先パスはユーザーが選び、拡張は一時ファイルを
+- **デバイス操作（mobilecli）**: 録画は 2 経路（`secondarySimulator.recordingSource`）。
+  既定の `device` は `device.screenrecord` / `.stop`。`view` は **webview が「表示中のフレーム＋
+  操作の表示」を canvas に合成し `MediaRecorder` で符号化**して、チャンクをホストが書く
+  （端末側の録画には**カーソルもタップも写らない** — 入力は合成なので端末が指を描かず、
+  カーソルはホストにしか無い。`docs/sidecar-protocol.md` §7.2）。コンテナは webview の
+  `isTypeSupported` 次第で mp4 か webm になり、保存ダイアログの拡張子も揃える。
+  **チャンクは捨てない** — `touchMove` と違い 1 つ落ちるとコンテナが壊れるので、詰まったら
+  録画そのものを止める（未 ack 8 件・総量 512MB・無音 10 秒・連番の欠落）。ack はホストが
+  書き終えてから返すので、それがそのまま逆圧になる。録画中だけ直結配信をやめる
+  （別オリジンの `<img>` は canvas を汚染し `captureStream` が止まる）。
+  どちらの経路でも保存先パスはユーザーが選び、拡張は一時ファイルを
   持たない。**開始は 3 秒の秒読みのあと**（`countdown` メッセージ。保存ダイアログを閉じた直後の
   画面が頭に写らないため。進行はホストが持ち、webview は数字と音を出すだけ）。10 分・切断・破棄で必ず止める。**サイドバー非表示でも止める**（止め忘れ防止）。
   停止に失敗したら UI は録画中のまま残し、通知から再試行できる。拡張の `dispose` は
@@ -109,7 +119,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `moov` の無い mp4 が残り、映像は入っているのに再生できない。検証に落ちたら
   警告を出し、`recording` メッセージに `ok: false` を載せて**停止音も鳴らさない**
   （音と通知が「保存できた」の合図なので、黙って通すと気づけない）。
-  ファイル全体は読まない — 先頭から box を辿って 128 個で打ち切る。
+  ファイル全体は読まない — 先頭から box を辿って 128 個で打ち切る。**検査は形式で分ける**
+  （mp4 は `moov`、webm は Cluster。webm は長さも Cues も入らないので「未完成」を
+  判定できず、途中で落ちたことは連番の欠落として書き込み側が捉える）。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
   フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
@@ -146,6 +158,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   （`MjpegCapture` の 10MB 上限、`SimhidSidecar` の stdout 1MB 上限、軌跡 40 点、
   pointer 10 件）。**捨てる判断も含む** — `sendNoWait` は stdin が詰まっている間
   `touchMove` を捨てる（最新の座標だけが意味を持つので歪まない）。
+  **逆に、捨ててはいけないものもある** — ビュー録画のチャンクは 1 つ落ちるとコンテナが
+  壊れるので、上限に当たったら捨てるのではなく**録画を止める**（`ViewRecording.ts`）。
   webview はフレームを溜めない（`<img>` に渡し、間引きは Chromium がやる）。
 - **高頻度パスでログを出さない**。`touch*` は 60Hz で届く。OutputChannel は全文を
   メモリに持つので、1 イベント 1 行で確実に膨らむ。**リトライループも高頻度パス**

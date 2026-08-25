@@ -337,6 +337,33 @@ mobilecli へ落ちたときだけ、次の形になる（Android 側は `pointe
   （すぐ出すと「速いタップ」になり、長押しも長押し→ドラッグも成立しない）
 - `dispose()` は押しっぱなしの指を離す（残すと次のタッチが別のジェスチャーになる）
 
+### 7.2 ビュー録画（操作つきの画面録画）
+
+端末側の録画（`device.screenrecord`）は端末のフレームバッファをそのまま録るので、
+**マウスカーソルもタップも写らない**（入力は HID / adb で合成しており、端末は指を
+描かない。カーソルはそもそもホスト側にしか無い）。webview のリップルと軌跡も
+ホスト側 DOM のオーバーレイなので、端末の映像には入らない。
+
+`secondarySimulator.recordingSource: "view"` のとき、webview が
+「表示中のフレーム＋操作の表示」を 1 枚の canvas に合成し、`MediaRecorder` で
+符号化してチャンクをホストへ流す。ホストはユーザーが選んだパスへ**そのまま書く**
+（一時ファイルは持たない）。
+
+| 決めごと | 理由 |
+|---|---|
+| `captureStream(0)` + `requestFrame()` | 端末のフレームが届いたときと操作の変化だけを 1 枚ずつ出す。静止画面で同じ絵を 30 回符号化しない（出力フレーム数＝取り込みフレーム数） |
+| 心拍として毎秒 1 枚 | 完全な静止画面でも時間が進み、ホストの停止検出（10 秒）が誤爆しない |
+| `start(timeslice)` を必ず渡す | 無指定の `MediaRecorder` は停止まで全チャンクを抱える |
+| ack が返るまで次を出さない | ホストが**書き終えてから** ack を返すので、これがそのまま逆圧になる。未 ack が上限（8）に達したら**捨てずに録画を止める** — 1 つ落ちるとコンテナが壊れる |
+| 連番（`seq`）を付ける | 飛んだら壊れたファイルになるので、ホストが打ち切る |
+| 総量 512MB / 時間 10 分 | 二重の蓋。ビットレートを固定（4Mbps）してあるので伸び方を計算で言い切れる |
+| 録画中は直結配信をやめる | 別オリジンの `<img>` を描いた canvas は汚染され、`captureStream` が SecurityError で止まる。中継経路のフレームは data URL なので汚染しない |
+| コンテナは webview が決める | `MediaRecorder.isTypeSupported` の結果は Chromium の版と H.264 エンコーダに依る。mp4 が通ればそのまま mp4、駄目なら webm。保存ダイアログの拡張子も揃える |
+
+検査（`RecordingFile.ts`）は形式で分ける。mp4 は `moov`、webm は Cluster の有無。
+webm は長さも Cues も入らないので「未完成」を判定できないが、**途中で落ちた**ことは
+連番の欠落として書き込み側が捉える。
+
 ### 既存メッセージとの対応
 
 webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受け、
@@ -351,12 +378,16 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
-| `record` | 画面録画の開始/停止をトグル（`device.screenrecord` / `.stop`。保存先はユーザーが選ぶパスを `output` に渡す） |
+| `record` | 画面録画の開始/停止をトグル。`secondarySimulator.recordingSource` が `device` なら `device.screenrecord` / `.stop`（保存先はユーザーが選ぶパスを `output` に渡す）、`view` なら webview で合成して録る（§7.2） |
+| `viewRecordingStarted {mimeType}` | ビュー録画: 符号化を始めた。ホストはこれを受けてから「録画中」にする（返らなければ 10 秒で諦める） |
+| `viewRecordingChunk {seq, data}` | ビュー録画: チャンク 1 つ（`data` は base64）。**連番が飛んだらホストは打ち切る** — 1 つ落ちるとコンテナが壊れるため。高頻度パス扱いでログに載せない |
+| `viewRecordingStopped {chunks}` | ビュー録画: 最後のチャンクまで出し切った。ホストはここでファイルを閉じる |
+| `viewRecordingError {message}` | ビュー録画: 始められない／続けられない（合成元が無い、canvas の汚染、書き込みが追いつかない） |
 | `deviceChange {deviceId}` | 空文字ならキャプチャ停止。一覧から消えた選択もこれを送る |
 | `bootDevice {deviceId}` | 停止中のデバイスを選んだとき。起動確認のあと `device.boot` して接続（コマンドパレット経由と同じ） |
 | `retry` | エラー表示からの復帰。一覧を取り直し、選択中があれば再接続 |
 | `showLogs` | 出力チャンネル「Secondary Simulator」を開く |
-| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す |
+| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
 | `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限） |
@@ -368,13 +399,16 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `settings` | `showDeviceFrame` / `showResourceStats`（`secondarySimulator.*` の見た目設定） |
 | `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
 | `countdown` | 録画開始前の秒読み（`value: 3→2→1`、`0` で消す）。**進行はホストが持ち**、webview は数字と音を出すだけ |
+| `startViewRecording {mimeType, bitsPerSecond, timesliceMs, maxUnacked}` | ビュー録画の開始。`timesliceMs` を必ず渡す（無指定の MediaRecorder は停止まで全部抱える）。`maxUnacked` は webview が抱えてよい未 ack チャンク数 |
+| `stopViewRecording` | ビュー録画の停止。webview は最後の 1 チャンクを出してから `viewRecordingStopped` を返す |
+| `viewRecordingAck {seq}` | チャンクを 1 つ書き終えた。**書き終えるまで返さない**ので、これがそのまま逆圧になる |
 | `sound` | 効果音（`shutter`）。スクリーンショット保存時など |
 | `searching` | 未接続で起動中デバイスを探している |
 | `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |
 | `autoConnect` | 設定値。Auto ボタンと揃える |
 | `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ 個別フレーム（`data` は base64 文字列）。どちらも同じ `<img>` に出す（frame は data URL） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
-| `resources` | RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム）。**直結中は `direct: true` だけを送る** — フレームが拡張ホストを通らないので受信側は測れず、0 と出すと誤解される |
+| `resources` | 録画中は `recMb` / `recKbps`（書けている量と実効ビットレート）も載る。webview（レンダラ）の RSS はホストから見えないので、ファイルの伸び方が唯一見える数字。RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム）。**直結中は `direct: true` だけを送る** — フレームが拡張ホストを通らないので受信側は測れず、0 と出すと誤解される |
 | `mode` | 入力経路のラベル。文言は表示言語に従う（既定は `Fast mode (HID)` / `Compatible mode (WDA)`）。`null` で隠す。フッターの `#mode` とステータスバーが同じ文字列を使う |
 | `disconnected` | 切断 |
 
