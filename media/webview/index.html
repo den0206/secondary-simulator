@@ -30,7 +30,8 @@
       <span class="side-btn side-mute"></span>
       <span class="side-btn side-vol"></span>
       <span class="side-btn side-power"></span>
-      <div class="simulator-container" id="simulator-container">
+      <!-- tabindex: 打鍵と貼り付けを受け取るため（main.js が pointerdown でフォーカスを取る） -->
+      <div class="simulator-container" id="simulator-container" tabindex="-1">
         <img id="simulator-img" style="display: none;" alt="" />
         <canvas id="touch-overlay"></canvas>
         <div class="overlay" id="overlay">

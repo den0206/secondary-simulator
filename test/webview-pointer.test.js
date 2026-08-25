@@ -47,6 +47,7 @@ function makeEl(id, opts = {}) {
     removeEventListener() {},
     getBoundingClientRect: () =>
       opts.rect || {left: 0, top: 0, width: 300, height: 600},
+    focus() {},
     setPointerCapture() {},
     releasePointerCapture() {},
     appendChild() {},
@@ -722,6 +723,15 @@ listeners['window:message']({
 });
 check('フレームを戻す', !body.classList.contains('no-frame'));
 check('リソース数値を戻す', !body.classList.contains('hide-stats'));
+
+console.log('\n24) 画面をタップしたらフォーカスを取る');
+// pointerdown の preventDefault はフォーカス移動も止める。明示的に取らないと
+// 打鍵と Cmd+V がエディタ側へ流れる（webview には keydown / paste が来ない）。
+let focused = 0;
+els['simulator-container'].focus = () => focused++;
+fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+fire('simulator-container', 'pointerup', {clientX: 150, clientY: 300});
+check('pointerdown でコンテナに focus する', focused === 1, `回数=${focused}`);
 
 console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
 process.exit(failures === 0 ? 0 : 1);
