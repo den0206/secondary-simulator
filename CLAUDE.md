@@ -89,6 +89,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   **中身は webview から送らない** — `clipboardData` は外部アプリでコピーした内容が
   ひとつ前のまま返る（VS Code 内でコピーしたときだけ最新になるので、動いて見えて古い）。
   webview は合図だけ送り、ホストが `vscode.env.clipboard.readText()` で読む。
+  **画面をタップしたら `pointerdown` でコンテナにフォーカスを取る**（`tabindex="-1"`）。
+  `pointerdown` の `preventDefault` はフォーカス移動も止めるので、取らないと打鍵と
+  Cmd+V がエディタ側へ流れる（ボタンや `<select>` を触った後だけ効く間欠故障になる）。
   デバイス選択の `<select>` などテキスト UI にフォーカスがあるあいだはキーを送らない。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
   デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。

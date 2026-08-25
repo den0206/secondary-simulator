@@ -159,6 +159,11 @@ function activePair() {
 }
 
 function onPointerDown(e) {
+  // フォーカスを明示的に取る。**末尾の preventDefault がフォーカス移動も止める**
+  // ため（pointerdown の既定動作には mousedown 経由のフォーカス移動が含まれる）、
+  // 画面をタップしただけでは webview にフォーカスが入らず、打鍵と Cmd+V が
+  // エディタ側へ流れる。ボタンや <select> を触った後だけ効く、という間欠故障になる。
+  container.focus({preventScroll: true});
   container.setPointerCapture?.(e.pointerId);
   const p = norm(e);
   if (!pointers.has(e.pointerId)) order.push(e.pointerId);

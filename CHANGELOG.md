@@ -21,6 +21,14 @@ so **there is no need to move entries by hand**.
   only signals that a paste happened. An empty clipboard is now logged rather than dropped in
   silence
 
+- Typing and pasting sometimes went to the file open in the editor instead of the device.
+  Tapping the device screen did not move keyboard focus into the webview: the `pointerdown`
+  handler calls `preventDefault()` to suppress image dragging and text selection, and that
+  also cancels the focus change the browser performs as part of the default action. Focus
+  therefore stayed wherever it was — usually the editor — so `Cmd+V` pasted there. It looked
+  intermittent because clicking a button or the device dropdown does move focus, making the
+  next paste work. The container now takes focus explicitly on `pointerdown`
+
 ## [0.4.0] — 2026-08-24
 
 ### Added
