@@ -10,6 +10,35 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- Screen recordings can now capture what you do, not just what the device shows. The device
+  recorder (`device.screenrecord`) records the device framebuffer, where taps and the mouse
+  pointer are invisible: input is synthesised over HID/adb, so the device never draws a
+  finger, and the pointer only exists on the host. Set
+  `secondarySimulator.recordingSource` to `view` and the webview composites the frames it is
+  showing together with the tap markers, drag trail and pointer onto a canvas, encodes that
+  with `MediaRecorder`, and streams it to the file you picked. The container is whatever
+  this Chromium can encode — MP4 where H.264 recording is available, WebM otherwise — and
+  the save dialog offers the matching extension. Picture quality follows the stream shown in
+  the sidebar, so the device recorder is still the better choice when only the device screen
+  matters; it stays the default
+
+### Changed
+
+- Recording keeps its memory and storage behaviour explicit. Chunks are written straight to
+  the file you chose (no temporary files), and every buffer has a stated limit: the webview
+  holds at most 8 chunks that the host has not yet written, encoding is capped at 4 Mbps,
+  and a recording stops at 512 MB or 10 minutes, whichever comes first. Because a single
+  dropped chunk corrupts the container, a full queue stops the recording instead of
+  discarding data, and a recording whose chunks stop arriving (a reloaded or closed webview)
+  is closed out rather than left open. While recording, the footer shows how much has been
+  written and the effective bitrate
+
+- The finished-file check now recognises both containers: MP4 is still checked for `moov`,
+  WebM for at least one cluster. Recordings that were cut short are reported as such instead
+  of being announced as saved
+
 ### Fixed
 
 - Pasting into the device inserted the previous clipboard entry whenever the text had been
