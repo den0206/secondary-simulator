@@ -386,7 +386,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
         // クリップボードの貼り付け。1 文字ずつのキー送出では URL 入力が現実的でない。
         case 'paste':
-          await this.pasteText(message.text as string);
+          await this.pasteText();
           break;
 
         // 表示中の実ピクセル幅。サイドバーの幅に合わせて取り込みの幅を決める。
@@ -1207,14 +1207,23 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /**
    * クリップボードのテキストをデバイスへ流す。
    * 1 文字ずつのキー送出（`keypress`）では URL の入力が現実的でないため。
+   *
+   * **クリップボードはここ（拡張ホスト）で読む。** webview は sandbox 化された
+   * iframe で、`clipboardData` には外部アプリでコピーした内容がひとつ前のまま返る。
+   * webview から来るのは「貼れ」という合図だけで、中身は載っていない。
    */
-  private async pasteText(text: string): Promise<void> {
+  private async pasteText(): Promise<void> {
     if (!this.currentDeviceId || !this.inputController) {
       Logger.warn('Cannot paste: no device selected');
       return;
     }
-    if (typeof text !== 'string' || text.length === 0) return;
-    // 貼り付けは 1 回の操作。長さは webview 側でも切るが、ここでも上限を持つ
+    const text = await vscode.env.clipboard.readText();
+    if (!text) {
+      // 黙って落とすと「貼ったのに反映されない」に見える。理由を残す。
+      Logger.info('クリップボードが空なので貼り付けない');
+      return;
+    }
+    // 貼り付けは 1 回の操作。上限を持つのはここだけになった
     // （巨大なテキストを HID で 1 文字ずつ流すと数分間ブロックする）。
     const value = text.slice(0, SimulatorWebviewProvider.MAX_PASTE_CHARS);
     if (value.length < text.length) {

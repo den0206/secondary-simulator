@@ -28,6 +28,8 @@ require('./helpers/vscode-stub').install({
       get: (key, fallback) => (key === 'logLevel' ? 'debug' : fallback),
     }),
   },
+  // 貼り付けの中身はここから読まれる。ログへ出ないことをこの秘密で見る。
+  env: {clipboard: {readText: async () => 'hunter2', writeText: async () => {}}},
 });
 
 const ROOT = path.join(__dirname, '..');
@@ -56,7 +58,8 @@ const provider = new SimulatorWebviewProvider({fsPath: ROOT});
   // 打った文字（`Ω`）と貼り付けた内容（`hunter2`）はどこにも出てはいけない。
   await provider.handleMessage({type: 'keypress', key: 'Ω'});
   await provider.handleMessage({type: 'keypress', key: 'Enter', special: true});
-  await provider.handleMessage({type: 'paste', text: 'hunter2'});
+  // 貼り付けの中身はホストが vscode.env.clipboard から読む（webview は載せない）。
+  await provider.handleMessage({type: 'paste'});
 
   const log = lines.join('\n');
   check('打った文字がログに出ない', !log.includes('Ω'), log);

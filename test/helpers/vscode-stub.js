@@ -31,6 +31,9 @@ function defaultStub() {
           args[Number(i)] !== undefined ? String(args[Number(i)]) : ''
         ),
     },
+    // 貼り付けはホストがここから読む（webview の clipboardData は使わない）。
+    // 中身を差し替えたいテストは install({env: {clipboard: {...}}}) で上書きする。
+    env: {clipboard: {readText: async () => '', writeText: async () => {}}},
     ConfigurationTarget: {Global: 1, Workspace: 2, WorkspaceFolder: 3},
   };
 }
