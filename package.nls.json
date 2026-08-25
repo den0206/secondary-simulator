@@ -49,5 +49,8 @@
   "configuration.saveLocation.enum.workspace": "The first workspace folder. Falls back to the home directory when no folder is open.",
   "configuration.saveLocation.enum.home": "Home directory.",
   "configuration.saveLocation.enum.custom": "The path in saveDirectory.",
-  "configuration.saveDirectory.description": "Custom folder path when saveLocation is custom. Ignored otherwise."
+  "configuration.saveDirectory.description": "Custom folder path when saveLocation is custom. Ignored otherwise.",
+  "configuration.recordingSource.description": "Where a screen recording comes from.",
+  "configuration.recordingSource.enum.device": "Record on the device (full device resolution, but taps and the pointer are not captured).",
+  "configuration.recordingSource.enum.view": "Record this view (captures taps, drag trails and the pointer; quality follows the stream shown here)."
 }

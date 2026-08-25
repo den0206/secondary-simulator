@@ -141,6 +141,8 @@ let lastPair = [
 ];
 let moveScheduled = false;
 let trailPoints = [];
+// 画面上のポインタ位置（正規化）。録画に描くためだけに持つ 1 点で、増えない。
+let cursor = null;
 
 function norm(e) {
   const r = displayEl().getBoundingClientRect();
@@ -166,6 +168,7 @@ function onPointerDown(e) {
   container.focus({preventScroll: true});
   container.setPointerCapture?.(e.pointerId);
   const p = norm(e);
+  cursor = p;
   if (!pointers.has(e.pointerId)) order.push(e.pointerId);
   pointers.set(e.pointerId, p);
   // 取りこぼした古い pointerId を落とす（現在の 1〜2 本より古いものだけが対象）
@@ -193,8 +196,17 @@ function onPointerDown(e) {
 }
 
 function onPointerMove(e) {
-  if (!pointers.has(e.pointerId)) return;
-  pointers.set(e.pointerId, norm(e));
+  const tracked = pointers.has(e.pointerId);
+  // 押していないときの位置は**録画中だけ**覚える。pointermove はホバーでも
+  // 60Hz で来るので、常に norm() すると getBoundingClientRect を毎回踏む。
+  if (!tracked && !viewRec) return;
+  const p = norm(e);
+  if (viewRec) {
+    cursor = p;
+    scheduleViewDraw();
+  }
+  if (!tracked) return;
+  pointers.set(e.pointerId, p);
   if (!moveScheduled) {
     moveScheduled = true;
     requestAnimationFrame(flushMove);
@@ -223,6 +235,7 @@ function flushMove() {
 function onPointerUp(e) {
   if (!pointers.has(e.pointerId)) return;
   const p = norm(e);
+  cursor = p;
   pointers.delete(e.pointerId);
   const idx = order.indexOf(e.pointerId);
   if (idx >= 0) order.splice(idx, 1);
@@ -254,6 +267,12 @@ container.addEventListener('pointerdown', onPointerDown);
 container.addEventListener('pointermove', onPointerMove);
 container.addEventListener('pointerup', onPointerUp);
 container.addEventListener('pointercancel', onPointerUp);
+// 画面の外へ出たらカーソルを消す（居ない指を録画に描き続けない）
+container.addEventListener('pointerleave', () => {
+  cursor = null;
+  scheduleViewDraw();
+});
+
 
 // ---- 楽観的フィードバック（リップル・軌跡）----------------------------------
 
@@ -281,6 +300,7 @@ function pushTrail(p) {
   trailPoints.push(p);
   if (trailPoints.length > 40) trailPoints.shift();
   drawTrail();
+  scheduleViewDraw();
 }
 
 function drawTrail() {
@@ -310,6 +330,314 @@ function drawTrail() {
 function clearTrail() {
   trailPoints = [];
   octx.clearRect(0, 0, touchOverlay.width, touchOverlay.height);
+}
+
+// ---- ビュー録画（画面 + 操作を合成して録る）------------------------------------
+//
+// 端末側の録画（mobilecli の `device.screenrecord`）には**カーソルもタップも写らない**。
+// 入力は HID / adb で合成しているので、端末は指を描かないし、マウスカーソルは
+// そもそもホスト側にしか無い。ここでは表示中のフレームと操作の表示を 1 枚の canvas に
+// 合成し、MediaRecorder で符号化してチャンクをホストへ流す。
+//
+// **チャンクは捨てない。** `touchMove` は最新の 1 点だけが意味を持つので捨ててよいが、
+// 録画は 1 つ落ちるだけでコンテナが壊れる（映像が入っているのに再生できないファイルが
+// 残る）。詰まったら捨てる代わりに録画そのものを止める。
+//
+// 溜め込まないための決まりごとは 3 つ。
+//   - `start(timeslice)` で必ず刻ませる（無指定だと停止まで全部抱える）
+//   - 未 ack のチャンクが上限に達したら止める（ホストが書き終えるまで ack しない）
+//   - 送信は 1 本の Promise 鎖に載せる（並べ替わると連番が飛び、ホストが打ち切る）
+
+// 上から順に試す。mp4 が通る Chromium ならそのまま mp4 で保存できる。
+const VIEW_RECORD_MIMES = [
+  'video/mp4;codecs=avc1.42E01E',
+  'video/mp4',
+  'video/webm;codecs=vp9',
+  'video/webm;codecs=vp8',
+  'video/webm',
+];
+
+/** この環境で録れるコンテナ。録れないなら null（ホストは端末側の録画へ回す）。 */
+function supportedViewRecordingMime() {
+  try {
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return null;
+    if (typeof FileReader === 'undefined') return null;
+    const probe = document.createElement('canvas');
+    if (typeof probe.captureStream !== 'function') return null;
+    for (const mime of VIEW_RECORD_MIMES) {
+      if (MediaRecorder.isTypeSupported(mime)) return mime;
+    }
+  } catch {
+    // 判定に失敗したら「使えない」で通す（録れない環境で録画中の顔をしない）
+  }
+  return null;
+}
+
+// 録画中だけ載る。1 セッション 1 つで、終わったら必ず null に戻す。
+let viewRec = null;
+
+/**
+ * 合成し直す合図。フレーム到着とポインタ操作の両方から呼ばれるので、
+ * **rAF で 1 回にまとめる**（60Hz の pointermove で毎回描かない）。
+ */
+function scheduleViewDraw() {
+  const rec = viewRec;
+  if (!rec || rec.pending) return;
+  rec.pending = true;
+  requestAnimationFrame(() => {
+    if (viewRec !== rec) return;
+    rec.pending = false;
+    drawViewFrame();
+  });
+}
+
+/** フレーム＋操作を 1 枚に描いて、その 1 枚だけを符号化させる。 */
+function drawViewFrame() {
+  const rec = viewRec;
+  if (!rec) return;
+  const w = rec.canvas.width;
+  const h = rec.canvas.height;
+  try {
+    if (img.naturalWidth && img.src) rec.ctx.drawImage(img, 0, 0, w, h);
+    drawInputMarks(rec.ctx, w, h);
+    rec.requestFrame();
+  } catch (error) {
+    // 汚染された canvas（別オリジンの <img>）はここで SecurityError になる
+    failViewRecording((error && error.message) || String(error));
+  }
+}
+
+/** 軌跡・触れている指・カーソルを重ねる。持っている点以上は描かない。 */
+function drawInputMarks(ctx, w, h) {
+  const accent =
+    getComputedStyle(document.documentElement).getPropertyValue('--vscode-focusBorder') ||
+    '#007acc';
+  const unit = Math.max(w, h);
+
+  if (trailPoints.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(2, unit * 0.006);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < trailPoints.length; i++) {
+      const x = trailPoints[i].x * w;
+      const y = trailPoints[i].y * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const radius = Math.max(6, unit * 0.022);
+  for (const p of pointers.values()) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x * w, p.y * h, radius, 0, Math.PI * 2);
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.35;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = Math.max(2, unit * 0.004);
+    ctx.strokeStyle = accent;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 押していないあいだのカーソル。触れている指があるときは指の方が情報量が多い。
+  if (cursor && pointers.size === 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cursor.x * w, cursor.y * h, radius * 0.55, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1.5, unit * 0.003);
+    ctx.strokeStyle = accent;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** ホストの `startViewRecording` を受けて符号化を始める。 */
+function startViewRecording(message) {
+  teardownViewRecording();
+  const width = img.naturalWidth || 0;
+  const height = img.naturalHeight || 0;
+  if (!width || !height) {
+    post('viewRecordingError', {message: 'no frame to record yet'});
+    return;
+  }
+
+  let canvas;
+  let ctx;
+  let stream;
+  let recorder;
+  let requestFrame;
+  try {
+    canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    ctx = canvas.getContext('2d');
+    // 0 は「requestFrame で出す 1 枚だけ」。静止画面で同じ絵を 30 回符号化しない
+    // （出力フレーム数＝取り込みフレーム数になり、ファイルも CPU も無駄に伸びない）。
+    stream = canvas.captureStream(0);
+    let track = stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+    if (track && typeof track.requestFrame === 'function') {
+      requestFrame = () => track.requestFrame();
+    } else if (typeof stream.requestFrame === 'function') {
+      requestFrame = () => stream.requestFrame();
+    } else {
+      // 手動で出せない実装では時間駆動に戻す（fps は控えめに）
+      stream.getTracks().forEach((t) => t.stop());
+      stream = canvas.captureStream(15);
+      requestFrame = () => {};
+    }
+    recorder = new MediaRecorder(stream, {
+      mimeType: message.mimeType,
+      videoBitsPerSecond: message.bitsPerSecond,
+    });
+  } catch (error) {
+    if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop());
+    post('viewRecordingError', {message: (error && error.message) || String(error)});
+    return;
+  }
+
+  viewRec = {
+    canvas,
+    ctx,
+    stream,
+    recorder,
+    requestFrame,
+    seq: 0,
+    unacked: 0,
+    maxUnacked: message.maxUnacked || 8,
+    chain: Promise.resolve(),
+    heartbeat: null,
+    pending: false,
+    stopping: false,
+  };
+
+  recorder.ondataavailable = (event) => sendViewChunk(event && event.data);
+  recorder.onerror = (event) =>
+    failViewRecording((event && event.error && event.error.message) || 'recorder error');
+  recorder.onstop = () => finishViewRecording();
+
+  try {
+    recorder.start(message.timesliceMs || 1000);
+  } catch (error) {
+    teardownViewRecording();
+    post('viewRecordingError', {message: (error && error.message) || String(error)});
+    return;
+  }
+
+  drawViewFrame();
+  // 1 枚目で落ちた（汚染された canvas など）ならここで終わり。failViewRecording が
+  // 後始末とホストへの通知を済ませている。
+  if (!viewRec) return;
+  // 静止画面でも 1 秒に 1 枚は出す。時間が進み、ホストの停止検出も誤爆しない。
+  viewRec.heartbeat = setInterval(drawViewFrame, 1000);
+  post('viewRecordingStarted', {mimeType: recorder.mimeType || message.mimeType});
+}
+
+/**
+ * チャンクを 1 つ送る。**順番を崩さない**ため 1 本の鎖に載せる
+ * （FileReader は並行に走らせると完了順が入れ替わりうる）。
+ */
+function sendViewChunk(blob) {
+  const rec = viewRec;
+  if (!rec || !blob || !blob.size) return;
+  if (rec.unacked >= rec.maxUnacked) {
+    // 書き込みが追いついていない。捨てると壊れるので録画を止める。
+    failViewRecording('the host could not keep up with the recording');
+    return;
+  }
+  rec.unacked++;
+  const seq = rec.seq++;
+  rec.chain = rec.chain
+    .then(() => blobToBase64(blob))
+    .then((data) => {
+      if (viewRec !== rec) return; // 停止済み
+      post('viewRecordingChunk', {seq, data});
+    })
+    .catch((error) => failViewRecording((error && error.message) || String(error)));
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result || '');
+      const comma = url.indexOf(',');
+      resolve(comma >= 0 ? url.slice(comma + 1) : '');
+    };
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** ホストの停止要求。最後の 1 チャンクは `onstop` の後に出し切る。 */
+function requestViewRecordingStop() {
+  const rec = viewRec;
+  if (!rec) {
+    post('viewRecordingStopped', {});
+    return;
+  }
+  if (rec.stopping) return;
+  rec.stopping = true;
+  try {
+    if (rec.recorder.state !== 'inactive') rec.recorder.stop();
+    else finishViewRecording();
+  } catch (error) {
+    failViewRecording((error && error.message) || String(error));
+  }
+}
+
+/** `onstop` 後。溜まっている送信を流し切ってから「止まった」と返す。 */
+function finishViewRecording() {
+  const rec = viewRec;
+  if (!rec) return;
+  const chain = rec.chain;
+  releaseViewRecording(rec);
+  viewRec = null;
+  chain.then(() => post('viewRecordingStopped', {chunks: rec.seq})).catch(() =>
+    post('viewRecordingStopped', {chunks: rec.seq})
+  );
+}
+
+function failViewRecording(message) {
+  const rec = viewRec;
+  if (rec) {
+    releaseViewRecording(rec);
+    viewRec = null;
+  }
+  post('viewRecordingError', {message: String(message || 'recording failed')});
+}
+
+/** 確保したもの（タイマー・トラック・レコーダー）を必ず外す。 */
+function releaseViewRecording(rec) {
+  if (rec.heartbeat) clearInterval(rec.heartbeat);
+  rec.heartbeat = null;
+  rec.recorder.ondataavailable = null;
+  rec.recorder.onerror = null;
+  rec.recorder.onstop = null;
+  try {
+    if (rec.recorder.state !== 'inactive') rec.recorder.stop();
+  } catch {
+    // 既に止まっている
+  }
+  try {
+    rec.stream.getTracks().forEach((t) => t.stop());
+  } catch {
+    // 既に止まっている
+  }
+}
+
+/** 表示が切れた・webview が消えるときの後始末（ホストは stall で気づく）。 */
+function teardownViewRecording() {
+  const rec = viewRec;
+  if (!rec) return;
+  viewRec = null;
+  releaseViewRecording(rec);
 }
 
 // ---- キーボード --------------------------------------------------------------
@@ -523,6 +851,7 @@ function clearImage() {
 
 img.addEventListener('load', () => {
   paintedFrames++;
+  scheduleViewDraw();
   if (img.naturalWidth && img.naturalHeight) {
     lastReportedWidth = 0;
     reportViewport();
@@ -597,6 +926,8 @@ function setOverlayVisible(
 }
 
 function cleanup() {
+  // 録画中に表示が切れた。合成元が無いので符号化も止める（ホストは stall で畳む）。
+  teardownViewRecording();
   overlayVisible = null;
   overlayText = null;
   overlayActionsShown = null;
@@ -689,6 +1020,20 @@ window.addEventListener('message', (event) => {
       break;
     }
 
+    // ビュー録画（操作つき）。符号化はここ、書き込みはホスト。
+    case 'startViewRecording':
+      startViewRecording(message);
+      break;
+
+    case 'stopViewRecording':
+      requestViewRecordingStop();
+      break;
+
+    // ホストが 1 チャンク書き終えた合図。返るまで次を溜め込まない。
+    case 'viewRecordingAck':
+      if (viewRec && viewRec.unacked > 0) viewRec.unacked--;
+      break;
+
     case 'sound':
       playUiSound(message.sound);
       break;
@@ -761,8 +1106,15 @@ window.addEventListener('message', (event) => {
         : message.fps === undefined
           ? ''
           : chip(t('video'), `${message.fps}/${painted}fps ${message.kbps}KB/s`);
+      // ビュー録画中だけ、書けている量と実効ビットレートを並べる。
+      // webview 側の RSS はホストから見えないので、伸び方が見える唯一の数字。
+      const rec =
+        message.recMb === undefined
+          ? ''
+          : chip(t('recording'), `${message.recMb}MB ${message.recKbps}KB/s`);
       statsEl.innerHTML =
         rate +
+        rec +
         chip(t('host'), message.rssMb + 'MB') +
         chip(t('heap'), message.heapUsedMb + 'MB') +
         chip(t('children'), message.childrenMb + 'MB') +
@@ -797,4 +1149,6 @@ window.addEventListener('message', (event) => {
 window.addEventListener('beforeunload', cleanup);
 
 applyStaticStrings();
-vscode.postMessage({type: 'init'});
+// 録れるコンテナはホストが決められない（Chromium の版と H.264 エンコーダに依る）。
+// ここで判定して渡し、保存ダイアログの拡張子もそれに合わせてもらう。
+vscode.postMessage({type: 'init', viewRecordingMime: supportedViewRecordingMime()});

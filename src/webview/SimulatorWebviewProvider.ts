@@ -20,6 +20,11 @@ import {
 import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {defaultRecordingName} from '../simulator/RecordingName';
 import {verifyRecording} from '../simulator/RecordingFile';
+import {
+  containerExtension,
+  ViewRecordingAbort,
+  ViewRecordingWriter,
+} from '../simulator/ViewRecording';
 import {resolveSaveDirectory, SaveLocation} from '../simulator/SaveDirectory';
 import {Device, DeviceType} from '../simulator/types';
 import {DeviceStatus, renderStatus} from '../ui/DeviceStatusBar';
@@ -29,6 +34,16 @@ import {MobileCliClient} from '../utils/MobileCliClient';
 import {MobileCliServer} from '../utils/MobileCliServer';
 import {collectResourceStats} from '../utils/ResourceStats';
 import {statusStrings, webviewStrings} from '../utils/Strings';
+
+/**
+ * 録画の作り方。
+ *
+ * - `device`: 端末側の録画（mobilecli の `device.screenrecord`）。端末の解像度で
+ *   録れるが、**マウスカーソルもタップも写らない**（入力は合成なので端末が指を描かない）。
+ * - `view`: webview で「表示中のフレーム＋操作の表示」を合成して録る。見えている
+ *   とおりが残る代わりに、画質は取り込みストリームに従う。
+ */
+export type RecordingSource = 'device' | 'view';
 
 export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'simulatorView';
@@ -84,15 +99,56 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private bootWaitDeviceId: string | null = null;
   /**
    * 録画中のセッション。**増える一方の入れ物にしない**ため、
-   * 保持するのは「どの端末を、どこへ書いているか」の 1 件だけ。
+   * 保持するのは「どの端末を、どこへ、どちらの経路で書いているか」の 1 件だけ。
    */
-  private recording: {deviceId: string; target: vscode.Uri} | null = null;
+  private recording: {
+    deviceId: string;
+    target: vscode.Uri;
+    source: RecordingSource;
+  } | null = null;
+  /**
+   * ビュー録画で webview が使える MIME。`init` が報告する（使えなければ null）。
+   * MediaRecorder と canvas.captureStream の有無は Chromium の版に依るので、
+   * こちら側で決め打たない。
+   */
+  private viewRecordingMime: string | null = null;
+  /** ビュー録画の書き込み先。1 セッションに 1 つだけ持つ。 */
+  private viewWriter: ViewRecordingWriter | null = null;
+  /** webview の「始めた／始められない」の応答を待つ受け口（1 件だけ）。 */
+  private viewStartWaiter:
+    | ((result: {ok: boolean; message?: string}) => void)
+    | null = null;
+  /** webview の「最後のチャンクまで出し切った」応答を待つ受け口（1 件だけ）。 */
+  private viewStopWaiter: (() => void) | null = null;
+  /**
+   * ビュー録画のあいだだけ直結配信をやめる。別オリジンの `<img>` を canvas へ
+   * 描くと汚染され、`captureStream` が SecurityError で止まるため
+   * （中継経路のフレームは data URL なので汚染しない）。
+   */
+  private forceRelayCapture = false;
+  /** 直近の統計 tick から書けたバイト数。フッターの録画チップに出して 0 に戻す。 */
+  private recordingBytesSinceTick = 0;
   /**
    * 止め忘れの保険。CLAUDE.md「上限と破棄条件をセットで書く」に従い、
    * 録画は必ず時間で終わる（切断・破棄でも止める）。
    */
   private recordingTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly MAX_RECORDING_MS = 10 * 60_000;
+  /**
+   * ビュー録画の総量の蓋。時間の上限とは別に持つ — ビットレートを固定してあるので
+   * 10 分でも 300MB 程度に収まるが、**伸び方を言い切れる状態**にしておく。
+   */
+  private static readonly MAX_VIEW_RECORDING_BYTES = 512 * 1024 * 1024;
+  /** webview が符号化するビットレート。ファイルの伸びを予測可能にするため固定する。 */
+  private static readonly VIEW_RECORDING_BPS = 4_000_000;
+  /** チャンクの間隔。無指定だと MediaRecorder が停止まで全部抱える。 */
+  private static readonly VIEW_RECORDING_TIMESLICE_MS = 1_000;
+  /** webview が抱えてよい未 ack チャンク数。超えたら**捨てずに**録画を止める。 */
+  private static readonly VIEW_RECORDING_MAX_UNACKED = 8;
+  /** チャンクが途切れたら webview が消えたとみなすまで（心拍は毎秒）。 */
+  private static readonly VIEW_RECORDING_STALL_MS = 10_000;
+  /** 開始・停止の応答待ち。返らない webview で録画状態を残さない。 */
+  private static readonly VIEW_RECORDING_REPLY_MS = 10_000;
   /** 開始前に webview が出す秒読み。押した直後の画面が頭に写らないための猶予。 */
   private static readonly RECORDING_COUNTDOWN_SEC = 3;
   /**
@@ -296,11 +352,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (!this.view) return;
     // 計測値は取得の成否に関わらず、この tick で必ず 0 に戻す（次の期間と混ぜない）
     const now = Date.now();
-    const rate = captureRate(
-      this.frameCount,
-      this.frameBytes,
-      now - this.lastStatsAtMs
-    );
+    const elapsedMs = now - this.lastStatsAtMs;
+    const rate = captureRate(this.frameCount, this.frameBytes, elapsedMs);
     this.frameCount = 0;
     this.frameBytes = 0;
     this.lastStatsAtMs = now;
@@ -310,13 +363,27 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.inputController?.sidecarPid,
       this.inputController?.adbTouchPid,
     ].filter((p): p is number => typeof p === 'number');
+    // ビュー録画は webview（レンダラ）が符号化するので、その分の RSS は
+    // collectResourceStats からは見えない。**ファイルの伸び方だけでも常に見せる** —
+    // 上限に当たる前に異常へ気づける唯一の数字なので（CLAUDE.md「計測できる状態を保つ」）。
+    const writer = this.viewWriter;
+    const recording = writer
+      ? {
+          recMb: Math.round((writer.bytesWritten / (1024 * 1024)) * 10) / 10,
+          recKbps: Math.round(
+            this.recordingBytesSinceTick / 1024 / Math.max(1, elapsedMs / 1000)
+          ),
+        }
+      : {};
+    this.recordingBytesSinceTick = 0;
+
     try {
       const stats = await collectResourceStats(this.extensionUri.fsPath, pids);
       // 直結中はフレームを見ていないので、受信側の数字を出さない（0 と嘘をつかない）
       this.postMessage(
         this.directStreaming
-          ? {type: 'resources', ...stats, direct: true}
-          : {type: 'resources', ...stats, ...rate}
+          ? {type: 'resources', ...stats, ...recording, direct: true}
+          : {type: 'resources', ...stats, ...recording, ...rate}
       );
     } catch (error) {
       Logger.warn(`リソース統計の取得に失敗: ${(error as Error).message}`);
@@ -328,13 +395,31 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     [key: string]: unknown;
   }): Promise<void> {
     // touch* はドラッグ中 60Hz で届く。ログに流すと出力チャンネルが際限なく膨らむ。
-    if (!message.type.startsWith('touch')) {
+    // 録画のチャンクは毎秒 1 回だが、10 分で 600 行になるので同じく載せない。
+    if (
+      !message.type.startsWith('touch') &&
+      message.type !== 'viewRecordingChunk'
+    ) {
       Logger.debug(`Received message: ${message.type}`);
     }
 
     try {
       switch (message.type) {
         case 'init':
+          // webview が作り直された。ビュー録画の生産者は前の webview にいたので、
+          // 録画中なら続きは書かれない（10 秒待たずにここで畳む）。
+          this.viewRecordingMime =
+            typeof message.viewRecordingMime === 'string'
+              ? message.viewRecordingMime
+              : null;
+          if (this.recording?.source === 'view') {
+            await this.stopRecording({abort: {reason: 'stalled'}});
+          }
+          this.postAutoConnectState();
+          this.postSettings();
+          await this.refreshDevices();
+          break;
+
         case 'refresh':
           this.postAutoConnectState();
           this.postSettings();
@@ -383,6 +468,38 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         case 'record':
           await this.toggleRecording();
           break;
+
+        // ---- ビュー録画（webview が符号化し、ここが書く）--------------------
+        case 'viewRecordingStarted':
+          this.viewStartWaiter?.({ok: true});
+          break;
+
+        case 'viewRecordingChunk':
+          await this.writeViewChunk(
+            message.seq as number,
+            message.data as string
+          );
+          break;
+
+        case 'viewRecordingStopped':
+          this.viewStopWaiter?.();
+          break;
+
+        case 'viewRecordingError': {
+          const text = String(message.message ?? '');
+          // 開始待ちならその結果として返す（録画中の扱いにしない）
+          if (this.viewStartWaiter) {
+            this.viewStartWaiter({ok: false, message: text});
+            break;
+          }
+          Logger.error(`ビュー録画が webview 側で失敗: ${text}`);
+          if (this.recording) {
+            await this.stopRecording({
+              abort: {reason: 'error', message: text},
+            });
+          }
+          break;
+        }
 
         // クリップボードの貼り付け。1 文字ずつのキー送出では URL 入力が現実的でない。
         case 'paste':
@@ -449,6 +566,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private isDirectStreamEnabled(): boolean {
+    // ビュー録画のあいだは中継経路に固定する（別オリジンの <img> は canvas を汚染し、
+    // captureStream が SecurityError で止まる）。設定そのものは書き換えない。
+    if (this.forceRelayCapture) return false;
     return vscode.workspace
       .getConfiguration('secondarySimulator')
       .get<boolean>('directStream', false);
@@ -1024,8 +1144,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /**
    * 録画の開始・停止をトグルする。
    *
-   * 開始前に保存先を尋ね、そのパスを `device.screenrecord` の `output` に渡す
-   * （mobilecli が直接そこへ書くので、拡張は一時ファイルを抱えない）。
+   * 経路は 2 つある（`secondarySimulator.recordingSource`）。
+   *
+   * - `device`: `device.screenrecord` の `output` に保存先を渡し、mobilecli が
+   *   直接そこへ書く。端末の解像度で録れるが**操作は写らない**。
+   * - `view`: webview が「表示中のフレーム＋操作の表示」を合成して符号化し、
+   *   チャンクをここへ流す。書き先はどちらもユーザーが選んだパスだけで、
+   *   **拡張は一時ファイルを持たない**。
+   *
    * **止め忘れを作らない**ため、上限時間・切断・破棄のいずれでも必ず止める。
    */
   async toggleRecording(): Promise<void> {
@@ -1051,13 +1177,32 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const deviceName =
       this.devices.find((d) => d.id === deviceId)?.name ?? 'device';
 
+    // 使えないときは黙って端末側へ落とさない。操作が写る前提で押しているので、
+    // 写らないまま録れると（HID→WDA の無音降格と同じで）気づけない。
+    let source = this.recordingSource();
+    if (source === 'view' && !this.canRecordView()) {
+      Logger.warn(
+        `ビュー録画を使えないので端末側で録る（mime=${this.viewRecordingMime}, visible=${this.view?.visible}）`
+      );
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: This view cannot be recorded here, so the device recorder is used instead (taps and the pointer will not appear).'
+        )
+      );
+      source = 'device';
+    }
+    const ext =
+      source === 'view'
+        ? (containerExtension(this.viewRecordingMime) ?? 'webm')
+        : 'mp4';
+
     const target = await vscode.window.showSaveDialog({
       title: vscode.l10n.t('Save recording to'),
       defaultUri: vscode.Uri.joinPath(
         this.defaultSaveDir(),
-        defaultRecordingName(deviceName)
+        defaultRecordingName(deviceName, ext)
       ),
-      filters: {[vscode.l10n.t('Videos')]: ['mp4']},
+      filters: {[vscode.l10n.t('Videos')]: [ext]},
     });
     if (!target) return; // キャンセル
 
@@ -1069,6 +1214,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const visibleAtStart = this.view?.visible === true;
     this.recordingBusy = true;
     try {
+      // 直結配信のままだと <img> が別オリジンになり canvas を汚染する。
+      // 張り直しの数秒は秒読みで吸収される。
+      if (source === 'view') await this.prepareViewCapture();
       await this.countdownBeforeRecording();
       // 秒読みのあいだに状況が変わったら始めない。非表示・切替・破棄の見張りは
       // `this.recording` を見るので、まだ載っていないこの数秒は素通りする
@@ -1079,11 +1227,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         (visibleAtStart && !this.view?.visible)
       ) {
         Logger.info('秒読み中に状況が変わったので録画を始めない');
+        await this.releaseViewCapture();
         return;
       }
-      await client.startScreenRecord(deviceId, target.fsPath);
+      if (source === 'view') await this.startViewRecording(target);
+      else await client.startScreenRecord(deviceId, target.fsPath);
     } catch (error) {
       Logger.error('録画を開始できなかった', error as Error);
+      await this.releaseViewCapture();
       void vscode.window.showErrorMessage(
         vscode.l10n.t(
           'Secondary Simulator: Could not start recording — {0}',
@@ -1095,8 +1246,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.recordingBusy = false;
     }
 
-    this.recording = {deviceId, target};
-    Logger.info(`録画を開始: ${target.fsPath}`);
+    this.recording = {deviceId, target, source};
+    Logger.info(`録画を開始（${source}）: ${target.fsPath}`);
     this.postMessage({type: 'recording', active: true});
 
     // 上限で必ず終わらせる（押し忘れても増え続けない）
@@ -1106,6 +1257,22 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       void this.stopRecording();
     }, SimulatorWebviewProvider.MAX_RECORDING_MS);
     this.recordingTimer.unref?.();
+  }
+
+  private recordingSource(): RecordingSource {
+    return vscode.workspace
+      .getConfiguration('secondarySimulator')
+      .get<string>('recordingSource', 'device') === 'view'
+      ? 'view'
+      : 'device';
+  }
+
+  /**
+   * ビュー録画を始められるか。符号化するのは webview なので、
+   * **見えていること**と MediaRecorder が使えることの両方が要る。
+   */
+  private canRecordView(): boolean {
+    return this.viewRecordingMime !== null && this.view?.visible === true;
   }
 
   /**
@@ -1123,14 +1290,149 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.postMessage({type: 'countdown', value: 0});
   }
 
+  // ---- ビュー録画（webview が符号化し、ここが書く）------------------------------
+
+  /** 直結配信をやめて中継経路へ戻す（canvas の汚染を避けるため）。 */
+  private async prepareViewCapture(): Promise<void> {
+    if (!this.isDirectStreamEnabled()) return;
+    this.forceRelayCapture = true;
+    this.disposeProxy();
+    await this.restartDisplay();
+  }
+
+  /** 直結配信へ戻す。録画を始められなかったときも必ず通る。 */
+  private async releaseViewCapture(): Promise<void> {
+    if (!this.forceRelayCapture) return;
+    this.forceRelayCapture = false;
+    await this.restartDisplay();
+  }
+
+  /** 取り込みだけを張り直す（入力コントローラは同じ端末なら使い回される）。 */
+  private async restartDisplay(): Promise<void> {
+    const deviceId = this.currentDeviceId;
+    if (!deviceId) return;
+    const device = this.devices.find((d) => d.id === deviceId);
+    if (!device) return;
+    try {
+      await this.startCaptureForDevice(deviceId, device);
+    } catch (error) {
+      Logger.error('取り込みの張り直しに失敗', error as Error);
+    }
+  }
+
   /**
-   * 録画を止めて書き出す。mobilecli 側の停止が成功してからだけ
-   * `recording` と UI を戻す — 先に戻すと「止まったように見えるが
-   * 端末では録り続けている」状態になる。
+   * webview に符号化を始めさせ、書き込み先を開く。
+   * 始められなければ例外を投げる（呼び手がエラー表示を出す）。
    */
-  private async stopRecording(): Promise<void> {
+  private async startViewRecording(target: vscode.Uri): Promise<void> {
+    const mimeType = this.viewRecordingMime;
+    if (!mimeType) throw new Error('MediaRecorder is not available');
+
+    const writer = new ViewRecordingWriter(target.fsPath, {
+      maxBytes: SimulatorWebviewProvider.MAX_VIEW_RECORDING_BYTES,
+      stallMs: SimulatorWebviewProvider.VIEW_RECORDING_STALL_MS,
+      onAbort: (abort) => this.onViewRecordingAbort(abort),
+    });
+    await writer.open();
+    this.viewWriter = writer;
+    this.recordingBytesSinceTick = 0;
+
+    const result = await new Promise<{ok: boolean; message?: string}>(
+      (resolve) => {
+        const timer = setTimeout(() => {
+          this.viewStartWaiter = null;
+          resolve({ok: false, message: 'timeout'});
+        }, SimulatorWebviewProvider.VIEW_RECORDING_REPLY_MS);
+        timer.unref?.();
+        this.viewStartWaiter = (r) => {
+          clearTimeout(timer);
+          this.viewStartWaiter = null;
+          resolve(r);
+        };
+        this.postMessage({
+          type: 'startViewRecording',
+          mimeType,
+          bitsPerSecond: SimulatorWebviewProvider.VIEW_RECORDING_BPS,
+          timesliceMs: SimulatorWebviewProvider.VIEW_RECORDING_TIMESLICE_MS,
+          maxUnacked: SimulatorWebviewProvider.VIEW_RECORDING_MAX_UNACKED,
+        });
+      }
+    );
+
+    if (!result.ok) {
+      this.viewWriter = null;
+      // 返事が来なかっただけで webview 側は録っているかもしれない。止めさせる。
+      this.postMessage({type: 'stopViewRecording'});
+      await writer.close();
+      // 1 バイトも書けていない空ファイルを、ユーザーが選んだ場所へ置き去りにしない
+      if (writer.bytesWritten === 0) {
+        try {
+          await fs.promises.unlink(target.fsPath);
+        } catch {
+          // 消せなくても録画の失敗として扱う（ここでは何も言わない）
+        }
+      }
+      throw new Error(result.message || 'webview did not start recording');
+    }
+    // ここから先はチャンクが毎秒届く。届かなくなったら webview が消えた合図。
+    writer.startWatch();
+  }
+
+  /** webview から届いたチャンクを書き、書けたぶんだけ ack を返す。 */
+  private async writeViewChunk(seq: number, data: string): Promise<void> {
+    const writer = this.viewWriter;
+    if (!writer || typeof data !== 'string') return;
+    const bytes = Buffer.from(data, 'base64');
+    // 書き終える（＝逆圧を受け切る）まで ack を返さない。webview は未 ack の
+    // 上限を超えたら録画そのものを止める — **チャンクは捨てられない**ため。
+    const written = await writer.write(seq, bytes);
+    if (!written) return;
+    this.recordingBytesSinceTick += bytes.length;
+    this.postMessage({type: 'viewRecordingAck', seq});
+  }
+
+  /** 上限・欠落・停止で書き込み側が打ち切ったとき。録画セッションごと畳む。 */
+  private onViewRecordingAbort(abort: ViewRecordingAbort): void {
+    Logger.warn(`ビュー録画を打ち切る: ${JSON.stringify(abort)}`);
+    void this.stopRecording({abort});
+  }
+
+  /** webview に符号化を止めさせ、最後のチャンクまで受け切る。 */
+  private async requestViewStop(): Promise<void> {
+    // webview が既に無ければ待たない（破棄・再作成の経路で 10 秒止まらない）
+    if (!this.view) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.viewStopWaiter = null;
+        Logger.warn('webview から録画停止の応答が無かった');
+        resolve();
+      }, SimulatorWebviewProvider.VIEW_RECORDING_REPLY_MS);
+      timer.unref?.();
+      this.viewStopWaiter = () => {
+        clearTimeout(timer);
+        this.viewStopWaiter = null;
+        resolve();
+      };
+      this.postMessage({type: 'stopViewRecording'});
+    });
+  }
+
+  /**
+   * 録画を止めて書き出す。端末側の停止が成功してからだけ `recording` と UI を戻す
+   * — 先に戻すと「止まったように見えるが端末では録り続けている」状態になる。
+   *
+   * @param options.abort 書き込み側が打ち切った理由。**中身が欠けている合図**なので、
+   *   停止音も「保存できた」の通知も出さない。
+   */
+  private async stopRecording(options?: {
+    abort?: ViewRecordingAbort;
+  }): Promise<void> {
     const session = this.recording;
     if (!session) return;
+    if (session.source === 'view') {
+      await this.stopViewRecording(session, options?.abort);
+      return;
+    }
 
     if (!this.mobileCliClient) {
       this.clearRecordingTimer();
@@ -1163,13 +1465,54 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.clearRecordingTimer();
     this.recording = null;
+    await this.finishRecording(session);
+  }
 
-    // 停止が成功しても、端末側で finalize されていなければ moov の無い mp4 が残る
-    // （映像は入っているのに再生できない）。**成功と言い切る前に中身を見る** —
-    // 音と通知が「保存できた」の合図になっているので、黙って通すと利用者は
-    // 壊れたことに気づけない（`RecordingFile.ts`）。
+  /**
+   * ビュー録画を止める。**webview の符号化を止めて最後のチャンクを受け切ってから**
+   * ファイルを閉じる（先に閉じると末尾が落ちる）。
+   */
+  private async stopViewRecording(
+    session: {deviceId: string; target: vscode.Uri; source: RecordingSource},
+    abort?: ViewRecordingAbort
+  ): Promise<void> {
+    // 停止ボタンと打ち切りが重なっても 1 回で終わらせる
+    if (this.recordingBusy) return;
+    this.recordingBusy = true;
+    const writer = this.viewWriter;
+    try {
+      // webview が消えた（stalled）以外は、出し切らせてから閉じる
+      if (!abort || abort.reason === 'size') await this.requestViewStop();
+      else this.postMessage({type: 'stopViewRecording'});
+      await writer?.close();
+    } finally {
+      this.viewWriter = null;
+      this.recordingBusy = false;
+    }
+
+    this.clearRecordingTimer();
+    this.recording = null;
+    await this.releaseViewCapture();
+    await this.finishRecording(session, abort);
+  }
+
+  /**
+   * 書き出し終わったファイルを検査して結果を出す（両経路で共通）。
+   *
+   * 停止が成功しても、端末側で finalize されていなければ moov の無い mp4 が残る
+   * （映像は入っているのに再生できない）。**成功と言い切る前に中身を見る** —
+   * 音と通知が「保存できた」の合図になっているので、黙って通すと利用者は
+   * 壊れたことに気づけない（`RecordingFile.ts`）。
+   */
+  private async finishRecording(
+    session: {deviceId: string; target: vscode.Uri; source: RecordingSource},
+    abort?: ViewRecordingAbort
+  ): Promise<void> {
     const check = await verifyRecording(session.target.fsPath);
-    this.postMessage({type: 'recording', active: false, ok: check.ok});
+    // 総量の上限は「そこまでは正しく録れている」なので成功として扱う。
+    // 欠落・停止・エラーは末尾が落ちているので、成功の合図を出さない。
+    const intact = check.ok && (!abort || abort.reason === 'size');
+    this.postMessage({type: 'recording', active: false, ok: intact});
 
     if (!check.ok) {
       Logger.error(
@@ -1187,12 +1530,30 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (abort && abort.reason !== 'size') {
+      Logger.error(`録画が途中で切れた（${abort.reason}）: ${session.target.fsPath}`);
+      const showLogs = vscode.l10n.t('Show Logs');
+      const answer = await vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: The recording was cut short and may be missing the end — {0}',
+          session.target.fsPath
+        ),
+        showLogs
+      );
+      if (answer === showLogs) Logger.show();
+      return;
+    }
+
     Logger.info(`録画を保存: ${session.target.fsPath}`);
     const openLabel = vscode.l10n.t('Open');
-    const open = await vscode.window.showInformationMessage(
-      vscode.l10n.t('Recording saved: {0}', session.target.fsPath),
-      openLabel
-    );
+    const message =
+      abort?.reason === 'size'
+        ? vscode.l10n.t(
+            'Recording stopped at the size limit and was saved: {0}',
+            session.target.fsPath
+          )
+        : vscode.l10n.t('Recording saved: {0}', session.target.fsPath);
+    const open = await vscode.window.showInformationMessage(message, openLabel);
     if (open === openLabel) {
       await vscode.commands.executeCommand('vscode.open', session.target);
     }
@@ -1537,8 +1898,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.screenSize = null;
 
     // mobilecli を先に落とすと stopScreenRecord が届かない。停止を待ってからサーバを止める。
+    // ビュー録画はここで webview が既に無いので、待たずにファイルを閉じて終わる。
     const stopRecording = this.recording ? this.stopRecording() : Promise.resolve();
     void stopRecording.finally(() => {
+      // 経路によらず、開いたままの書き込み先を残さない
+      const writer = this.viewWriter;
+      this.viewWriter = null;
+      void writer?.close();
       this.mobileCliServer.stopServer();
       this.mobileCliClient = null;
     });

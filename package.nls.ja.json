@@ -49,5 +49,8 @@
   "configuration.saveLocation.enum.workspace": "ワークスペースのルート。フォルダを開いていないときはホーム。",
   "configuration.saveLocation.enum.home": "ホームディレクトリ。",
   "configuration.saveLocation.enum.custom": "saveDirectory で指定したパス。",
-  "configuration.saveDirectory.description": "saveLocation が custom のときのフォルダパス。それ以外では無視される。"
+  "configuration.saveDirectory.description": "saveLocation が custom のときのフォルダパス。それ以外では無視される。",
+  "configuration.recordingSource.description": "画面録画の作り方。",
+  "configuration.recordingSource.enum.device": "端末側で録る（端末の解像度で録れるが、タップとポインタは写らない）。",
+  "configuration.recordingSource.enum.view": "この画面を録る（タップ・軌跡・ポインタが写る。画質はここに出ている映像に従う）。"
 }

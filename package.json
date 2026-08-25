@@ -237,6 +237,19 @@
           "default": "auto",
           "description": "%configuration.captureMode.description%"
         },
+        "secondarySimulator.recordingSource": {
+          "type": "string",
+          "enum": [
+            "device",
+            "view"
+          ],
+          "enumDescriptions": [
+            "%configuration.recordingSource.enum.device%",
+            "%configuration.recordingSource.enum.view%"
+          ],
+          "default": "device",
+          "description": "%configuration.recordingSource.description%"
+        },
         "secondarySimulator.showDeviceFrame": {
           "type": "boolean",
           "default": true,
