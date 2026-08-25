@@ -347,7 +347,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `touchDown` / `touchMove` / `touchUp` | 1本指。座標は正規化。HID は同名コマンド、WDA は tap/gesture に再構成、Android は押しているあいだ最新点を送り続ける（§7.1） |
 | `touch2Down` / `touch2Move` / `touch2Up` | 2本指（ピンチ等） |
 | `keypress {key, special, modifiers?}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3）。`modifiers`（`command`/`control`/`option`/`shift`）があれば `modifier` で挟んだ `keyDown`/`keyUp` を組む（HID 経路のみ。`text` は使えない — project-review.md §5.7）。`special: true` の `up`/`down`/`left`/`right` は HID usage へ。Android は `KEYCODE_DPAD_*`（`device.io.button`） |
-| `paste {text}` | クリップボードのテキストを 1 回で送る（`InputBackend.text`。URL 入力用。長さはホスト側で上限） |
+| `paste` | 貼り付けの合図。**中身は載せない** — クリップボードはホストが `vscode.env.clipboard` で読む（webview の `clipboardData` は外部アプリでコピーした内容がひとつ前のまま返る）。`InputBackend.text` へ流す。URL 入力用。長さはホスト側で上限 |
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
