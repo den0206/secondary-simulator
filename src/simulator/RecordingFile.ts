@@ -13,10 +13,18 @@ import * as fs from 'fs/promises';
  * 実際に mobilecli 0.1.64 がこれを踏んでいた（端末側ではなく手元の adb クライアントへ
  * SIGINT を送っていたため、端末の `screenrecord` へ届かなかった）。**同じことが
  * 起きたときに黙って壊れたファイルを掴ませない**ための番人がここ。
+ *
+ * ビュー録画（webview の MediaRecorder）は mp4 と webm のどちらにもなるので、
+ * **先頭のバイト列で見分けてから検査する**。形式を決め打ちすると、webm を
+ * 「moov が無い」と落とす（毎回警告が出て番人が信用されなくなる）か、
+ * mp4 の検査を外す（本来の目的を失う）かのどちらかになる。
  */
 export type RecordingCheck =
   | {ok: true}
-  | {ok: false; reason: 'unreadable' | 'empty' | 'unfinalized' | 'no-moov'};
+  | {
+      ok: false;
+      reason: 'unreadable' | 'empty' | 'unfinalized' | 'no-moov' | 'no-cluster';
+    };
 
 /**
  * 先頭から box を辿るだけなので、ファイル全体は読まない（録画は数百 MB になりうる）。
@@ -30,8 +38,23 @@ const HEADER_BYTES = 16;
  */
 const MAX_BOXES = 128;
 
+/** EBML（webm / matroska）の先頭 4 バイト。 */
+const EBML_MAGIC = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+
+/** Cluster（映像が入る塊）の ID。1 つも無ければ絵が入っていない。 */
+const WEBM_CLUSTER_ID = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+
 /**
- * `moov`（再生に要る索引）が入っているかを見る。
+ * webm で Cluster を探す範囲。EBML ヘッダ・Segment・Tracks の後ろに来るので
+ * 先頭のごく一部で足りる。**ファイル全体は読まない**（録画は数百 MB になりうる）。
+ */
+const WEBM_SCAN_BYTES = 4 * 1024 * 1024;
+const WEBM_SCAN_CHUNK = 64 * 1024;
+
+/**
+ * 録画ファイルが再生できる形になっているかを見る。
+ *
+ * mp4 は `moov`（再生に要る索引）、webm は Cluster（映像の塊）の有無で判定する。
  *
  * @param filePath 検査するファイル。開けないだけでも失敗として返す（例外は投げない）
  */
@@ -50,6 +73,13 @@ export async function verifyRecording(
     if (fileSize === 0) return {ok: false, reason: 'empty'};
 
     const header = Buffer.alloc(HEADER_BYTES);
+    {
+      // 形式を見分ける。EBML でなければ mp4 として box を辿る（従来どおり）。
+      const {bytesRead} = await handle.read(header, 0, HEADER_BYTES, 0);
+      if (bytesRead >= 4 && header.subarray(0, 4).equals(EBML_MAGIC)) {
+        return await verifyWebm(handle, fileSize);
+      }
+    }
     let offset = 0;
 
     for (let i = 0; i < MAX_BOXES; i++) {
@@ -84,4 +114,40 @@ export async function verifyRecording(
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * webm（MediaRecorder の出力）に映像の塊が入っているかを見る。
+ *
+ * MediaRecorder はストリーミング向けの webm を書くので、長さも Cues も入らない
+ * （＝「未完成」の判定に使えない）。**チャンクを 1 つでも落とすと壊れる**という
+ * 性質は連番の欠落として書き込み側（`ViewRecording.ts`）が捉えるので、ここでは
+ * 「絵が 1 つも入っていないファイルを保存できたと言わない」ところだけを見る。
+ *
+ * 先頭から最大 4MB を 64KB ずつ読み、境界をまたぐ ID のために 3 バイト重ねる。
+ */
+async function verifyWebm(
+  handle: fs.FileHandle,
+  fileSize: number
+): Promise<RecordingCheck> {
+  const buffer = Buffer.alloc(WEBM_SCAN_CHUNK);
+  const limit = Math.min(fileSize, WEBM_SCAN_BYTES);
+  const overlap = WEBM_CLUSTER_ID.length - 1;
+  let offset = 0;
+  let carry = Buffer.alloc(0);
+
+  while (offset < limit) {
+    const {bytesRead} = await handle.read(
+      buffer,
+      0,
+      Math.min(WEBM_SCAN_CHUNK, limit - offset),
+      offset
+    );
+    if (bytesRead <= 0) break;
+    const window = Buffer.concat([carry, buffer.subarray(0, bytesRead)]);
+    if (window.includes(WEBM_CLUSTER_ID)) return {ok: true};
+    carry = window.subarray(Math.max(0, window.length - overlap));
+    offset += bytesRead;
+  }
+  return {ok: false, reason: 'no-cluster'};
 }
