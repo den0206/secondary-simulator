@@ -141,6 +141,10 @@ let lastPair = [
 ];
 let moveScheduled = false;
 let trailPoints = [];
+// リップルと軌跡を出すか。**状態は設定（secondarySimulator.showTouchTrail、
+// 既定 OFF）が唯一持つ** — webview 側に写しを置くと、設定画面と食い違ったまま
+// 気づけない。ホストからの settings メッセージだけで決まる。
+let trailEnabled = false;
 // 画面上のポインタ位置（正規化）。録画に描くためだけに持つ 1 点で、増えない。
 let cursor = null;
 
@@ -784,11 +788,6 @@ function syncRecordButton() {
   btnRecord.textContent = recording ? t('recordStop') : t('recordStart');
 }
 syncRecordButton();
-
-// タップのリップルとドラッグ軌跡を出すか。**状態は設定
-// （secondarySimulator.showTouchTrail、既定 OFF）が唯一持つ** — webview 側に
-// 写しを置くと、設定画面と食い違ったまま気づけない。ホストの settings で決まる。
-let trailEnabled = false;
 
 // 自動接続の切替。状態は設定（secondarySimulator.autoConnect）が持つので、
 // 押した直後は仮に反映し、拡張ホストからの autoConnect メッセージで確定させる。
