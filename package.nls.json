@@ -42,6 +42,7 @@
   "configuration.logLevel.enum.info": "Normal activity (default).",
   "configuration.logLevel.enum.debug": "Verbose, including received messages. Use only while investigating.",
   "command.record.title": "Record Screen",
+  "configuration.showTouchTrail.description": "Show a ripple where you tap and a trail while you drag. The overlay is drawn in the sidebar only; it is also composited into view recordings.",
   "configuration.showDeviceFrame.description": "Draw the phone bezel around the screen. Turn it off to use the full width of a narrow sidebar.",
   "configuration.showResourceStats.description": "Show memory and extension-size figures in the footer. These are developer diagnostics; the video rate and input path are always shown.",
   "configuration.saveLocation.description": "Initial folder for the screenshot and screen-recording save dialogs.",

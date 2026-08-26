@@ -785,22 +785,10 @@ function syncRecordButton() {
 }
 syncRecordButton();
 
-// タップのリップルとドラッグ軌跡の表示切替。状態は webview の state に残す。
-const btnTrail = document.getElementById('btn-trail');
-let trailEnabled = vscode.getState()?.trail ?? true;
-
-function syncTrailButton() {
-  btnTrail.classList.toggle('on', trailEnabled);
-  btnTrail.textContent = trailEnabled ? t('trailOn') : t('trailOff');
-  if (!trailEnabled) clearTrail();
-}
-
-btnTrail.addEventListener('click', () => {
-  trailEnabled = !trailEnabled;
-  vscode.setState(Object.assign({}, vscode.getState(), {trail: trailEnabled}));
-  syncTrailButton();
-});
-syncTrailButton();
+// タップのリップルとドラッグ軌跡を出すか。**状態は設定
+// （secondarySimulator.showTouchTrail、既定 OFF）が唯一持つ** — webview 側に
+// 写しを置くと、設定画面と食い違ったまま気づけない。ホストの settings で決まる。
+let trailEnabled = false;
 
 // 自動接続の切替。状態は設定（secondarySimulator.autoConnect）が持つので、
 // 押した直後は仮に反映し、拡張ホストからの autoConnect メッセージで確定させる。
@@ -1000,6 +988,9 @@ window.addEventListener('message', (event) => {
     case 'settings':
       document.body.classList.toggle('no-frame', message.showDeviceFrame === false);
       document.body.classList.toggle('hide-stats', message.showResourceStats === false);
+      trailEnabled = message.showTouchTrail === true;
+      // OFF に変わった瞬間に残っている軌跡を消す（描いたまま固まらない）
+      if (!trailEnabled) clearTrail();
       break;
 
     case 'recording': {

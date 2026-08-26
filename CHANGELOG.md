@@ -17,14 +17,20 @@ so **there is no need to move entries by hand**.
   pointer are invisible: input is synthesised over HID/adb, so the device never draws a
   finger, and the pointer only exists on the host.
   `secondarySimulator.recordingSource` is now `view` by default: the webview composites the
-  frames it is showing together with the mouse cursor, tap markers and drag trail onto a
-  canvas, encodes that with `MediaRecorder`, and streams it to the file you picked. The
-  container is whatever this Chromium can encode — MP4 where H.264 recording is available,
+  frames it is showing together with the mouse cursor and tap markers onto a canvas — plus the
+  drag trail when `secondarySimulator.showTouchTrail` is on — encodes that with
+  `MediaRecorder`, and streams it to the file you picked. The container is whatever this
+  Chromium can encode — MP4 where H.264 recording is available,
   WebM otherwise — and the save dialog offers the matching extension. Picture quality follows
   the stream shown in the sidebar, so set `recordingSource` to `device` when you want the
   device's own full-resolution recording and do not need the cursor
 
 ### Changed
+
+- The tap ripple and drag trail are now a setting (`secondarySimulator.showTouchTrail`) instead
+  of a button in the sidebar, and they are off by default. The overlay was a webview-only
+  preference, so it could not be configured from the Settings UI; the button is gone and the
+  setting is the only state
 
 - Recording keeps its memory and storage behaviour explicit. Chunks are written straight to
   the file you chose (no temporary files), and every buffer has a stated limit: the webview

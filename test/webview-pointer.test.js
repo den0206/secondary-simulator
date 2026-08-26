@@ -92,7 +92,6 @@ const els = {
   'btn-home': makeEl('btn-home'),
   'btn-back': makeEl('btn-back'),
   'btn-disconnect': makeEl('btn-disconnect'),
-  'btn-trail': makeEl('btn-trail'),
   'btn-record': makeEl('btn-record'),
   'btn-retry': makeEl('btn-retry'),
   'btn-logs': makeEl('btn-logs'),
@@ -457,29 +456,38 @@ check('「…」を含む文言は busy', els.overlay.classList.contains('busy')
 listeners['window:message']({data: {type: 'error', text: '接続に失敗しました'}});
 check('通常の文言は busy でない', !els.overlay.classList.contains('busy'));
 
-console.log('\n13) Trail トグル');
-check('初期は ON', els['btn-trail'].classList.contains('on'));
+console.log('\n13) 軌跡（設定が唯一の状態。既定は OFF）');
 // ripple は container.appendChild で追加される。呼ばれたかを数える。
 let appended = 0;
 els['simulator-container'].appendChild = () => appended++;
+let sentBefore = sent.length;
 fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
 fire('simulator-container', 'pointermove', {clientX: 150, clientY: 200});
 fire('simulator-container', 'pointerup', {clientX: 150, clientY: 200});
-check('ON ならリップルを描く', appended === 1, String(appended));
+check('既定はリップルを描かない', appended === 0, String(appended));
+check('描かなくても入力は送る',
+  sent.slice(sentBefore).filter((m) => m.type.startsWith('touch')).length === 3,
+  JSON.stringify(sent.slice(sentBefore).map((m) => m.type)));
 
-listeners['btn-trail:click']();
-check('トグルで OFF', !els['btn-trail'].classList.contains('on'));
-check('state に残る', webviewState && webviewState.trail === false,
-  JSON.stringify(webviewState));
+// 設定で ON になったら描く（ボタンは無い。ホストの settings だけが状態を決める）
+listeners['window:message']({data: {type: 'settings', showTouchTrail: true}});
 appended = 0;
-sent.length = 0;
 fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
 fire('simulator-container', 'pointermove', {clientX: 150, clientY: 200});
 fire('simulator-container', 'pointerup', {clientX: 150, clientY: 200});
-check('OFF ならリップルを描かない', appended === 0, String(appended));
+check('設定が ON ならリップルを描く', appended === 1, String(appended));
+
+// OFF に戻ったら描かない（残った軌跡も消す）
+listeners['window:message']({data: {type: 'settings', showTouchTrail: false}});
+appended = 0;
+sentBefore = sent.length;
+fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+fire('simulator-container', 'pointermove', {clientX: 150, clientY: 200});
+fire('simulator-container', 'pointerup', {clientX: 150, clientY: 200});
+check('OFF に戻したら描かない', appended === 0, String(appended));
 check('OFF でも入力は送る',
-  sent.filter((m) => m.type.startsWith('touch')).length === 3,
-  JSON.stringify(sent.map((m) => m.type)));
+  sent.slice(sentBefore).filter((m) => m.type.startsWith('touch')).length === 3,
+  JSON.stringify(sent.slice(sentBefore).map((m) => m.type)));
 
 console.log('\n14) フレームの受け取り（base64 → data URL）');
 
