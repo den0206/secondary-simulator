@@ -15,18 +15,14 @@ so **there is no need to move entries by hand**.
 - Screen recordings can now capture what you do, not just what the device shows. The device
   recorder (`device.screenrecord`) records the device framebuffer, where taps and the mouse
   pointer are invisible: input is synthesised over HID/adb, so the device never draws a
-  finger, and the pointer only exists on the host. Set
-  `secondarySimulator.recordingSource` to `view` and the webview composites the frames it is
-  showing together with the tap markers, drag trail and pointer onto a canvas, encodes that
-  with `MediaRecorder`, and streams it to the file you picked. The container is whatever
-  this Chromium can encode — MP4 where H.264 recording is available, WebM otherwise — and
-  the save dialog offers the matching extension. Picture quality follows the stream shown in
-  the sidebar, so the device recorder is still the better choice when only the device screen
-  matters; it stays the default
-
-- A **Cursor** toggle next to Rec switches between the two recording routes, so recording the
-  cursor and your taps no longer means editing settings first. It writes `secondarySimulator.recordingSource`
-  and nothing else, so the button and the setting can never disagree
+  finger, and the pointer only exists on the host.
+  `secondarySimulator.recordingSource` is now `view` by default: the webview composites the
+  frames it is showing together with the mouse cursor, tap markers and drag trail onto a
+  canvas, encodes that with `MediaRecorder`, and streams it to the file you picked. The
+  container is whatever this Chromium can encode — MP4 where H.264 recording is available,
+  WebM otherwise — and the save dialog offers the matching extension. Picture quality follows
+  the stream shown in the sidebar, so set `recordingSource` to `device` when you want the
+  device's own full-resolution recording and do not need the cursor
 
 ### Changed
 

@@ -476,17 +476,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           Logger.show();
           break;
 
-        // 録画に操作を写すか。Rec の隣のトグルから来る（設定が唯一の状態）。
-        case 'setRecordingSource':
-          await vscode.workspace
-            .getConfiguration('secondarySimulator')
-            .update(
-              'recordingSource',
-              message.view === true ? 'view' : 'device',
-              vscode.ConfigurationTarget.Global
-            );
-          break;
-
         case 'setAutoConnect':
           // 設定へ書き戻す。onDidChangeConfiguration 経由でタイマーと UI が揃う。
           await vscode.workspace
@@ -1302,12 +1291,17 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.recordingTimer.unref?.();
   }
 
+  /**
+   * 録画の作り方。**既定は `view`**（カーソルとタップが写る）で、端末の解像度が
+   * 要るときだけ `device` を選ぶ。使えない環境では `toggleRecording` が
+   * 警告つきで `device` へ落とす（黙って落とさない）。
+   */
   private recordingSource(): RecordingSource {
     return vscode.workspace
       .getConfiguration('secondarySimulator')
-      .get<string>('recordingSource', 'device') === 'view'
-      ? 'view'
-      : 'device';
+      .get<string>('recordingSource', 'view') === 'device'
+      ? 'device'
+      : 'view';
   }
 
   /**
@@ -1669,8 +1663,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       type: 'settings',
       showDeviceFrame: cfg.get<boolean>('showDeviceFrame', true),
       showResourceStats: cfg.get<boolean>('showResourceStats', false),
-      // Rec の隣のトグルはこれで確定する（設定が唯一の状態）。
-      recordingSource: this.recordingSource(),
     });
   }
 

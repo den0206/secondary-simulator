@@ -247,7 +247,7 @@
             "%configuration.recordingSource.enum.device%",
             "%configuration.recordingSource.enum.view%"
           ],
-          "default": "device",
+          "default": "view",
           "description": "%configuration.recordingSource.description%"
         },
         "secondarySimulator.showDeviceFrame": {

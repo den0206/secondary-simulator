@@ -83,14 +83,6 @@ async function main() {
     sent.some((m) => m.type === 'mode'),
     JSON.stringify(sent.map((m) => m.type))
   );
-  // Rec の隣の「カーソル付き」トグルは設定が唯一の状態なので、settings に載って戻る
-  check(
-    '録画経路も送り直す（トグルの状態）',
-    sent.some(
-      (m) => m.type === 'settings' && m.recordingSource === 'device'
-    ),
-    JSON.stringify(sent.filter((m) => m.type === 'settings'))
-  );
 
   console.log('\n3b) 繋いだままの作り直しでは選択も戻す（<select> は新品）');
   provider.currentDeviceId = 'SIM-1';
