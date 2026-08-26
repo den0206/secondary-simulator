@@ -8,13 +8,13 @@ covered by its own license.
 
 ## mobilecli
 
-- **Version bundled**: 1.0.2
+- **Version bundled**: 1.0.5
 - **Copyright**: Copyright 2025-2026 Mobile Next HQ, Inc.
 - **License**: Functional Source License, Version 1.1, ALv2 Future License
   (FSL-1.1-ALv2), full text below
 - **Homepage**: https://github.com/mobile-next/mobilecli
-- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/29965963be62c935b7bc8fd768c68e67e48ce18e
-  (tag `1.0.2`, tagged 2026-08-23)
+- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/f498fa525e216fa37017c9c102836cfb9929cbc5
+  (tag `1.0.5`, tagged 2026-08-26)
 
 ### What is bundled
 
@@ -38,7 +38,7 @@ bundled version, not the npm metadata.
 `LICENSE` file was AGPL-3.0. From `0.3.75` (2026-05-24) onward it is
 FSL-1.1-ALv2, which is a source-available license and not an OSI-approved
 open source license. Secondary Simulator bundled `@mobilenext/mobilecli@0.1.64`
-(AGPL-3.0) until it moved to `mobilecli@1.0.2` (FSL-1.1-ALv2); the move was
+(AGPL-3.0) until it moved to `mobilecli` 1.0.x (FSL-1.1-ALv2); the move was
 necessary because the upstream fix for Android screen recordings being written
 without an MP4 `moov` atom landed in `0.3.77`, i.e. only in relicensed
 versions.

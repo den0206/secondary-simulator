@@ -39,6 +39,12 @@ so **there is no need to move entries by hand**.
   WebM for at least one cluster. Recordings that were cut short are reported as such instead
   of being announced as saved
 
+- The bundled `mobilecli` moves from 1.0.2 to 1.0.5. It brings upstream fixes for screen
+  recording on physical iOS devices — the broadcast picker is re-tapped and searched through
+  nested elements while waiting, and the recording timer starts once capture is live rather
+  than during the roughly ten seconds of setup — plus a fix for the iOS device lock being
+  copied. None of the JSON-RPC methods this extension calls changed
+
 ### Fixed
 
 - The device dropdown could end up empty with nothing to select, and pressing Refresh did not
