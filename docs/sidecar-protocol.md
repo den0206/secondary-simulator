@@ -344,7 +344,7 @@ mobilecli へ落ちたときだけ、次の形になる（Android 側は `pointe
 描かない。カーソルはそもそもホスト側にしか無い）。webview のリップルと軌跡も
 ホスト側 DOM のオーバーレイなので、端末の映像には入らない。
 
-`secondarySimulator.recordingSource: "view"` のとき、webview が
+`secondarySimulator.recordingSource: "view"`（**既定**）のとき、webview が
 「表示中のフレーム＋操作の表示」を 1 枚の canvas に合成し、`MediaRecorder` で
 符号化してチャンクをホストへ流す。ホストはユーザーが選んだパスへ**そのまま書く**
 （一時ファイルは持たない）。
@@ -378,7 +378,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `home` | `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
-| `record` | 画面録画の開始/停止をトグル。`secondarySimulator.recordingSource` が `device` なら `device.screenrecord` / `.stop`（保存先はユーザーが選ぶパスを `output` に渡す）、`view` なら webview で合成して録る（§7.2） |
+| `record` | 画面録画の開始/停止をトグル。`secondarySimulator.recordingSource` が `view`（既定）なら webview で合成して録る（§7.2）、`device` なら `device.screenrecord` / `.stop`（保存先はユーザーが選ぶパスを `output` に渡す） |
 | `viewRecordingStarted {mimeType}` | ビュー録画: 符号化を始めた。ホストはこれを受けてから「録画中」にする（返らなければ 10 秒で諦める） |
 | `viewRecordingChunk {seq, data}` | ビュー録画: チャンク 1 つ（`data` は base64）。**連番が飛んだらホストは打ち切る** — 1 つ落ちるとコンテナが壊れるため。高頻度パス扱いでログに載せない |
 | `viewRecordingStopped {chunks}` | ビュー録画: 最後のチャンクまで出し切った。ホストはここでファイルを閉じる |
@@ -389,7 +389,6 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `showLogs` | 出力チャンネル「Secondary Simulator」を開く |
 | `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない。**`init` は「webview が作り直された」の合図**でもあり、ホストが一度しか送らないもの（デバイス一覧・`selectedDevice`・`mode`・録画中の表示・直結の `streamUrl`）を全部送り直す。一覧は差分判定（署名）を飛ばす — `resolveWebviewView` が呼ばれない作り直し（レンダラのクラッシュ・リロード・ビューの移動）では、送り直す機会がここしか無いため |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
-| `setRecordingSource {view}` | Rec の隣のトグル。`secondarySimulator.recordingSource` を `view` / `device` で書き戻す（**状態は設定が唯一**持ち、webview は `settings` で確定させる） |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
 | `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限） |
 
@@ -397,7 +396,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 |---|---|
 | `devices` | 一覧（`platform` / `state` 付き）。webview は iOS / Android で `<optgroup>` に分ける。`platform` で Back の有効/無効を決める |
 | `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない）。起動を見送ったときも選択を戻す |
-| `settings` | `showDeviceFrame` / `showResourceStats`（`secondarySimulator.*` の見た目設定）と `recordingSource`（Rec の隣のトグルの状態。押した直後の仮反映をこれで確定させる） |
+| `settings` | `showDeviceFrame` / `showResourceStats`（`secondarySimulator.*` の見た目設定） |
 | `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
 | `countdown` | 録画開始前の秒読み（`value: 3→2→1`、`0` で消す）。**進行はホストが持ち**、webview は数字と音を出すだけ |
 | `startViewRecording {mimeType, bitsPerSecond, timesliceMs, maxUnacked}` | ビュー録画の開始。`timesliceMs` を必ず渡す（無指定の MediaRecorder は停止まで全部抱える）。`maxUnacked` は webview が抱えてよい未 ack チャンク数 |

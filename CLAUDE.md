@@ -98,15 +98,14 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   一覧は iOS / Android で分ける。停止中を選んだら `bootDevice` で起動確認する
   （コマンドパレット経由と同じ）。エラー時はオーバーレイに［再試行］［ログを見る］を出す。
   `secondarySimulator.showDeviceFrame` / `showResourceStats` で筐体とリソース数値の
-  表示を切り替えられる（収集は続ける）。**Rec の隣の「カーソル付き」トグルは
-  `recordingSource` を書き戻すだけ**（Auto と同じで、状態は設定が唯一持ち、
-  webview は `settings` メッセージで確定させる。webview 側に別の真実を作らない）。
-  スクリーンショット保存・録画の開始/停止は webview 内の Web Audio で短い効果音を鳴らす。
+  表示を切り替えられる（収集は続ける）。スクリーンショット保存・録画の開始/停止は
+  webview 内の Web Audio で短い効果音を鳴らす。
 - **デバイス操作（mobilecli）**: 録画は 2 経路（`secondarySimulator.recordingSource`）。
-  既定の `device` は `device.screenrecord` / `.stop`。`view` は **webview が「表示中のフレーム＋
-  操作の表示」を canvas に合成し `MediaRecorder` で符号化**して、チャンクをホストが書く
-  （端末側の録画には**カーソルもタップも写らない** — 入力は合成なので端末が指を描かず、
-  カーソルはホストにしか無い。`docs/sidecar-protocol.md` §7.2）。コンテナは webview の
+  **既定の `view` は webview が「表示中のフレーム＋操作の表示」を canvas に合成し
+  `MediaRecorder` で符号化**して、チャンクをホストが書く。`device` は
+  `device.screenrecord` / `.stop`（端末の解像度で録れるが、**カーソルもタップも写らない**
+  — 入力は合成なので端末が指を描かず、カーソルはホストにしか無い。
+  `docs/sidecar-protocol.md` §7.2）。コンテナは webview の
   `isTypeSupported` 次第で mp4 か webm になり、保存ダイアログの拡張子も揃える。
   **チャンクは捨てない** — `touchMove` と違い 1 つ落ちるとコンテナが壊れるので、詰まったら
   録画そのものを止める（未 ack 8 件・総量 512MB・無音 10 秒・連番の欠落）。ack はホストが

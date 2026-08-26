@@ -84,7 +84,7 @@ npm run build
 - **`secondarySimulator.captureFps`**: sidecar capture fps while idle (default: 30). Doubles (capped at 60) while a finger is down. Unchanged frames are not sent.
 - **`secondarySimulator.captureMaxWidth`**: upper bound for sidecar JPEG width, in px (default: 640). Actual width follows the sidebar size × devicePixelRatio.
 - **`secondarySimulator.captureMode`**: `auto` (default) uses display-change notifications when available, otherwise polling; `poll` stays on the timer. Private API, so pin to `poll` if an Xcode update breaks capture.
-- **`secondarySimulator.recordingSource`**: where a recording comes from — `device` (default) records on the device, at full device resolution, but taps and the mouse pointer are not part of the device's own screen, so they never appear; `view` records what the sidebar shows, including tap markers, the drag trail and the pointer. The `view` route encodes in the webview, so picture quality follows the stream you see, and the file is MP4 or WebM depending on what this Chromium can encode.
+- **`secondarySimulator.recordingSource`**: where a recording comes from — `view` (default) records what the sidebar shows, including the mouse cursor, tap markers and the drag trail; `device` records on the device, at full device resolution, but the cursor and taps are not part of the device's own screen, so they never appear. The `view` route encodes in the webview, so picture quality follows the stream you see, and the file is MP4 or WebM depending on what this Chromium can encode. Pick `device` when you want the device's full resolution and do not need the cursor.
 - **`secondarySimulator.showDeviceFrame`**: draw the phone bezel around the screen (default: true). Turn it off to use the full width of a narrow sidebar.
 - **`secondarySimulator.showResourceStats`**: show memory and extension-size figures in the footer (default: false). These are developer diagnostics; the video rate and input path are always shown.
 - **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a _hardware_ keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
@@ -109,11 +109,8 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Shot**: save a screenshot of the connected device
    - **Rec**: record the screen to a video file. Recording begins after a three-second
      countdown shown over the screen, so you can get the device ready (press again to stop).
-     The **Cursor** toggle next to it decides whether the mouse cursor, your taps and the
-     drag trail are in the recording
-   - **Cursor**: include the mouse cursor, taps and the drag trail in recordings. ON records
-     this view (quality follows the stream you see), OFF records on the device (full
-     resolution, no cursor or taps). Same setting as `secondarySimulator.recordingSource`
+     Recordings include the mouse cursor, taps and the drag trail; set
+     `secondarySimulator.recordingSource` to `device` to record on the device instead
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
 7. Type with the keyboard while the preview has focus. Arrow keys and shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers. Keys are not forwarded while a form control (such as the device dropdown) has focus.
@@ -132,7 +129,7 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 | --------------------- | ---------------------------------------------------------------- |
 | `Select Device`       | Pick a device from a list and connect. Picking a stopped one offers to boot it |
 | `Save Screenshot`     | Save the connected device's screen to a file                     |
-| `Record Screen`       | Start/stop recording the screen to a video file. Starts after a three-second countdown; stops automatically after 10 minutes or on disconnect. `secondarySimulator.recordingSource` decides whether your taps and pointer are in it |
+| `Record Screen`       | Start/stop recording the screen to a video file. Starts after a three-second countdown; stops automatically after 10 minutes or on disconnect. The cursor and taps are included unless `secondarySimulator.recordingSource` is `device` |
 | `Open URL on Device`  | Open a deep link or URL on the connected device                  |
 | `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
