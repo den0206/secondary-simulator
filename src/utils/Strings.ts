@@ -84,6 +84,12 @@ export function webviewStrings(): Record<string, string> {
     statsTitle: vscode.l10n.t(
       'Updated every 30 seconds. The extension host process is shared with other extensions. The extension directory is the size of the bundled files and does not grow at runtime (this extension keeps no persistent storage). WebDriverAgent installed by mobilecli is not included.'
     ),
+    // 録画にカーソルを写すかのトグル（Rec の隣）。ON はこの画面を合成して録る。
+    cursorOn: vscode.l10n.t('Cursor ON'),
+    cursorOff: vscode.l10n.t('Cursor OFF'),
+    cursorTitle: vscode.l10n.t(
+      'Include the cursor and taps in recordings (records this view instead of the device)'
+    ),
     video: vscode.l10n.t('Video'),
     // 録画中だけ出るチップ。書けている量と実効ビットレート。
     recording: vscode.l10n.t('Recording'),

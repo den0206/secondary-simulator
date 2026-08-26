@@ -94,6 +94,7 @@ const els = {
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-trail': makeEl('btn-trail'),
   'btn-record': makeEl('btn-record'),
+  'btn-cursor': makeEl('btn-cursor'),
   'btn-retry': makeEl('btn-retry'),
   'btn-logs': makeEl('btn-logs'),
   'overlay-actions': makeEl('overlay-actions'),
@@ -456,6 +457,28 @@ listeners['window:message']({data: {type: 'connecting', name: 'iPhone 15'}});
 check('「…」を含む文言は busy', els.overlay.classList.contains('busy'));
 listeners['window:message']({data: {type: 'error', text: '接続に失敗しました'}});
 check('通常の文言は busy でない', !els.overlay.classList.contains('busy'));
+
+console.log('\n12.6) カーソル付き録画トグル（状態は設定が持つ）');
+{
+  sent.length = 0;
+  check('初期は OFF（既定は端末側の録画）', !els['btn-cursor'].classList.contains('on'));
+  listeners['btn-cursor:click']();
+  const msg = sent.find((m) => m.type === 'setRecordingSource');
+  check('押したら設定へ書き戻させる', msg && msg.view === true, JSON.stringify(msg));
+  check('押した直後は仮に ON にする', els['btn-cursor'].classList.contains('on'));
+  // 設定が唯一の状態なので、ホストの settings で確定する（仮反映を上書きできる）
+  listeners['window:message']({data: {type: 'settings', recordingSource: 'device'}});
+  check('settings で確定する', !els['btn-cursor'].classList.contains('on'));
+  listeners['window:message']({data: {type: 'settings', recordingSource: 'view'}});
+  check(
+    'view なら ON のラベルになる',
+    els['btn-cursor'].classList.contains('on') &&
+      els['btn-cursor'].textContent === STRINGS.cursorOn,
+    els['btn-cursor'].textContent
+  );
+  // 元に戻す（以降のケースに引きずらない）
+  listeners['window:message']({data: {type: 'settings', recordingSource: 'device'}});
+}
 
 console.log('\n13) Trail トグル');
 check('初期は ON', els['btn-trail'].classList.contains('on'));

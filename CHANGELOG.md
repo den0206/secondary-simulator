@@ -24,6 +24,10 @@ so **there is no need to move entries by hand**.
   the sidebar, so the device recorder is still the better choice when only the device screen
   matters; it stays the default
 
+- A **Cursor** toggle next to Rec switches between the two recording routes, so recording the
+  cursor and your taps no longer means editing settings first. It writes `secondarySimulator.recordingSource`
+  and nothing else, so the button and the setting can never disagree
+
 ### Changed
 
 - Recording keeps its memory and storage behaviour explicit. Chunks are written straight to

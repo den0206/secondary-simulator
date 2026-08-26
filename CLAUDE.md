@@ -98,8 +98,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   一覧は iOS / Android で分ける。停止中を選んだら `bootDevice` で起動確認する
   （コマンドパレット経由と同じ）。エラー時はオーバーレイに［再試行］［ログを見る］を出す。
   `secondarySimulator.showDeviceFrame` / `showResourceStats` で筐体とリソース数値の
-  表示を切り替えられる（収集は続ける）。スクリーンショット保存・録画の開始/停止は
-  webview 内の Web Audio で短い効果音を鳴らす。
+  表示を切り替えられる（収集は続ける）。**Rec の隣の「カーソル付き」トグルは
+  `recordingSource` を書き戻すだけ**（Auto と同じで、状態は設定が唯一持ち、
+  webview は `settings` メッセージで確定させる。webview 側に別の真実を作らない）。
+  スクリーンショット保存・録画の開始/停止は webview 内の Web Audio で短い効果音を鳴らす。
 - **デバイス操作（mobilecli）**: 録画は 2 経路（`secondarySimulator.recordingSource`）。
   既定の `device` は `device.screenrecord` / `.stop`。`view` は **webview が「表示中のフレーム＋
   操作の表示」を canvas に合成し `MediaRecorder` で符号化**して、チャンクをホストが書く
