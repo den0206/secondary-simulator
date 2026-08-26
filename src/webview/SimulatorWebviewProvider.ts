@@ -262,8 +262,26 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     this.startStatsTimer();
-    // HTML を作り直したので、一覧が同じでも webview へ送り直す
+    void this.restoreWebviewState();
+  }
+
+  /**
+   * webview が作り直されたときに送り直すもの。
+   *
+   * **ホスト側は「もう送った」を覚えている**（`lastDevicesSignature`・`streamUrl` は
+   * 取り込み開始時の 1 回だけ）。ので、`resolveWebviewView` を経ずに webview だけが
+   * 作り直されると（レンダラのクラッシュ・リロード・ビューの移動）、送り直す機会が
+   * 無くなる。**デバイス一覧が空のまま何も選べない**のが代表的な症状で、更新ボタンも
+   * 同じ「差分なし」の判定に当たるので押しても戻らない。
+   *
+   * `resolveWebviewView` の直後に送る分は、まだリスナが張られていなければ落ちる
+   * （webview 宛の postMessage はキューされない）。**`init` が届いたときが唯一
+   * 確実な合図**なので、両方から同じここを通す。
+   */
+  private async restoreWebviewState(): Promise<void> {
+    // 署名は「この webview へ送った」の記録。作り直されたら捨てる（同じ一覧でも送る）
     this.lastDevicesSignature = '';
+    this.postAutoConnectState();
     this.postSettings();
     this.postMessage({
       type: 'mode',
@@ -271,7 +289,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     });
     // 作り直しても録画は続いている。表示だけ復元する（非表示で止めた場合は無い）
     if (this.recording) this.postMessage({type: 'recording', active: true});
-    this.refreshDevices();
+    await this.refreshDevices();
+    // 繋いだままの作り直しでは自動接続が走らないので `selectedDevice` も出ない。
+    // <select> は新品なので、送らないと「映像は流れているのに未選択の顔」になる
+    // （Android の Back も引けなくなる）。一覧の後に送る。
+    if (this.currentDeviceId) {
+      this.postMessage({
+        type: 'selectedDevice',
+        deviceId: this.currentDeviceId,
+      });
+    }
+    // 直結配信は <img> の src が失われている（URL は取り込み開始時にしか送らない）。
+    // 張り直して送り直す — 中継経路はフレームごとに data URL が来るので要らない。
+    if (this.directStreaming) await this.restartDisplay();
   }
 
   // ---- リソース監視（30秒ごと）------------------------------------------------
@@ -415,12 +445,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           if (this.recording?.source === 'view') {
             await this.stopRecording({abort: {reason: 'stalled'}});
           }
-          this.postAutoConnectState();
-          this.postSettings();
-          await this.refreshDevices();
+          // 前の webview へ送った分は失われている。まとめて送り直す。
+          await this.restoreWebviewState();
           break;
 
         case 'refresh':
+          // 明示的な更新。「差分なし」で黙って何も送らないと押しても直らない。
+          this.lastDevicesSignature = '';
           this.postAutoConnectState();
           this.postSettings();
           await this.refreshDevices();
@@ -428,6 +459,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
         // エラー表示からの復帰。一覧を取り直し、選択中があれば繋ぎ直す。
         case 'retry':
+          this.lastDevicesSignature = '';
           this.postSettings();
           await this.refreshDevices();
           if (this.currentDeviceId) {
