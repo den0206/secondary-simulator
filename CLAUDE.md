@@ -100,8 +100,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `secondarySimulator.showDeviceFrame` / `showResourceStats` / `showTouchTrail` で
   筐体・リソース数値・タップの軌跡の表示を切り替えられる（数値の収集は続ける。
   **軌跡は既定 OFF**）。**見た目の設定は webview に写しを置かない** — `settings`
-  メッセージで受けた値をそのまま反映する（設定画面と食い違ったまま気づけなくなる）。スクリーンショット保存・録画の開始/停止は
-  webview 内の Web Audio で短い効果音を鳴らす。
+  メッセージで受けた値をそのまま反映する（設定画面と食い違ったまま気づけなくなる）。
+  スクリーンショット保存・録画の開始/停止は webview 内の Web Audio で短い効果音を鳴らす。
 - **デバイス操作（mobilecli）**: 録画は 2 経路（`secondarySimulator.recordingSource`）。
   **既定の `view` は webview が「表示中のフレーム＋操作の表示」を canvas に合成し
   `MediaRecorder` で符号化**して、チャンクをホストが書く。`device` は

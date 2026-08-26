@@ -357,6 +357,7 @@ mobilecli へ落ちたときだけ、次の形になる（Android 側は `pointe
 | ack が返るまで次を出さない | ホストが**書き終えてから** ack を返すので、これがそのまま逆圧になる。未 ack が上限（8）に達したら**捨てずに録画を止める** — 1 つ落ちるとコンテナが壊れる |
 | 連番（`seq`）を付ける | 飛んだら壊れたファイルになるので、ホストが打ち切る |
 | 総量 512MB / 時間 10 分 | 二重の蓋。ビットレートを固定（4Mbps）してあるので伸び方を計算で言い切れる |
+| 軌跡だけ設定に従う | 指の丸とカーソルは必ず描く（`view` を選んだ理由そのもの）。リップルと軌跡は `secondarySimulator.showTouchTrail`（**既定 OFF**）が ON のときだけ — `trailPoints` が空なら描く点が無い、という形で効く |
 | 録画中は直結配信をやめる | 別オリジンの `<img>` を描いた canvas は汚染され、`captureStream` が SecurityError で止まる。中継経路のフレームは data URL なので汚染しない |
 | コンテナは webview が決める | `MediaRecorder.isTypeSupported` の結果は Chromium の版と H.264 エンコーダに依る。mp4 が通ればそのまま mp4、駄目なら webm。保存ダイアログの拡張子も揃える |
 
