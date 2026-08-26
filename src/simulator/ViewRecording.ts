@@ -72,6 +72,11 @@ export class ViewRecordingWriter {
     return this.aborted !== null;
   }
 
+  /** 打ち切った理由（打ち切っていなければ null）。停止側が結果表示に使う。 */
+  get abortReason(): ViewRecordingAbort | null {
+    return this.aborted;
+  }
+
   /** 書き込み先を開く。開けない（権限・存在しない親）なら例外を投げる。 */
   open(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
