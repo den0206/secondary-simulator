@@ -387,7 +387,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `bootDevice {deviceId}` | 停止中のデバイスを選んだとき。起動確認のあと `device.boot` して接続（コマンドパレット経由と同じ） |
 | `retry` | エラー表示からの復帰。一覧を取り直し、選択中があれば再接続 |
 | `showLogs` | 出力チャンネル「Secondary Simulator」を開く |
-| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない |
+| `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない。**`init` は「webview が作り直された」の合図**でもあり、ホストが一度しか送らないもの（デバイス一覧・`selectedDevice`・`mode`・録画中の表示・直結の `streamUrl`）を全部送り直す。一覧は差分判定（署名）を飛ばす — `resolveWebviewView` が呼ばれない作り直し（レンダラのクラッシュ・リロード・ビューの移動）では、送り直す機会がここしか無いため |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
 | `setRecordingSource {view}` | Rec の隣のトグル。`secondarySimulator.recordingSource` を `view` / `device` で書き戻す（**状態は設定が唯一**持ち、webview は `settings` で確定させる） |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |

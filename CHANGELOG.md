@@ -45,6 +45,15 @@ so **there is no need to move entries by hand**.
 
 ### Fixed
 
+- The device dropdown could end up empty with nothing to select, and pressing Refresh did not
+  bring it back. The device list is only sent to the webview when it differs from what was
+  sent last, but that record lives in the extension host: when the webview alone was rebuilt
+  (a reloaded or crashed renderer, or moving the view to another container) the list looked
+  unchanged and was never re-sent, leaving the freshly built dropdown with nothing in it. A
+  rebuilt webview now announces itself and gets everything the host only sends once — the
+  device list, the current selection, the input-path label, the recording indicator, and the
+  direct-stream URL — and Refresh always re-sends the list
+
 - Pasting into the device inserted the previous clipboard entry whenever the text had been
   copied from outside the editor — a browser, another app, a file. Text copied inside VS Code
   pasted correctly, which is what made it look like it worked. The webview read the clipboard
