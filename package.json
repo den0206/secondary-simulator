@@ -250,6 +250,11 @@
           "default": "view",
           "description": "%configuration.recordingSource.description%"
         },
+        "secondarySimulator.showTouchTrail": {
+          "type": "boolean",
+          "default": false,
+          "description": "%configuration.showTouchTrail.description%"
+        },
         "secondarySimulator.showDeviceFrame": {
           "type": "boolean",
           "default": true,

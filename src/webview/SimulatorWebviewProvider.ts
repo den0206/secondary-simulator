@@ -1661,6 +1661,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const cfg = vscode.workspace.getConfiguration('secondarySimulator');
     this.postMessage({
       type: 'settings',
+      showTouchTrail: cfg.get<boolean>('showTouchTrail', false),
       showDeviceFrame: cfg.get<boolean>('showDeviceFrame', true),
       showResourceStats: cfg.get<boolean>('showResourceStats', false),
     });

@@ -42,6 +42,7 @@
   "configuration.logLevel.enum.info": "包含常规运行日志（默认）。",
   "configuration.logLevel.enum.debug": "包含收到的消息等详细日志。仅在排查问题时使用。",
   "command.record.title": "录制屏幕",
+  "configuration.showTouchTrail.description": "在点击处显示涟漪，并在拖动时绘制轨迹。仅叠加在侧边栏中显示，同时也会合成到视图录制里。",
   "configuration.showDeviceFrame.description": "在屏幕周围绘制手机外框。侧边栏较窄时可关闭，以使用全部宽度。",
   "configuration.showResourceStats.description": "在页脚显示内存和扩展目录大小。这些是面向开发者的诊断信息；视频速率和输入路径始终显示。",
   "configuration.saveLocation.description": "截图与屏幕录制保存对话框的初始文件夹。",
