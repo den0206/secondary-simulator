@@ -273,7 +273,6 @@ container.addEventListener('pointerleave', () => {
   scheduleViewDraw();
 });
 
-
 // ---- 楽観的フィードバック（リップル・軌跡）----------------------------------
 
 function showRipple(e) {
@@ -515,6 +514,8 @@ function startViewRecording(message) {
     heartbeat: null,
     pending: false,
     stopping: false,
+    // 破棄された（失敗・表示が切れた）。立ったら変換中のチャンクは送らない。
+    dropped: false,
   };
 
   recorder.ondataavailable = (event) => sendViewChunk(event && event.data);
@@ -556,7 +557,10 @@ function sendViewChunk(blob) {
   rec.chain = rec.chain
     .then(() => blobToBase64(blob))
     .then((data) => {
-      if (viewRec !== rec) return; // 停止済み
+      // **正常停止では出し切る。** onstop の直前に出る最後の 1 チャンクはここを通るので、
+      // 「viewRec が入れ替わったか」で見ると末尾が黙って落ちる（コンテナの末尾が欠ける）。
+      // 落としてよいのは破棄されたとき（失敗・表示が切れた）だけ。
+      if (rec.dropped) return;
       post('viewRecordingChunk', {seq, data});
     })
     .catch((error) => failViewRecording((error && error.message) || String(error)));
@@ -607,6 +611,7 @@ function finishViewRecording() {
 function failViewRecording(message) {
   const rec = viewRec;
   if (rec) {
+    rec.dropped = true;
     releaseViewRecording(rec);
     viewRec = null;
   }
@@ -636,6 +641,7 @@ function releaseViewRecording(rec) {
 function teardownViewRecording() {
   const rec = viewRec;
   if (!rec) return;
+  rec.dropped = true;
   viewRec = null;
   releaseViewRecording(rec);
 }

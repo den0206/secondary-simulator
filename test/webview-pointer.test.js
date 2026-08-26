@@ -876,7 +876,35 @@ async function viewRecordingCases() {
   check('停止を返す', sent.some((m) => m.type === 'viewRecordingStopped'));
   check('レコーダーを止める', rec2.state === 'inactive');
 
-  console.log('\n30) ビュー録画: 表示が切れたら符号化も止める');
+  console.log('\n30) ビュー録画: 停止直前の最後のチャンクを落とさない');
+  // 実 MediaRecorder は stop() で「最後の dataavailable → onstop」の順に出す。
+  // ここを落とすとコンテナの末尾が欠け、検査も通ってしまう（黙って壊れる）。
+  sent.length = 0;
+  recorders.length = 0;
+  listeners['window:message']({
+    data: {
+      type: 'startViewRecording',
+      mimeType: 'video/mp4;codecs=avc1.42E01E',
+      bitsPerSecond: 4000000,
+      timesliceMs: 1000,
+      maxUnacked: 8,
+    },
+  });
+  const rec4 = recorders[recorders.length - 1];
+  sent.length = 0;
+  rec4.emit('TEFT');
+  rec4.stop(); // 変換中のまま onstop が来る
+  await tick();
+  const tail = sent.filter((m) => m.type === 'viewRecordingChunk');
+  check(
+    '最後のチャンクを出し切ってから停止を返す',
+    tail.length === 1 &&
+      sent.indexOf(tail[0]) <
+        sent.findIndex((m) => m.type === 'viewRecordingStopped'),
+    JSON.stringify(sent.map((m) => m.type))
+  );
+
+  console.log('\n31) ビュー録画: 表示が切れたら符号化も止める');
   sent.length = 0;
   recorders.length = 0;
   listeners['window:message']({

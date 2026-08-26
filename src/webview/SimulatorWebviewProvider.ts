@@ -1493,7 +1493,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.clearRecordingTimer();
     this.recording = null;
     await this.releaseViewCapture();
-    await this.finishRecording(session, abort);
+    // 停止の応答を待っているあいだに打ち切られた（停止と stall が重なった）場合、
+    // 呼び手は abort を知らない。**書き込み側の記録を優先する** — 末尾が欠けた
+    // ファイルを「保存できた」と言わないため。
+    await this.finishRecording(session, abort ?? writer?.abortReason ?? undefined);
   }
 
   /**
