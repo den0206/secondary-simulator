@@ -785,6 +785,25 @@ function syncRecordButton() {
 }
 syncRecordButton();
 
+// 録画にカーソル（とタップ・軌跡）を写すかの切替。ON はビュー録画
+// （この画面を合成して録る）、OFF は端末側の録画。状態は設定
+// （secondarySimulator.recordingSource）が持つので、押した直後は仮に反映し、
+// ホストからの settings メッセージで確定させる（Auto と同じ）。
+const btnCursor = document.getElementById('btn-cursor');
+let cursorInRecording = false;
+
+function syncCursorButton() {
+  btnCursor.classList.toggle('on', cursorInRecording);
+  btnCursor.textContent = cursorInRecording ? t('cursorOn') : t('cursorOff');
+}
+
+btnCursor.addEventListener('click', () => {
+  cursorInRecording = !cursorInRecording;
+  syncCursorButton();
+  vscode.postMessage({type: 'setRecordingSource', view: cursorInRecording});
+});
+syncCursorButton();
+
 // タップのリップルとドラッグ軌跡の表示切替。状態は webview の state に残す。
 const btnTrail = document.getElementById('btn-trail');
 let trailEnabled = vscode.getState()?.trail ?? true;
@@ -1000,6 +1019,11 @@ window.addEventListener('message', (event) => {
     case 'settings':
       document.body.classList.toggle('no-frame', message.showDeviceFrame === false);
       document.body.classList.toggle('hide-stats', message.showResourceStats === false);
+      // 設定が持つ状態なので、押した直後の仮反映をここで確定させる
+      if (message.recordingSource !== undefined) {
+        cursorInRecording = message.recordingSource === 'view';
+        syncCursorButton();
+      }
       break;
 
     case 'recording': {
@@ -1026,7 +1050,7 @@ window.addEventListener('message', (event) => {
       break;
     }
 
-    // ビュー録画（操作つき）。符号化はここ、書き込みはホスト。
+    // ビュー録画（カーソル付き）。符号化はここ、書き込みはホスト。
     case 'startViewRecording':
       startViewRecording(message);
       break;

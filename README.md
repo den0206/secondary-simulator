@@ -109,8 +109,11 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Shot**: save a screenshot of the connected device
    - **Rec**: record the screen to a video file. Recording begins after a three-second
      countdown shown over the screen, so you can get the device ready (press again to stop).
-     Set `secondarySimulator.recordingSource` to `view` to record your taps, drag trail and
-     pointer along with the screen
+     The **Cursor** toggle next to it decides whether the mouse cursor, your taps and the
+     drag trail are in the recording
+   - **Cursor**: include the mouse cursor, taps and the drag trail in recordings. ON records
+     this view (quality follows the stream you see), OFF records on the device (full
+     resolution, no cursor or taps). Same setting as `secondarySimulator.recordingSource`
    - **Trail**: toggle ripple and drag trail overlay
    - **Auto**: toggle automatic connection to a booted device
 7. Type with the keyboard while the preview has focus. Arrow keys and shortcuts with `Cmd` / `Ctrl` / `Option` (e.g. `Cmd+A`, `Cmd+C`) are forwarded as real modifier combinations — HID route only, since WDA cannot send modifiers. Keys are not forwarded while a form control (such as the device dropdown) has focus.
