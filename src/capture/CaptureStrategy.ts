@@ -39,6 +39,15 @@ export interface CaptureStrategy {
   updateConfig(): void;
 
   /**
+   * ビュー録画の開始・終了を伝える（実装は任意）。
+   *
+   * 取り込み幅を上げられるのは**サイドカー経路だけ**なので、`MjpegCapture` は
+   * 実装しない。WDA / Android 経路の帯域は `WdaSettings` と mobilecli 側の
+   * 設定で決まり、録画のために動かす手段が今は無い（`docs/project-review.md` §5.10）。
+   */
+  setRecording?(active: boolean): void;
+
+  /**
    * リソースを解放
    */
   dispose(): void;

@@ -6,6 +6,7 @@ const {
   captureRate,
   captureConfigAction,
   effectiveCaptureConfig,
+  RECORDING_WIDTH,
 } = require('../out/capture/CaptureStats');
 
 let failures = 0;
@@ -107,7 +108,8 @@ check('判定できないとき（イベント無し）は作り直す側に倒�
 console.log('\n3) 表示幅と操作状態に追従する取り込み設定');
 
 const cfg = {fps: 30, maxWidth: 640, quality: 0.8};
-const ctx = (over) => Object.assign({viewportWidth: null, interacting: false}, over);
+const ctx = (over) =>
+  Object.assign({viewportWidth: null, interacting: false, recording: false}, over);
 
 check('未報告なら設定値のまま', () => {
   assert.deepStrictEqual(effectiveCaptureConfig(cfg, ctx()), {
@@ -165,6 +167,71 @@ check('品質はそのまま通す', () => {
   assert.strictEqual(
     effectiveCaptureConfig({...cfg, quality: 0.3}, ctx({interacting: true})).quality,
     0.3
+  );
+});
+
+console.log('\n4) 録画中は表示幅より粗くしない');
+
+check('狭いサイドバーでも録画幅を割らない', () => {
+  // 録画していなければ 320 まで落ちる（3 節）。録画中は落とさない
+  assert.strictEqual(
+    effectiveCaptureConfig(cfg, ctx({viewportWidth: 320, recording: true}))
+      .maxWidth,
+    RECORDING_WIDTH
+  );
+});
+
+check('設定値が録画幅より小さくても上書きする', () => {
+  // 既定の captureMaxWidth は 640。録画中だけは上限として扱わない
+  assert.strictEqual(
+    effectiveCaptureConfig({...cfg, maxWidth: 640}, ctx({recording: true}))
+      .maxWidth,
+    RECORDING_WIDTH
+  );
+});
+
+check('表示が録画幅より広ければそちらに従う', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(
+      {...cfg, maxWidth: 2000},
+      ctx({viewportWidth: 1600, recording: true})
+    ).maxWidth,
+    1600
+  );
+});
+
+check('録画中でも設定値の上限は超えない（設定 > 録画幅のとき）', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(
+      {...cfg, maxWidth: 1200},
+      ctx({viewportWidth: 1800, recording: true})
+    ).maxWidth,
+    1200
+  );
+});
+
+check('録画を止めれば元の追従へ戻る', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(cfg, ctx({viewportWidth: 320, recording: false}))
+      .maxWidth,
+    320
+  );
+});
+
+check('録画幅はサイドカーの 1 行上限（1MB）の内側に収まる大きさ', () => {
+  // 実測 107KB / 1206px 幅（docs/sync-research.md §1.1）。面積比で見積もっても
+  // base64 込みで 1MB には遠い。ここを上げるなら SimhidSidecar の蓋も見直すこと。
+  const estimatedBytes = 107 * 1024 * (RECORDING_WIDTH / 1206) ** 2;
+  assert.ok(
+    (estimatedBytes * 4) / 3 < 1024 * 1024,
+    `base64 で ${Math.round((estimatedBytes * 4) / 3 / 1024)}KB`
+  );
+});
+
+check('fps の 2 倍は録画中も変わらない（幅だけの話）', () => {
+  assert.strictEqual(
+    effectiveCaptureConfig(cfg, ctx({recording: true, interacting: true})).fps,
+    60
   );
 });
 
