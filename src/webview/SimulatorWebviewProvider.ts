@@ -17,7 +17,10 @@ import {
   keyLabel,
   SimulatorInputController,
 } from '../input/SimulatorInputController';
-import {pickAutoConnectDevice} from '../simulator/autoConnect';
+import {
+  autoConnectDelayFor,
+  pickAutoConnectDevice,
+} from '../simulator/autoConnect';
 import {defaultRecordingName} from '../simulator/RecordingName';
 import {verifyRecording} from '../simulator/RecordingFile';
 import {
@@ -84,7 +87,23 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private static readonly INPUT_RELEASE_MS = 120_000;
   // 未接続のあいだだけ回すデバイス探索。接続したら止める。
   private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
-  private static readonly AUTO_CONNECT_INTERVAL_MS = 5_000;
+  /** 今のタイマーに使っている間隔。失敗で伸びたら張り直す合図になる。 */
+  private autoConnectDelayMs = 0;
+  /**
+   * 一覧の取得に連続して失敗した回数。**間隔とログの両方を絞るために持つ。**
+   * 1 回でも成功したら 0 に戻す。
+   */
+  private deviceListFailures = 0;
+  /**
+   * 直近に webview へ送った「一覧が取れない」の文言。同じものを送り直さない。
+   *
+   * **この探索の失敗だけを対象にする。** `sendError` 全体で畳むと、いちど画面が
+   * 出て（フレームが届いてオーバーレイが消えて）から同じ失敗が再発したときに、
+   * 何も表示されないまま黙ることになる。
+   */
+  private lastDeviceListError: string | null = null;
+  /** 失敗を記録し続ける回数。これを超えたら黙る（出力チャンネルは消えない）。 */
+  private static readonly MAX_DEVICE_LIST_ERROR_LOGS = 3;
   // device.boot 後に Booted を待つ上限（2 秒 × 45 = 90 秒）
   private static readonly BOOT_POLL_TRIES = 45;
   private static readonly BOOT_POLL_INTERVAL_MS = 2_000;
@@ -174,8 +193,15 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * その間にもう一度押されると**止め終える前に新しい録画を始めて**しまう。
    */
   private recordingBusy = false;
-  /** 1 回の貼り付けで受ける文字数の上限（HID は 1 文字ずつ送るため）。 */
-  private static readonly MAX_PASTE_CHARS = 4096;
+  /**
+   * 1 回の貼り付けで受ける文字数の上限。
+   *
+   * **HID は 1 文字ずつ注入する**（約 32ms/文字）ので、この上限がそのまま
+   * 待たされる時間になる —— 1,024 文字で約 30 秒。以前の 4,096 は
+   * 約 2 分で、実装の性質と噛み合っていなかった。切ったことは通知でも伝える
+   * （黙って途中まで貼ると、足りないことに気づけない）。
+   */
+  private static readonly MAX_PASTE_CHARS = 1024;
 
   /**
    * @param onStatusChange ステータスバーの更新先。webview の外に出す唯一の状態。
@@ -299,6 +325,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private async restoreWebviewState(): Promise<void> {
     // 署名は「この webview へ送った」の記録。作り直されたら捨てる（同じ一覧でも送る）
     this.lastDevicesSignature = '';
+    // エラーの写しも同じ理由で捨てる（新しい webview はまだ何も受け取っていない）
+    this.lastDeviceListError = null;
     this.postAutoConnectState();
     this.postSettings();
     this.postMessage({
@@ -317,9 +345,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         deviceId: this.currentDeviceId,
       });
     }
-    // 直結配信は <img> の src が失われている（URL は取り込み開始時にしか送らない）。
-    // 張り直して送り直す — 中継経路はフレームごとに data URL が来るので要らない。
-    if (this.directStreaming) await this.restartDisplay();
+    // 取り込みが止まっているなら張り直す。**畳んで開き直すと webview は作り直される**
+    // （`retainContextWhenHidden` を付けていないので、非表示のあいだ iframe は捨てられる）ので、
+    // ここを通らないと繋いだまま何も映らない画面が残る。直結配信も同じ理由で張り直す
+    // —— URL は取り込み開始時にしか送らず、新しい <img> は src を持っていない。
+    // 既に流れているとき（可視化イベントが先に張り直した・webview だけの作り直し）は触らない。
+    if (this.currentDeviceId && (this.directStreaming || !this.currentCapture)) {
+      await this.restartDisplay();
+    }
   }
 
   // ---- リソース監視（30秒ごと）------------------------------------------------
@@ -373,17 +406,30 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     await this.startCaptureForDevice(device.id, device);
   }
 
-  /** 未接続かつ表示中のときだけタイマーを回す。条件が崩れたら止める。 */
+  /**
+   * 未接続かつ表示中のときだけタイマーを回す。条件が崩れたら止める。
+   *
+   * 間隔は連続失敗数で伸びる（`autoConnectDelayFor`）。伸びたときはタイマーを
+   * 張り直す —— mobilecli が起動できない環境で 5 秒ごとに失敗し続けると、
+   * ログも webview へのエラー送信も止まらないため。
+   */
   private syncAutoConnectTimer(): void {
     const wanted =
       this.isViewVisible() &&
       !this.currentDeviceId &&
       this.isAutoConnectEnabled();
-    if (wanted === !!this.autoConnectTimer) return;
+    const running = this.autoConnectTimer !== null;
+    const delay = autoConnectDelayFor(this.deviceListFailures);
+    // 回っていないときに間隔だけ比べない（毎回 else へ落ちて searching を送り直す）
+    if (wanted === running && (!running || delay === this.autoConnectDelayMs)) {
+      return;
+    }
     if (wanted) {
+      this.stopAutoConnectTimer();
+      this.autoConnectDelayMs = delay;
       this.autoConnectTimer = setInterval(
         () => void this.refreshDevices(),
-        SimulatorWebviewProvider.AUTO_CONNECT_INTERVAL_MS
+        delay
       );
       this.postMessage({type: 'searching', active: true});
     } else {
@@ -396,6 +442,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private stopAutoConnectTimer(): void {
+    this.autoConnectDelayMs = 0;
     if (!this.autoConnectTimer) return;
     clearInterval(this.autoConnectTimer);
     this.autoConnectTimer = null;
@@ -475,6 +522,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         case 'refresh':
           // 明示的な更新。「差分なし」で黙って何も送らないと押しても直らない。
           this.lastDevicesSignature = '';
+          this.lastDeviceListError = null;
           this.postAutoConnectState();
           this.postSettings();
           await this.refreshDevices();
@@ -483,6 +531,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         // エラー表示からの復帰。一覧を取り直し、選択中があれば繋ぎ直す。
         case 'retry':
           this.lastDevicesSignature = '';
+          // 押した以上は同じ失敗でも出し直す（黙って待たせない）
+          this.lastDeviceListError = null;
           this.postSettings();
           await this.refreshDevices();
           if (this.currentDeviceId) {
@@ -682,8 +732,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         );
         this.mobileCliClient = new MobileCliClient(jsonRpcClient);
       } catch (error) {
-        Logger.error('Failed to initialize mobilecli client', error as Error);
-        this.sendError(
+        this.onDeviceListFailure(
+          'Failed to initialize mobilecli client',
+          error as Error,
           `Failed to initialize mobilecli: ${(error as Error).message}`
         );
         this.devices = [];
@@ -710,15 +761,47 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         this.lastDevicesSignature = signature;
         this.postMessage({type: 'devices', devices: this.devices});
       }
+      // 1 回でも取れたら間隔もログも元に戻す
+      this.deviceListFailures = 0;
+      this.lastDeviceListError = null;
       await this.autoConnect();
     } catch (error) {
-      Logger.error('Failed to list devices via mobilecli', error as Error);
-      this.sendError(`Failed to list devices: ${(error as Error).message}`);
+      this.onDeviceListFailure(
+        'Failed to list devices via mobilecli',
+        error as Error,
+        `Failed to list devices: ${(error as Error).message}`
+      );
       this.devices = [];
       this.lastDevicesSignature = '';
       this.postMessage({type: 'devices', devices: []});
     }
     this.syncAutoConnectTimer();
+  }
+
+  /**
+   * 一覧の取得に失敗したときの記録。**失敗が続く間は黙る。**
+   *
+   * この探索は未接続のあいだ回り続けるので、mobilecli が起動できない環境では
+   * 毎回ここへ来る。出力チャンネルは全文がメモリに残り、拡張から古い行を捨てる
+   * 手段が無い（`docs/project-review.md` §3.5.7）。記録するのは最初の数回だけにし、
+   * 間隔そのものは `syncAutoConnectTimer` が伸ばす。
+   */
+  private onDeviceListFailure(
+    logMessage: string,
+    error: Error,
+    userText: string
+  ): void {
+    this.deviceListFailures++;
+    if (
+      this.deviceListFailures <=
+      SimulatorWebviewProvider.MAX_DEVICE_LIST_ERROR_LOGS
+    ) {
+      Logger.error(logMessage, error);
+    }
+    // 同じ失敗を 5 秒ごとに送り直しても表示は変わらない（往復が増えるだけ）
+    if (userText === this.lastDeviceListError) return;
+    this.lastDeviceListError = userText;
+    this.sendError(userText);
   }
 
   async selectDevice(deviceId: string): Promise<void> {
@@ -774,7 +857,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.setStatus({
         state: 'connected',
         name: device.name,
-        backend: this.inputController!.backendKind,
+        backend: this.inputController!.backendLabel,
       });
       await this.startDisplayForDevice(deviceId, device);
       return;
@@ -822,12 +905,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           vscode.workspace
             .getConfiguration('secondarySimulator')
             .get<string>('keyInput', 'hid') === 'wda',
-        onBackendChange: (kind) => {
-          this.setStatus({state: 'connected', name: device.name, backend: kind});
+        onBackendChange: (label) => {
+          this.setStatus({state: 'connected', name: device.name, backend: label});
           // HID が死ぬとサイドカー取り込みも止まる。映像だけ WDA へ切り替える。
           // startCaptureForDevice は呼ぶな — コントローラを作り直して HID を再試行し、
           // fatal が続くと spawn ループになる。
-          if (kind === 'wda' && this.currentCapture instanceof SidecarCapture) {
+          if (label !== 'hid' && this.currentCapture instanceof SidecarCapture) {
             Logger.warn('サイドカー取り込みを終了し WDA 経路へ切り替える');
             void this.fallbackSidecarCaptureToWda(deviceId, device);
           }
@@ -845,7 +928,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.setStatus({
         state: 'connected',
         name: device.name,
-        backend: controller.backendKind,
+        backend: controller.backendLabel,
       });
     }
 
@@ -1379,6 +1462,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.currentCapture?.setRecording?.(false);
     if (!this.forceRelayCapture) return;
     this.forceRelayCapture = false;
+    // **非表示なら張り直さない。** 畳んだときの停止は非同期で、ここへ来る頃には
+    // 既に取り込みを止めている。そのまま張り直すと、隠れたまま取り込みだけ
+    // 生き返って次の表示切り替えまで流れ続ける（直結配信のときだけ通る経路）。
+    // 再表示時に onDidChangeVisibility が張り直すので、戻すのは状態だけでよい。
+    if (!this.isViewVisible()) return;
     await this.restartDisplay();
   }
 
@@ -1668,6 +1756,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (value.length < text.length) {
       Logger.warn(
         `貼り付けが長いので ${SimulatorWebviewProvider.MAX_PASTE_CHARS} 文字で切った`
+      );
+      // ログだけだと「貼ったのに一部しか入らない」に気づけない
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: Only the first {0} characters were pasted.',
+          SimulatorWebviewProvider.MAX_PASTE_CHARS
+        )
       );
     }
     await this.inputController.text(value);
