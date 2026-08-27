@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import {InputLabel} from '../input/InputBackend';
 
 /**
  * 接続状態。`backend` は入力経路（HID 直接注入か WDA 経由か）。
@@ -7,7 +8,7 @@ import * as vscode from 'vscode';
 export type DeviceStatus =
   | {state: 'disconnected'}
   | {state: 'connecting'; name: string}
-  | {state: 'connected'; name: string; backend: 'hid' | 'wda'};
+  | {state: 'connected'; name: string; backend: InputLabel};
 
 export interface StatusView {
   /** ステータスバーの表示文字列。null なら隠す。 */
@@ -25,20 +26,25 @@ export interface StatusStrings {
   /** 入力経路の呼び名。webview のフッターとステータスバーで同じ言葉を使う。 */
   hid: string;
   wda: string;
+  /** Android（adb 直叩き）。WDA は登場しないので別の呼び名を持つ。 */
+  adb: string;
   /** `{0}` にデバイス名が入る。 */
   connecting: string;
   connected: string;
   hidDetail: string;
   wdaDetail: string;
+  adbDetail: string;
 }
 
 export const DEFAULT_STATUS_STRINGS: StatusStrings = {
   hid: 'Fast mode (HID)',
   wda: 'Compatible mode (WDA)',
+  adb: 'Direct mode (adb)',
   connecting: 'Secondary Simulator: connecting to {0}',
   connected: 'Secondary Simulator: connected to {0} ({1})',
   hidDetail: 'Touch and keys are injected directly over HID.',
   wdaDetail: 'Through mobilecli/WDA. HID is unavailable or was demoted.',
+  adbDetail: 'Touches go straight to adb; keys and buttons go through mobilecli.',
 };
 
 const fill = (template: string, ...args: string[]): string =>
@@ -62,13 +68,16 @@ export function renderStatus(
         mode: null,
       };
     case 'connected': {
-      const label = status.backend === 'hid' ? strings.hid : strings.wda;
+      const label = strings[status.backend];
+      const detail =
+        status.backend === 'hid'
+          ? strings.hidDetail
+          : status.backend === 'adb'
+            ? strings.adbDetail
+            : strings.wdaDetail;
       return {
         text: `$(device-mobile) ${status.name} · ${status.backend.toUpperCase()}`,
-        tooltip:
-          fill(strings.connected, status.name, label) +
-          '\n' +
-          (status.backend === 'hid' ? strings.hidDetail : strings.wdaDetail),
+        tooltip: fill(strings.connected, status.name, label) + '\n' + detail,
         mode: label,
       };
     }

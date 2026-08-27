@@ -50,6 +50,21 @@ console.log('\n4) HID と WDA で表示が変わる（降格に気づける）')
 check('text が異なる', hid.text !== wda.text);
 check('mode が異なる', hid.mode !== wda.mode);
 
+// Android は adb 直叩き＋mobilecli で、WebDriverAgent は登場しない。
+// WDA として出すと、HID からの降格と見分けが付かなくなる。
+console.log('\n4b) Android は adb として出す（WDA と混ぜない）');
+const adb = renderStatus({state: 'connected', name: 'Pixel 9', backend: 'adb'});
+check('ADB を表示', adb.text.includes('ADB'), adb.text);
+check('WDA とは名乗らない', !adb.text.includes('WDA') && !adb.mode.includes('WDA'), adb.mode);
+check('フッターは直接モード', adb.mode === 'Direct mode (adb)', adb.mode);
+check('ツールチップに adb が出る', adb.tooltip.includes('adb'), adb.tooltip);
+check(
+  '降格の文言は出さない（降格していない）',
+  !adb.tooltip.includes('demoted'),
+  adb.tooltip
+);
+check('WDA と表示が異なる', adb.mode !== wda.mode && adb.text !== wda.text);
+
 console.log('\n5) 文言は外から差し替えられる（vscode に触らないまま翻訳する）');
 const ja = {
   ...DEFAULT_STATUS_STRINGS,

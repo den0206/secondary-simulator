@@ -8,6 +8,7 @@ import {
   HidModifier,
   HidUsage,
   InputBackend,
+  InputLabel,
   MODIFIER_BITS,
   usageForAsciiChar,
 } from './InputBackend';
@@ -30,8 +31,12 @@ export interface ControllerOptions {
   mobileCliClient: MobileCliClient;
   getScreenSize: () => {width: number; height: number} | null;
   sidecarBinaryPath: string;
-  /** バックエンドが切り替わったとき（初期選択・降格）に呼ばれる。status 表示用。 */
-  onBackendChange?: (kind: 'hid' | 'wda') => void;
+  /**
+   * バックエンドが切り替わったとき（初期選択・降格）に呼ばれる。status 表示用。
+   * 渡すのは表示用のラベル（`kind` ではない） — Android は adb 経路なので、
+   * WDA として出すと降格の表示と見分けが付かなくなる。
+   */
+  onBackendChange?: (label: InputLabel) => void;
   /**
    * キーボード入力だけ WDA 経路にするか（タッチは HID のまま）。
    * HID のキー注入はシミュレータに「ハードウェアキーボード」として入るため、
@@ -88,7 +93,7 @@ export class SimulatorInputController {
         this.sidecar = sidecar;
         this.primary = new HidSidecarBackend(sidecar, this.opts.deviceId);
         Logger.info('入力バックエンド: HID 直接注入');
-        this.opts.onBackendChange?.('hid');
+        this.opts.onBackendChange?.(this.primary.label);
         return;
       } catch (error) {
         Logger.warn(
@@ -99,7 +104,7 @@ export class SimulatorInputController {
       }
     }
     this.primary = this.defaultBackend();
-    this.opts.onBackendChange?.('wda');
+    this.opts.onBackendChange?.(this.primary.label);
   }
 
   /**
@@ -134,11 +139,16 @@ export class SimulatorInputController {
     if (this.primary.kind === 'wda') return;
     Logger.warn(`HID 経路を降格し WDA へ切替: ${reason}`);
     this.primary = this.defaultBackend();
-    this.opts.onBackendChange?.('wda');
+    this.opts.onBackendChange?.(this.primary.label);
   }
 
   get backendKind(): 'hid' | 'wda' {
     return this.primary.kind;
+  }
+
+  /** 表示用の経路名。Android は adb（WDA ではない）。 */
+  get backendLabel(): InputLabel {
+    return this.primary.label;
   }
 
   get sidecarPid(): number | undefined {
@@ -335,9 +345,15 @@ export class SimulatorInputController {
     await flush();
   }
 
+  /**
+   * HID で送れる文字か。**範囲ではなく usage 表で決める。**
+   *
+   * 以前は `0x20`–`0x7e` を見ていたので、表に無い文字（サイドカーが skip する）を
+   * HID へ回して黙って落とし、逆に表にある `\n` / `\t` は範囲から外れるため
+   * わざわざ WDA を起こしていた。判定と実際に注入できるものを 1 つの表に揃える。
+   */
   private static isAscii(ch: string): boolean {
-    const c = ch.charCodeAt(0);
-    return c >= 0x20 && c <= 0x7e;
+    return usageForAsciiChar(ch) !== undefined;
   }
 
   async home(): Promise<void> {

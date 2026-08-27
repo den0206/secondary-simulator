@@ -1,7 +1,7 @@
 import {Logger} from '../utils/Logger';
 import {ButtonType, MobileCliClient} from '../utils/MobileCliClient';
 import {AdbTouch} from './AdbTouch';
-import {HidUsage, InputBackend} from './InputBackend';
+import {HidUsage, InputBackend, InputLabel} from './InputBackend';
 
 type Pt = {x: number; y: number};
 
@@ -52,8 +52,10 @@ type GestureAction = {
  * 座標は正規化 [0,1] で受け、ピクセル変換はこの中だけで行う。
  */
 export class AndroidBackend implements InputBackend {
-  // mobilecli/adb 経路なので入力経路の表示は WDA 系と同じ（互換モード）。
+  // HID の特別扱いをしない側なので kind は wda と同じ扱いになる。
+  // ただし**表示は分ける** — Android の経路に WebDriverAgent は登場しない。
   readonly kind = 'wda' as const;
+  readonly label: InputLabel = 'adb';
 
   /** これを超えて動いたらドラッグ扱い（px）。Android の touch slop より小さくする。 */
   static readonly SLOP_PX = 12;

@@ -1113,14 +1113,45 @@ static uint8_t usageForChar(unichar c, BOOL *shift) {
   if (c >= '1' && c <= '9') return (uint8_t)(0x1e + (c - '1'));
   if (c == '0') return 0x27;
   switch (c) {
+    // そのまま押せば出る文字（US 配列）
     case ' ': return 0x2c;
     case '\n': return 0x28;
     case '\t': return 0x2b;
     case '-': return 0x2d;
-    case '.': return 0x37;
-    case ',': return 0x36;
-    case '/': return 0x38;
+    case '=': return 0x2e;
+    case '[': return 0x2f;
+    case ']': return 0x30;
+    case '\\': return 0x31;
     case ';': return 0x33;
+    case '\'': return 0x34;
+    case '`': return 0x35;
+    case ',': return 0x36;
+    case '.': return 0x37;
+    case '/': return 0x38;
+    // Shift と組み合わせて出る文字。**ここが欠けると黙って落ちる** —
+    // 以前は `:` や `?` を引けず、URL が `https//…` として入っていた。
+    // 拡張ホスト側の usageForAsciiChar と同じ表（test/ascii-usage.test.js が一致を見る）
+    case '!': *shift = YES; return 0x1e;
+    case '@': *shift = YES; return 0x1f;
+    case '#': *shift = YES; return 0x20;
+    case '$': *shift = YES; return 0x21;
+    case '%': *shift = YES; return 0x22;
+    case '^': *shift = YES; return 0x23;
+    case '&': *shift = YES; return 0x24;
+    case '*': *shift = YES; return 0x25;
+    case '(': *shift = YES; return 0x26;
+    case ')': *shift = YES; return 0x27;
+    case '_': *shift = YES; return 0x2d;
+    case '+': *shift = YES; return 0x2e;
+    case '{': *shift = YES; return 0x2f;
+    case '}': *shift = YES; return 0x30;
+    case '|': *shift = YES; return 0x31;
+    case ':': *shift = YES; return 0x33;
+    case '"': *shift = YES; return 0x34;
+    case '~': *shift = YES; return 0x35;
+    case '<': *shift = YES; return 0x36;
+    case '>': *shift = YES; return 0x37;
+    case '?': *shift = YES; return 0x38;
     default: return 0;
   }
 }

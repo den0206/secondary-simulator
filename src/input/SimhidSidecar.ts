@@ -23,6 +23,7 @@ type Pending = {
 };
 
 export class SimhidSidecar {
+  /** 1 往復で終わるコマンドの応答待ち。長くかかるものは send の引数で上書きする。 */
   private static readonly REQUEST_TIMEOUT_MS = 3000;
   private static readonly READY_TIMEOUT_MS = 5000;
   private static readonly MAX_RESTARTS = 1;
@@ -230,8 +231,16 @@ export class SimhidSidecar {
     });
   }
 
-  /** 応答を待つコマンド送信。ok で resolve、error/timeout で reject。 */
-  send(command: SidecarCommand): Promise<void> {
+  /**
+   * 応答を待つコマンド送信。ok で resolve、error/timeout で reject。
+   *
+   * @param timeoutMs 応答を待つ上限。**省略時は 3 秒だが、これは「1 往復で終わる
+   *   コマンド」の値**。サイドカーは 1 本のキューで処理するので、注入自体に時間が
+   *   かかるコマンド（`text` は 1 文字ずつ待つ）は呼び手が見積もりを渡す。
+   *   渡さないと、注入が続いているのに timeout で reject し、上位が
+   *   「取り込みが壊れた」ときと同じエラー表示を出してしまう。
+   */
+  send(command: SidecarCommand, timeoutMs?: number): Promise<void> {
     if (this.fatalReason) {
       return Promise.reject(new Error(`simhid-server fatal: ${this.fatalReason}`));
     }
@@ -242,10 +251,14 @@ export class SimhidSidecar {
     const id = this.nextId++;
     const payload = JSON.stringify({id, ...command}) + '\n';
     return new Promise<void>((resolve, reject) => {
+      const wait =
+        timeoutMs && timeoutMs > 0
+          ? timeoutMs
+          : SimhidSidecar.REQUEST_TIMEOUT_MS;
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`simhid コマンド timeout: ${command.cmd}`));
-      }, SimhidSidecar.REQUEST_TIMEOUT_MS);
+      }, wait);
       this.pending.set(id, {resolve, reject, timer});
       proc.stdin!.write(payload, (err) => {
         if (err) {
