@@ -19,14 +19,14 @@ export function activate(context: vscode.ExtensionContext): void {
     statusBar.update(status)
   );
 
+  // `retainContextWhenHidden` は付けない。付けると非表示のあいだ webview の
+  // iframe を丸ごと抱え続ける（VS Code 自身が「メモリを食うので避けよ」としている）。
+  // この拡張は畳んだ時点で取り込みも録画も止めており、作り直された webview へは
+  // `init` を合図に状態を送り直す（`SimulatorWebviewProvider.restoreWebviewState`）。
+  // 抱えて守れるのは復帰の速さだけなので、CLAUDE.md のメモリ方針を優先する。
   const webviewProvider = vscode.window.registerWebviewViewProvider(
     SimulatorWebviewProvider.viewType,
-    provider,
-    {
-      webviewOptions: {
-        retainContextWhenHidden: true,
-      },
-    }
+    provider
   );
 
   const commands = [
@@ -129,16 +129,19 @@ export function activate(context: vscode.ExtensionContext): void {
     ...commands,
     debugListener,
     configListener,
-    statusBar,
+    // **provider を statusBar より先に捨てる。** provider.dispose() は最後に
+    // 「未接続」を流すので、順序が逆だと破棄済みの StatusBarItem を触ることになる。
     {
       dispose: () => {
         if (provider) {
           provider.dispose();
           provider = null;
         }
-        Logger.dispose();
       },
-    }
+    },
+    statusBar,
+    // ログは全部の後始末が済んでから閉じる（dispose 中のログを捨てない）
+    {dispose: () => Logger.dispose()}
   );
 }
 
