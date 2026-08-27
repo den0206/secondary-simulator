@@ -90,7 +90,7 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `button` | `name`（`home`/`lock`） | ハードウェアボタン |
 | `keyDown`/`keyUp` | `usage`（USB HID usage code） | 単一キー |
 | `modifier` | `bit`（16..20）, `down`（bool） | 修飾キー |
-| `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解） |
+| `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解）。**応答は注入し終えてから返る**ので、呼び手は刻んで送り、待ち時間を長さから決める（§10.3） |
 | `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6), `sink?`(`stdout`), `mode?`(`auto`) | 画面バッファの JPEG 配信を開始（§3.5） |
 | `captureConfig` | `fps?`, `maxWidth?`, `quality?` | 配信中の設定を**張り直さずに**変える（§3.5） |
 | `captureStop` | — | 同 停止 |
@@ -464,6 +464,26 @@ UI 面では、iOS 選択時に Back ボタンを無効表示する（webview �
 **`WdaBackend.inputText`（mobilecli の `device.io.text`）へ委譲する**。
 iOS Simulator ではデバイス一覧取得等で mobilecli を常に併用しているため、この委譲は常に可能。
 コントローラが文字列を「ASCII 連続部分＝HID / 非 ASCII 部分＝WDA」に分割して送る。
+
+**振り分けは文字コードの範囲ではなく usage 表で決める**（`usageForAsciiChar`）。
+範囲（`0x20`–`0x7e`）で見ていた頃は、表に無い記号を HID へ回してサイドカーが
+skip し、`:` を落として `https//example.com` が入っていた。逆に表にある
+`\n` / `\t` は範囲外なので、要らない WDA の起動を待っていた。表は
+印字可能な ASCII を全て引けるようにしてあり、native 側（`usageForChar`）との
+一致は `test/ascii-usage.test.js` が見る。
+
+#### 待ち時間は長さから決める（`text` は同期で注入する）
+
+`injectText` は 1 文字ずつ `usleep` を挟んで送り、**注入を終えてから応答する**
+（実測 約 32ms/文字、Shift が要る文字で 約 48ms）。全コマンド共通の 3 秒で待つと
+**約 90 文字で必ず timeout する** —— 注入は続いているのに拡張は失敗として扱い、
+webview は取り込みが壊れたときと同じエラー表示へ落ちていた。
+
+`HidSidecarBackend.text` は文字列を 48 文字ずつに刻み、`SimhidSidecar.send` の
+第 2 引数へ `1500 + 60ms × 文字数` を渡す。刻むのは見積もりを短く保つためだけでなく、
+**サイドカーはコマンドを 1 本のキューで捌く**ので、長い 1 コマンドの間はタッチも
+止まるため。貼り付けの上限（`MAX_PASTE_CHARS = 1024`）は、この 32ms/文字を
+「待てる時間」に直した値（約 30 秒）で、切ったことは通知でも伝える。
 
 ### 10.4 プロセス粒度 → **全デバイス1プロセスで確定**
 サイドカーは1つだけ spawn し、デバイス（UDID）ごとに HID クライアントを遅延生成してキャッシュする。

@@ -89,7 +89,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   webview が `e.key.length === 1` に載らず捨てられていたので `special` 経路へ載せた。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
-  **Cmd/Ctrl+V は `paste` でまとめて送る**（`InputBackend.text`。URL 入力用）。
+  **Cmd/Ctrl+V は `paste` でまとめて送る**（`InputBackend.text`。URL 入力用。
+  HID は 1 文字ずつ注入するので上限 1,024 文字 ≒ 30 秒。切ったら通知で伝える）。
   **中身は webview から送らない** — `clipboardData` は外部アプリでコピーした内容が
   ひとつ前のまま返る（VS Code 内でコピーしたときだけ最新になるので、動いて見えて古い）。
   webview は合図だけ送り、ホストが `vscode.env.clipboard.readText()` で読む。
@@ -136,7 +137,10 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   ファイル全体は読まない — 先頭から box を辿って 128 個で打ち切る。**検査は形式で分ける**
   （mp4 は `moov`、webm は Cluster。webm は長さも Cues も入らないので「未完成」を
   判定できず、途中で落ちたことは連番の欠落として書き込み側が捉える）。
-- **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA）をステータスバーへ出す。
+- **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA / adb）をステータスバーへ出す。
+  **経路の呼び名（`InputBackend.label`）は分岐に使う `kind` と別に持つ** — Android は
+  `kind` としては WDA 側だが、経路に WebDriverAgent は登場しない（adb と mobilecli）。
+  WDA と表示すると HID からの降格と見分けが付かなくなる。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
   フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
   遅くなった理由が見える場所を 1 つ用意する、が趣旨。
@@ -177,10 +181,17 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   webview はフレームを溜めない（`<img>` に渡し、間引きは Chromium がやる）。
 - **高頻度パスでログを出さない**。`touch*` は 60Hz で届く。OutputChannel は全文を
   メモリに持つので、1 イベント 1 行で確実に膨らむ。**リトライループも高頻度パス**
-  （`MjpegCapture` の再接続は指数バックオフで、記録は最初の 3 回まで）。
+  （`MjpegCapture` の再接続は指数バックオフで、記録は最初の 3 回まで。未接続のあいだ
+  回るデバイス探索も同じで、失敗が続くと 5 秒 → 最大 30 秒まで間隔を空け、記録は
+  3 回まで・同じ文言は webview へ送り直さない）。
   `secondarySimulator.logLevel`（既定 info）で `Logger.debug` は落ちるが、
   **それを当てにしない**（debug にする人がいる）。閾値は `Logger` がフィールドに写しを
   持つので、判定のために `getConfiguration` を呼ばない。
+- **`retainContextWhenHidden` は付けない**。付けると非表示のあいだ webview の iframe を
+  丸ごと抱え続ける（VS Code 自身が「メモリを食うので避けよ」としている）。畳んだ時点で
+  取り込みも録画も止めており、作り直された webview へは `init` を合図に状態を送り直すので
+  （`restoreWebviewState`）、抱えて守れるのは復帰の速さだけ。**戻すときは取り込みの
+  張り直しも要る** — 開き直した webview には frame も `streamUrl` も届いていない。
 - **確保したものは必ず捨てる**。`Disposable` はフィールドに保持して `dispose()` で
   外す（`resolveWebviewView` は再呼び出しされるので冒頭で前回分を捨てる）。
   子プロセス（mobilecli / simhid-server / `AdbTouch` の adb shell）・タイマーも同じ。
