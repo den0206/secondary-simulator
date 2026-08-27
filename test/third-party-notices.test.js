@@ -56,6 +56,24 @@ check('ライセンス全文が入っている', () => {
   assert.ok(notices.includes('Grant of Future License'), '全文の末尾条項が無い');
 });
 
+check('npx フォールバックの版が package.json の pin と一致する', () => {
+  // 同梱バイナリが使えないときは `npx -y mobilecli@X` で実行する。版を固定するのは
+  // 「利用者のマシンで未検証のコードを走らせない」ためなので、最後の砦だけ古い版に
+  // 貼り付いていると目的から外れる（実際に 1.0.2 のまま取り残されていた）。
+  const src = fs.readFileSync(
+    path.join(root, 'src/utils/MobileCliServer.ts'),
+    'utf8'
+  );
+  const m = src.match(/FALLBACK_MOBILECLI_VERSION\s*=\s*'([^']+)'/);
+  assert.ok(m, 'FALLBACK_MOBILECLI_VERSION が無い');
+  assert.strictEqual(m[1], spec);
+  // 版が直接埋め込まれた npx 指定が他に残っていないこと
+  assert.ok(
+    !/'mobilecli@\d/.test(src),
+    'mobilecli@X.Y.Z を直接書いている箇所が残っている'
+  );
+});
+
 check('.vscodeignore が通知ファイルを VSIX に入れている', () => {
   const ignore = fs.readFileSync(path.join(root, '.vscodeignore'), 'utf8');
   assert.match(ignore, /^!THIRD-PARTY-NOTICES\.md$/m);

@@ -11,6 +11,14 @@ export class MobileCliServer {
    * 広げない（同時に 10 個 mobilecli が立つことはない）。
    */
   private static PORT_RANGE = 10;
+  /**
+   * node_modules も package.json も読めないときに使う最後の版。
+   *
+   * **`package.json` の pin と同じ値に保つ。** 版を固定しているのは
+   * 「利用者のマシンで未検証のコードを走らせない」ためなので、ここだけ古い版に
+   * 貼り付いていると目的から外れる（`test/third-party-notices.test.js` が一致を見る）。
+   */
+  static readonly FALLBACK_MOBILECLI_VERSION = '1.0.5';
 
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
@@ -145,7 +153,7 @@ export class MobileCliServer {
     } catch {
       // 読めなければ最後の手段
     }
-    return 'mobilecli@1.0.2';
+    return `mobilecli@${MobileCliServer.FALLBACK_MOBILECLI_VERSION}`;
   }
 
   private async waitForServerReady(
