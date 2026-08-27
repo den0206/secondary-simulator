@@ -30,7 +30,9 @@
     "preview",
     "mobile"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onDebug"
+  ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
   "contributes": {
@@ -164,6 +166,25 @@
           "type": "boolean",
           "default": true,
           "description": "%configuration.autoConnect.description%"
+        },
+        "secondarySimulator.autoShow": {
+          "type": "boolean",
+          "default": true,
+          "description": "%configuration.autoShow.description%"
+        },
+        "secondarySimulator.autoShowDebugTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "dart",
+            "reactnative",
+            "reactnativedirect",
+            "android",
+            "sweetpad-lldb"
+          ],
+          "description": "%configuration.autoShowDebugTypes.description%"
         },
         "secondarySimulator.directStream": {
           "type": "boolean",

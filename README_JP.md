@@ -79,6 +79,8 @@ npm run build
 VSCodeの設定で以下のオプションを調整できます：
 
 - **`secondarySimulator.autoConnect`**: 起動中のデバイスへ自動接続する（デフォルト: true）。未接続のあいだは 5 秒ごとに探す。Auto ボタンと連動し、Disconnect で OFF になる。
+- **`secondarySimulator.autoShow`**: デバッグを開始したとき、サイドバーが表示されていなければ表示する（デフォルト: true）。キーボードのフォーカスは移らないので、打鍵はエディタに入ったまま。検知できるのはデバッグセッション（Run and Debug / F5）だけで、ターミナルから直接実行した場合は分からない。
+- **`secondarySimulator.autoShowDebugTypes`**: サイドバーを表示するデバッグの種別（launch.json の `type`。デフォルト: `dart` / `reactnative` / `reactnativedirect` / `android` / `sweetpad-lldb`）。Flutter は iOS でも Android でも `dart` なので 1 つで両方に効く。空配列にすると、すべてのデバッグで表示する。
 - **`secondarySimulator.directStream`**: 表示を webview 直結 MJPEG（`<img>`）にする（デフォルト: false・実験的）。iOS Simulator ではサイドカーが 127.0.0.1 で配信し、それ以外は `MjpegProxy` が mobilecli の MJPEG を中継する。
 - **`secondarySimulator.streamScale`**: iOS の MJPEG 縮小率（デフォルト: 1.0＝原寸）
 - **`secondarySimulator.streamQuality`**: iOS の MJPEG JPEG 品質 1-100（デフォルト: 80）
@@ -152,7 +154,8 @@ secondary-simulator/
 │   │   ├── RecordingName.ts           # 録画ファイル名の既定値
 │   │   ├── RecordingFile.ts           # 書き出し後の検査（mp4 の moov / webm の Cluster）
 │   │   ├── ViewRecording.ts           # ビュー録画のチャンク受け口（上限・逆圧）
-│   │   └── autoConnect.ts             # 自動接続する起動中デバイスの選択
+│   │   ├── autoConnect.ts             # 自動接続する起動中デバイスの選択
+│   │   └── autoShow.ts                # デバッグ開始でビューを出すかの判定
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview管理
 │   ├── capture/
