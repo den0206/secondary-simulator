@@ -9,8 +9,20 @@
  *
  * 設計の根拠は docs/sidecar-protocol.md を参照。
  */
+
+/**
+ * 入力経路の呼び名。**`kind` とは別に持つ** — `kind` は「HID の特別扱いをするか」
+ * という分岐に使う値で、Android は `wda` 側に入る。一方で Android の経路に
+ * WebDriverAgent は登場しない（adb と mobilecli）ので、そのまま表示すると
+ * 無関係な名前が出る。表示だけを分けて、降格に気づくための情報を濁らせない。
+ */
+export type InputLabel = 'hid' | 'wda' | 'adb';
+
 export interface InputBackend {
   readonly kind: 'hid' | 'wda';
+
+  /** ステータスバーとフッターに出す経路の呼び名。 */
+  readonly label: InputLabel;
 
   // 1本指タッチ
   touchDown(x: number, y: number): Promise<void>;
@@ -86,17 +98,60 @@ export function usageForAsciiChar(
   if (ch >= '1' && ch <= '9') {
     return {usage: 0x1e + (c - '1'.charCodeAt(0)), shift: false};
   }
-  const fixed: Record<string, number> = {
-    '0': 0x27,
-    ' ': 0x2c,
-    '\n': 0x28,
-    '\t': 0x2b,
-    '-': 0x2d,
-    '.': 0x37,
-    ',': 0x36,
-    '/': 0x38,
-    ';': 0x33,
-  };
-  const usage = fixed[ch];
-  return usage === undefined ? undefined : {usage, shift: false};
+  const plain = PLAIN_USAGE[ch];
+  if (plain !== undefined) return {usage: plain, shift: false};
+  const shifted = SHIFTED_USAGE[ch];
+  if (shifted !== undefined) return {usage: shifted, shift: true};
+  return undefined;
 }
+
+/** そのまま押せば出る文字（US 配列）。 */
+const PLAIN_USAGE: Readonly<Record<string, number>> = {
+  '0': 0x27,
+  ' ': 0x2c,
+  '\n': 0x28,
+  '\t': 0x2b,
+  '-': 0x2d,
+  '=': 0x2e,
+  '[': 0x2f,
+  ']': 0x30,
+  '\\': 0x31,
+  ';': 0x33,
+  "'": 0x34,
+  '`': 0x35,
+  ',': 0x36,
+  '.': 0x37,
+  '/': 0x38,
+};
+
+/**
+ * Shift と組み合わせて出る文字（US 配列の刻印どおり）。
+ *
+ * **ここが欠けると黙って落ちる** — native の `injectText` は usage を引けない文字を
+ * skip するので、`:` を持つ URL が `https//…` になる、という気づきにくい壊れ方をする。
+ * 印字可能な ASCII を全て引けるようにしてあり、`test/ascii-usage.test.js` が
+ * 網羅と native 側の表との一致を見る。
+ */
+const SHIFTED_USAGE: Readonly<Record<string, number>> = {
+  '!': 0x1e,
+  '@': 0x1f,
+  '#': 0x20,
+  $: 0x21,
+  '%': 0x22,
+  '^': 0x23,
+  '&': 0x24,
+  '*': 0x25,
+  '(': 0x26,
+  ')': 0x27,
+  _: 0x2d,
+  '+': 0x2e,
+  '{': 0x2f,
+  '}': 0x30,
+  '|': 0x31,
+  ':': 0x33,
+  '"': 0x34,
+  '~': 0x35,
+  '<': 0x36,
+  '>': 0x37,
+  '?': 0x38,
+};

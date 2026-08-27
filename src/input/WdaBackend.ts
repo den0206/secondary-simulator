@@ -1,6 +1,6 @@
 import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
-import {HidUsage, InputBackend} from './InputBackend';
+import {HidUsage, InputBackend, InputLabel} from './InputBackend';
 
 type Pt = {x: number; y: number; t: number};
 
@@ -16,6 +16,7 @@ type Pt = {x: number; y: number; t: number};
  */
 export class WdaBackend implements InputBackend {
   readonly kind = 'wda' as const;
+  readonly label: InputLabel = 'wda';
 
   private static readonly TAP_MOVE_THRESHOLD = 0.01; // 正規化。これ未満の移動は tap 扱い
   private static readonly LONG_PRESS_MS = 400; // 静止ホールドは gesture にして long press を維持

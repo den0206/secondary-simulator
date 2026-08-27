@@ -20,11 +20,15 @@ export function statusStrings(): StatusStrings {
   return {
     hid: vscode.l10n.t('Fast mode (HID)'),
     wda: vscode.l10n.t('Compatible mode (WDA)'),
+    adb: vscode.l10n.t('Direct mode (adb)'),
     connecting: vscode.l10n.t('Secondary Simulator: connecting to {0}'),
     connected: vscode.l10n.t('Secondary Simulator: connected to {0} ({1})'),
     hidDetail: vscode.l10n.t('Touch and keys are injected directly over HID.'),
     wdaDetail: vscode.l10n.t(
       'Through mobilecli/WDA. HID is unavailable or was demoted.'
+    ),
+    adbDetail: vscode.l10n.t(
+      'Touches go straight to adb; keys and buttons go through mobilecli.'
     ),
   };
 }
