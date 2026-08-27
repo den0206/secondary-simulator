@@ -52,6 +52,8 @@ export class SidecarCapture implements CaptureStrategy {
   /** 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。未報告なら null。 */
   private viewportWidth: number | null = null;
   private interacting = false;
+  /** ビュー録画中か。**表示幅より粗くしない**ようにするためだけに持つ。 */
+  private recording = false;
   private interactionTimer: ReturnType<typeof setTimeout> | null = null;
   private stallTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -259,11 +261,28 @@ export class SidecarCapture implements CaptureStrategy {
     }, SidecarCapture.INTERACTION_TAIL_MS);
   }
 
+  /**
+   * ビュー録画の開始・終了。**録画中だけ取り込み幅を上げる**。
+   *
+   * サイドバーは狭いので、表示幅に合わせたままだと 640px 以下の映像しか
+   * ファイルに残らない（端末側の録画は実解像度）。`setInteracting` と同じく、
+   * 状態を持って `applyConfig` で差し替えるだけ（張り直さない）。
+   *
+   * 取り込みを作り直すと新しいインスタンスになるので、**呼び手が状態を持ち直す**
+   * 責任がある（`SimulatorWebviewProvider.startCaptureForDevice`）。
+   */
+  setRecording(active: boolean): void {
+    if (this.recording === active) return;
+    this.recording = active;
+    this.applyConfig();
+  }
+
   /** 実際に送るべき設定。設定値・表示幅・操作状態から決まる。 */
   private effective(): EffectiveCapture {
     return effectiveCaptureConfig(this.getConfig(), {
       viewportWidth: this.viewportWidth,
       interacting: this.interacting,
+      recording: this.recording,
     });
   }
 
