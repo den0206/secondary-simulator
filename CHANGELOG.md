@@ -26,6 +26,36 @@ so **there is no need to move entries by hand**.
   array reacts to every debug session. Only debug sessions are visible to an extension,
   so an app started straight from a terminal cannot be detected.
 
+### Changed
+
+- View recordings are no longer limited to the sidebar's own width. While a recording runs,
+  the sidecar capture keeps at least 1080 pixels of width even when the panel is narrow, so
+  the saved file is not stuck at the 640-pixel default. The ceiling is set by two memory
+  limits and not by taste: the sidecar hands frames over stdout as JSON lines that are
+  dropped past 1MB, and the webview's compositing canvas costs width by height by four
+  bytes. The capture returns to following the panel width as soon as the recording stops.
+  This applies to the sidecar path only; the WebDriverAgent and Android paths have no
+  equivalent knob yet.
+- The recording bitrate now follows the number of pixels being encoded instead of a fixed
+  4 Mbps, which was wasteful on a narrow panel and too thin on a wide one. The upper bound
+  of 6 Mbps is derived from the 512MB size limit, so a full ten-minute recording still
+  fits inside it.
+- Releasing a touch now leaves a short fading mark in the recording, matching the ripple
+  that is already drawn on screen. Whether it appears follows `secondarySimulator.showTouchTrail`,
+  the same setting that governs the on-screen ripple, so what you see and what you record
+  no longer disagree. At most eight marks are kept and each one expires on its own.
+
+### Fixed
+
+- A tap on a still screen could be missing from a view recording entirely. The composite
+  was only redrawn when a frame arrived or the pointer moved, and a screen that is not
+  changing sends no frames, so a press with no movement had to be lucky enough to coincide
+  with the once-a-second heartbeat. Pressing and releasing now redraw on their own.
+- Recording could fail to start when the captured frame had an odd width or height. H.264
+  is tried first and does not assume odd dimensions, while VP8 and VP9 accept them, so the
+  failure depended on the panel width and the browser build. The compositing canvas is now
+  rounded down to even dimensions.
+
 ## [0.5.0] — 2026-08-26
 
 ### Added
