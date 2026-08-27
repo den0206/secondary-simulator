@@ -103,6 +103,8 @@ VSCodeの設定で以下のオプションを調整できます：
 - **`secondarySimulator.showDeviceFrame`**: 画面のまわりに端末の筐体を描く（デフォルト: true）。サイドバーが狭いときは OFF にすると横幅をすべて使える。
 - **`secondarySimulator.showResourceStats`**: フッターにメモリと拡張ディレクトリのサイズを出す（デフォルト: false）。開発者向けの診断で、映像レートと入力経路は常に出る。
 - **`secondarySimulator.keyInput`**: iOS Simulator へのキー入力経路。`hid`（デフォルト・高速）または `wda`（1文字あたり約 370ms）。HID のキーはハードウェアキーボード扱いになるためソフトウェアキーボードが出ない。サイドバーにソフトキーボードを映したいときは `wda`。タッチは常に HID。
+- **`secondarySimulator.saveLocation`**: スクリーンショットと録画の保存ダイアログで最初に開くフォルダ。`desktop`（デフォルト・`~/Desktop`） / `workspace`（ワークスペースのルート。フォルダを開いていなければホーム） / `home` / `custom`（`saveDirectory` のパス）。ダイアログで選んだ場所以外へは書かない。
+- **`secondarySimulator.saveDirectory`**: `saveLocation` が `custom` のときに使うフォルダパス。それ以外では無視され、空ならホームへ倒す。
 - **`secondarySimulator.logLevel`**: 出力チャンネル **Secondary Simulator** へ書くログの詳しさ。`off` / `error` / `warn` / `info`（デフォルト） / `debug`。VS Code は出力チャンネルの全文をメモリに保持し古い行を捨てられないため、調査時以外は `info` 以下にする。
 
 タップ/スワイプ/ロングプレスの判定はデバイス側が行うため、閾値の設定項目はありません。

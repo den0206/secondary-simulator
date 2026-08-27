@@ -101,6 +101,8 @@ npm run build
 - **`secondarySimulator.showDeviceFrame`**: draw the phone bezel around the screen (default: true). Turn it off to use the full width of a narrow sidebar.
 - **`secondarySimulator.showResourceStats`**: show memory and extension-size figures in the footer (default: false). These are developer diagnostics; the video rate and input path are always shown.
 - **`secondarySimulator.keyInput`**: how keystrokes reach an iOS Simulator — `hid` (default, fast) or `wda` (~370ms per character). HID keys arrive as a _hardware_ keyboard, so iOS stops drawing the software keyboard; pick `wda` when you want to see it in the sidebar. Touch always stays on HID.
+- **`secondarySimulator.saveLocation`**: which folder the screenshot and recording save dialogs open in — `desktop` (default, `~/Desktop`), `workspace` (the first workspace folder, falling back to the home directory when none is open), `home`, or `custom` (the path in `saveDirectory`). The extension never writes a file you did not pick in the dialog.
+- **`secondarySimulator.saveDirectory`**: the folder used when `saveLocation` is `custom`. Ignored otherwise; an empty value falls back to the home directory.
 - **`secondarySimulator.logLevel`**: verbosity of the **Secondary Simulator** output channel — `off` / `error` / `warn` / `info` (default) / `debug`. VS Code keeps the channel's full text in memory and offers no way to drop old lines, so keep this at `info` or below unless you are investigating something.
 
 There are no gesture threshold settings: tap, swipe, and long press are all recognized on the device side.
