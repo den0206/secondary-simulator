@@ -321,6 +321,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.statsTimer = null;
   }
 
+  /** ビューが見えているか。未生成・畳んでいるあいだは false。 */
+  public isViewVisible(): boolean {
+    return this.view?.visible === true;
+  }
+
   // ---- 自動接続（未接続のあいだだけ 5 秒ごとに探す）----------------------------
 
   private isAutoConnectEnabled(): boolean {

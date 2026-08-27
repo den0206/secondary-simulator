@@ -95,6 +95,13 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   デバイス選択の `<select>` などテキスト UI にフォーカスがあるあいだはキーを送らない。
   未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
   デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。
+  **デバッグ開始（`onDidStartDebugSession`）で、非表示ならビューを出す**
+  （`secondarySimulator.autoShow`。判定は `src/simulator/autoShow.ts` の純粋関数、
+  種別の絞りは `autoShowDebugTypes`。VS Code に「ビルド」のイベントは無いので
+  ターミナル直実行は拾えない）。**`.focus` には必ず `preserveFocus: true` を渡す** —
+  フォーカスを奪うと、以後の打鍵がエディタではなく端末へ流れる。
+  デバッグ開始を聞くには `activationEvents` の `onDebug` が要る
+  （ビューを開くまで拡張が起きないと、一番効かせたい「隠れているとき」に効かない）。
   一覧は iOS / Android で分ける。停止中を選んだら `bootDevice` で起動確認する
   （コマンドパレット経由と同じ）。エラー時はオーバーレイに［再試行］［ログを見る］を出す。
   `secondarySimulator.showDeviceFrame` / `showResourceStats` / `showTouchTrail` で

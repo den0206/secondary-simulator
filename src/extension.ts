@@ -1,4 +1,8 @@
 import * as vscode from 'vscode';
+import {
+  DEFAULT_AUTO_SHOW_DEBUG_TYPES,
+  shouldAutoShow,
+} from './simulator/autoShow';
 import {DeviceStatusBar} from './ui/DeviceStatusBar';
 import {statusStrings} from './utils/Strings';
 import {Logger} from './utils/Logger';
@@ -86,6 +90,26 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   ];
 
+  // ビルド（デバッグ開始）でサイドバーを出す。表示中なら何もしない。
+  const debugListener = vscode.debug.onDidStartDebugSession((session) => {
+    const config = vscode.workspace.getConfiguration('secondarySimulator');
+    const show = shouldAutoShow(session.type, {
+      enabled: config.get<boolean>('autoShow', true),
+      types: config.get<string[]>(
+        'autoShowDebugTypes',
+        DEFAULT_AUTO_SHOW_DEBUG_TYPES
+      ),
+      visible: provider?.isViewVisible() === true,
+    });
+    if (!show) return;
+    Logger.info(`デバッグ開始（${session.type}）を検知したのでビューを表示する`);
+    // preserveFocus を落とすとキーボードフォーカスまで奪われ、以後の打鍵が端末へ流れる
+    void vscode.commands.executeCommand(
+      `${SimulatorWebviewProvider.viewType}.focus`,
+      {preserveFocus: true}
+    );
+  });
+
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('secondarySimulator')) {
       // ログレベルを先に取り込む（この直後の Configuration changed から効かせる）
@@ -101,6 +125,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     webviewProvider,
     ...commands,
+    debugListener,
     configListener,
     statusBar,
     {

@@ -77,6 +77,8 @@ npm run build
 ## ⚙️ Settings
 
 - **`secondarySimulator.autoConnect`**: automatically connect to a booted device (default: true). While disconnected the sidebar polls every 5 seconds. The Auto button stays in sync; Disconnect turns this off.
+- **`secondarySimulator.autoShow`**: reveal the sidebar when a debug session starts, if it is not already visible (default: true). Keyboard focus is left where it is, so typing keeps going to the editor. Only debug sessions (Run and Debug / F5) are visible to the extension — running the app straight from a terminal cannot be detected.
+- **`secondarySimulator.autoShowDebugTypes`**: which debug session types reveal the sidebar — the `type` field in launch.json (default: `dart`, `reactnative`, `reactnativedirect`, `android`, `sweetpad-lldb`). Flutter uses `dart` for both iOS and Android, so one entry covers both. Set it to an empty array to react to every debug session.
 - **`secondarySimulator.directStream`**: render the stream as a webview-native MJPEG `<img>` (default: false, experimental). On the iOS Simulator this is served by the sidecar on 127.0.0.1; otherwise `MjpegProxy` relays mobilecli's MJPEG.
 - **`secondarySimulator.streamScale`**: MJPEG scaling factor for iOS (default: 1.0 = original size)
 - **`secondarySimulator.streamQuality`**: MJPEG JPEG quality for iOS, 1-100 (default: 80)
@@ -150,7 +152,8 @@ secondary-simulator/
 │   │   ├── RecordingName.ts           # Default recording file names
 │   │   ├── RecordingFile.ts           # Finished-file check (mp4 moov / webm cluster)
 │   │   ├── ViewRecording.ts           # View-recording chunk sink (limits, backpressure)
-│   │   └── autoConnect.ts             # Pick a booted device for auto-connect
+│   │   ├── autoConnect.ts             # Pick a booted device for auto-connect
+│   │   └── autoShow.ts                # Decide whether a debug session reveals the view
 │   ├── webview/
 │   │   └── SimulatorWebviewProvider.ts # Webview management
 │   ├── capture/

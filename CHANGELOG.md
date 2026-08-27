@@ -10,6 +10,22 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- The sidebar can now show itself when you start a build. `secondarySimulator.autoShow`
+  (default: true) reveals the view on a debug session start if it is not already visible,
+  so the device is on screen by the time the app launches — together with
+  `secondarySimulator.autoConnect` that means a booted simulator or emulator is picked up
+  without touching the sidebar at all. Keyboard focus is deliberately left where it is:
+  the view sends whatever you type to the device, so stealing focus mid-build would
+  redirect your typing away from the editor.
+  `secondarySimulator.autoShowDebugTypes` limits this to mobile work — the `type` field in
+  launch.json, defaulting to `dart`, `reactnative`, `reactnativedirect`, `android` and
+  `sweetpad-lldb` — so debugging a Node or Go project does not make the device pop up.
+  Flutter reports `dart` for iOS and Android alike, so one entry covers both; an empty
+  array reacts to every debug session. Only debug sessions are visible to an extension,
+  so an app started straight from a terminal cannot be detected.
+
 ## [0.5.0] — 2026-08-26
 
 ### Added

@@ -21,6 +21,8 @@
   "walkthrough.setup.connect.description": "启动 iOS 模拟器或 Android 模拟器后会自动连接。想自己选择，或启动已停止的设备时，请使用设备列表。\n[选择设备](command:simulator.selectDevice)\niOS 模拟器需要装有 Xcode 的 macOS，Android 需要 Android SDK 和 adb。",
   "walkthrough.setup.connect.altText": "Secondary Simulator 图标",
   "configuration.autoConnect.description": "自动连接到正在运行的设备。未连接时每 5 秒查找一次，新启动的模拟器也会自动连接。与侧边栏的 Auto 按钮联动，按下 Disconnect 后会关闭。",
+  "configuration.autoShow.description": "调试会话启动时，如果侧边栏尚未显示则将其显示出来。键盘焦点保持不变，因此输入仍会进入编辑器。只能检测调试会话，直接从终端运行应用无法检测。",
+  "configuration.autoShowDebugTypes.description": "触发显示侧边栏的调试类型（launch.json 中的 \"type\"）。默认涵盖 Flutter/Dart（\"dart\"，iOS 与 Android 为同一类型）、React Native、原生 Android 以及基于 Xcode 的 iOS。留空则对所有调试会话生效。",
   "configuration.directStream.description": "让画面直接送到 webview，不经过扩展主机，由 Chromium 原生解码。在 iOS 模拟器的 sidecar 采集下由 sidecar 在 127.0.0.1 上直接分发，其他情况下转发 mobilecli 的 MJPEG。实验性功能。",
   "configuration.streamScale.description": "iOS：MJPEG 的缩放比例（1.0 = 原始尺寸）。数值越小带宽越低（设置 WDA 的 mjpegScalingFactor）。",
   "configuration.streamQuality.description": "iOS：MJPEG 的 JPEG 质量（1-100）。与 streamScale 配合调整带宽。",

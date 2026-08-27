@@ -21,6 +21,8 @@
   "walkthrough.setup.connect.description": "iOS Simulator や Android Emulator を起動すれば自動で接続します。自分で選ぶ場合や停止中のデバイスを起動する場合は、デバイス一覧から選んでください。\n[デバイスを選択](command:simulator.selectDevice)\niOS Simulator には Xcode の入った macOS が、Android には Android SDK と adb が必要です。",
   "walkthrough.setup.connect.altText": "Secondary Simulator のアイコン",
   "configuration.autoConnect.description": "起動中のデバイスへ自動で接続する。未接続のあいだは5秒ごとに探し、新しく起動したシミュレータにも繋ぐ。サイドバーの Auto ボタンと連動し、Disconnect を押すと OFF になる。",
+  "configuration.autoShow.description": "デバッグを開始したとき、サイドバーが表示されていなければ表示する。キーボードのフォーカスは移らないので、打鍵はエディタに入ったまま。検知できるのはデバッグセッションだけで、ターミナルから直接実行した場合は分からない。",
+  "configuration.autoShowDebugTypes.description": "サイドバーを表示するデバッグの種別（launch.json の \"type\"）。既定は Flutter/Dart（\"dart\"。iOS と Android で同じ種別）・React Native・ネイティブ Android・Xcode ベースの iOS。空にすると、すべてのデバッグで表示する。",
   "configuration.directStream.description": "表示を webview 直結にする。フレームが拡張ホストを経由せず、Chromium がネイティブ復号する。iOS Simulator のサイドカー取り込みではサイドカーが 127.0.0.1 で直接配信し、それ以外は mobilecli の MJPEG を中継する。実験的。",
   "configuration.streamScale.description": "iOS: MJPEG の縮小率（1.0=原寸）。小さくすると帯域が下がる（WDA の mjpegScalingFactor を設定）。",
   "configuration.streamQuality.description": "iOS: MJPEG の JPEG 品質（1-100）。streamScale と併用して帯域を調整する。",
