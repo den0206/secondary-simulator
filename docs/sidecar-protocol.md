@@ -356,8 +356,10 @@ mobilecli へ落ちたときだけ、次の形になる（Android 側は `pointe
 | `start(timeslice)` を必ず渡す | 無指定の `MediaRecorder` は停止まで全チャンクを抱える |
 | ack が返るまで次を出さない | ホストが**書き終えてから** ack を返すので、これがそのまま逆圧になる。未 ack が上限（8）に達したら**捨てずに録画を止める** — 1 つ落ちるとコンテナが壊れる |
 | 連番（`seq`）を付ける | 飛んだら壊れたファイルになるので、ホストが打ち切る |
-| 総量 512MB / 時間 10 分 | 二重の蓋。ビットレートを固定（4Mbps）してあるので伸び方を計算で言い切れる |
-| 軌跡だけ設定に従う | 指の丸とカーソルは必ず描く（`view` を選んだ理由そのもの）。リップルと軌跡は `secondarySimulator.showTouchTrail`（**既定 OFF**）が ON のときだけ — `trailPoints` が空なら描く点が無い、という形で効く |
+| 総量 512MB / 時間 10 分 | 二重の蓋。ビットレートは canvas の画素数から決まる（画素あたり 2.2bps、1.5〜6Mbps）が、**上限 6Mbps × 10 分 ≒ 450MB** が総量の蓋の内側なので伸び方を言い切れる。上限を上げるなら蓋も一緒に動かす |
+| 軌跡だけ設定に従う | 指の丸とカーソルは必ず描く（`view` を選んだ理由そのもの）。リップルと軌跡は `secondarySimulator.showTouchTrail`（**既定 OFF**）が ON のときだけ — `trailPoints` が空なら描く点が無い、という形で効く。**離した跡の余韻**（350ms で消える・8 点まで）も同じ設定に従う — 画面の波紋は DOM 要素なので canvas に入らず、放っておくと**録画のほうが情報が少ない**ことになる |
+| 録画中は取り込み幅を下げない | サイドバーの狭さがそのままファイルの解像度になるため、`RECORDING_WIDTH`（1080px）を下回らせない（`CaptureStats.ts`）。上限がこの値なのはメモリの蓋が 2 つあるから — サイドカーの stdout は 1 行 1MB で捨てる、合成 canvas は 幅 × 高さ × 4 バイト。**効くのはサイドカー経路だけ**（WDA / Android の帯域を録画のために動かす手段が無い）。録画を止めれば表示幅への追従へ戻る |
+| 合成 canvas は偶数寸法へ丸める | 先頭に試す MIME は H.264（`avc1`）で奇数寸法を前提にしていない。VP8/VP9 は通るので、揃えないと「サイドバー幅と環境次第でときどき録画が始まらない」という切り分けの難しい壊れ方になる |
 | 録画中は直結配信をやめる | 別オリジンの `<img>` を描いた canvas は汚染され、`captureStream` が SecurityError で止まる。中継経路のフレームは data URL なので汚染しない |
 | コンテナは webview が決める | `MediaRecorder.isTypeSupported` の結果は Chromium の版と H.264 エンコーダに依る。mp4 が通ればそのまま mp4、駄目なら webm。保存ダイアログの拡張子も揃える |
 
@@ -391,7 +393,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない。**`init` は「webview が作り直された」の合図**でもあり、ホストが一度しか送らないもの（デバイス一覧・`selectedDevice`・`mode`・録画中の表示・直結の `streamUrl`）を全部送り直す。一覧は差分判定（署名）を飛ばす — `resolveWebviewView` が呼ばれない作り直し（レンダラのクラッシュ・リロード・ビューの移動）では、送り直す機会がここしか無いため |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
-| `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限） |
+| `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限）。**ビュー録画のあいだだけは例外**で、`RECORDING_WIDTH`（1080px）を下回らせない（§7.2） |
 
 | ホスト → webview | 意味 |
 |---|---|
@@ -400,7 +402,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `settings` | `showDeviceFrame` / `showResourceStats` / `showTouchTrail`（`secondarySimulator.*` の見た目設定）。**webview は写しを持たない** — 軌跡の ON/OFF もこれだけで決まる（既定 OFF） |
 | `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
 | `countdown` | 録画開始前の秒読み（`value: 3→2→1`、`0` で消す）。**進行はホストが持ち**、webview は数字と音を出すだけ |
-| `startViewRecording {mimeType, bitsPerSecond, timesliceMs, maxUnacked}` | ビュー録画の開始。`timesliceMs` を必ず渡す（無指定の MediaRecorder は停止まで全部抱える）。`maxUnacked` は webview が抱えてよい未 ack チャンク数 |
+| `startViewRecording {mimeType, bitrate, timesliceMs, maxUnacked}` | ビュー録画の開始。`bitrate` は `{perPixel, min, max}` で、**実際の値は webview が canvas の画素数から決める**（幅はサイドバーの広さと録画かどうかで数倍変わるので、固定値だと狭いとき過剰・広いとき不足になる）。`timesliceMs` を必ず渡す（無指定の MediaRecorder は停止まで全部抱える）。`maxUnacked` は webview が抱えてよい未 ack チャンク数 |
 | `stopViewRecording` | ビュー録画の停止。webview は最後の 1 チャンクを出してから `viewRecordingStopped` を返す |
 | `viewRecordingAck {seq}` | チャンクを 1 つ書き終えた。**書き終えるまで返さない**ので、これがそのまま逆圧になる |
 | `sound` | 効果音（`shutter`）。スクリーンショット保存時など |
