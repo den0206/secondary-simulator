@@ -358,7 +358,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /** 未接続かつ表示中のときだけタイマーを回す。条件が崩れたら止める。 */
   private syncAutoConnectTimer(): void {
     const wanted =
-      this.view?.visible === true &&
+      this.isViewVisible() &&
       !this.currentDeviceId &&
       this.isAutoConnectEnabled();
     if (wanted === !!this.autoConnectTimer) return;

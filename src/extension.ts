@@ -31,7 +31,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const commands = [
     vscode.commands.registerCommand('simulator.selectDevice', async () => {
-      await vscode.commands.executeCommand('simulatorView.focus');
+      await vscode.commands.executeCommand(
+        `${SimulatorWebviewProvider.viewType}.focus`
+      );
       if (!provider) return;
       await pickDevice(provider);
     }),
