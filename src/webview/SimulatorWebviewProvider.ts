@@ -126,6 +126,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * （中継経路のフレームは data URL なので汚染しない）。
    */
   private forceRelayCapture = false;
+  /**
+   * ビュー録画のために取り込み幅を上げているか。
+   * 取り込みを作り直すと新しいインスタンスになるので、**ここが唯一の持ち主**で、
+   * `createCaptureInstance` の後に必ず載せ直す。
+   */
+  private viewRecordingCapture = false;
   /** 直近の統計 tick から書けたバイト数。フッターの録画チップに出して 0 に戻す。 */
   private recordingBytesSinceTick = 0;
   /**
@@ -135,12 +141,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private recordingTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly MAX_RECORDING_MS = 10 * 60_000;
   /**
-   * ビュー録画の総量の蓋。時間の上限とは別に持つ — ビットレートを固定してあるので
-   * 10 分でも 300MB 程度に収まるが、**伸び方を言い切れる状態**にしておく。
+   * ビュー録画の総量の蓋。時間の上限とは別に持つ — ビットレートに上限があるので
+   * 10 分でも 450MB を超えないが、**伸び方を言い切れる状態**にしておく。
    */
   private static readonly MAX_VIEW_RECORDING_BYTES = 512 * 1024 * 1024;
-  /** webview が符号化するビットレート。ファイルの伸びを予測可能にするため固定する。 */
-  private static readonly VIEW_RECORDING_BPS = 4_000_000;
+  /**
+   * 符号化のビットレート。**canvas の画素数から webview が決める**（幅はサイドバーの
+   * 広さと録画かどうかで数倍変わるので、固定値だと狭いとき過剰・広いとき不足になる）。
+   *
+   * 上限は**総量の蓋から逆算している** — 6Mbps × 10 分 ≒ 450MB で、
+   * `MAX_VIEW_RECORDING_BYTES`（512MB）の内側に収まる。ここを上げるなら
+   * 蓋のほうも一緒に動かさないと、10 分に届く前に `size` で打ち切られる。
+   */
+  private static readonly VIEW_RECORDING_BITRATE = {
+    /** 1 画素あたり毎秒のビット数。1080×2340 で約 5.6Mbps、640×1386 で約 2.0Mbps。 */
+    perPixel: 2.2,
+    min: 1_500_000,
+    max: 6_000_000,
+  };
   /** チャンクの間隔。無指定だと MediaRecorder が停止まで全部抱える。 */
   private static readonly VIEW_RECORDING_TIMESLICE_MS = 1_000;
   /** webview が抱えてよい未 ack チャンク数。超えたら**捨てずに**録画を止める。 */
@@ -964,6 +982,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           mode: cfg.get<string>('captureMode', 'auto') === 'poll' ? 'poll' : 'auto',
         }
       );
+      // 張り直しで新しいインスタンスになるので、録画中の幅を持ち直す
+      this.currentCapture.setRecording?.(this.viewRecordingCapture);
       Logger.info('Using sidecar framebuffer capture');
       return;
     }
@@ -1334,16 +1354,29 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   // ---- ビュー録画（webview が符号化し、ここが書く）------------------------------
 
-  /** 直結配信をやめて中継経路へ戻す（canvas の汚染を避けるため）。 */
+  /**
+   * 録画のために取り込みを整える。
+   *
+   * - **取り込み幅を上げる**（サイドカー経路のみ）。表示幅に合わせたままだと
+   *   サイドバーの狭さがそのままファイルの解像度になる。
+   * - **直結配信をやめて中継経路へ戻す**。別オリジンの `<img>` は canvas を汚染し、
+   *   `captureStream` が SecurityError で止まるため。
+   *
+   * 幅の切り替えは秒読み（3 秒）のあいだに新しい大きさのフレームが届く。
+   */
   private async prepareViewCapture(): Promise<void> {
+    this.viewRecordingCapture = true;
+    this.currentCapture?.setRecording?.(true);
     if (!this.isDirectStreamEnabled()) return;
     this.forceRelayCapture = true;
     this.disposeProxy();
     await this.restartDisplay();
   }
 
-  /** 直結配信へ戻す。録画を始められなかったときも必ず通る。 */
+  /** 取り込みを元へ戻す。録画を始められなかったときも必ず通る。 */
   private async releaseViewCapture(): Promise<void> {
+    this.viewRecordingCapture = false;
+    this.currentCapture?.setRecording?.(false);
     if (!this.forceRelayCapture) return;
     this.forceRelayCapture = false;
     await this.restartDisplay();
@@ -1394,7 +1427,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         this.postMessage({
           type: 'startViewRecording',
           mimeType,
-          bitsPerSecond: SimulatorWebviewProvider.VIEW_RECORDING_BPS,
+          bitrate: SimulatorWebviewProvider.VIEW_RECORDING_BITRATE,
           timesliceMs: SimulatorWebviewProvider.VIEW_RECORDING_TIMESLICE_MS,
           maxUnacked: SimulatorWebviewProvider.VIEW_RECORDING_MAX_UNACKED,
         });

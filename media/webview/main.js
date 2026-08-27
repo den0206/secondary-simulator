@@ -196,6 +196,10 @@ function onPointerDown(e) {
     post('touch2Down', {x: a.x, y: a.y, x2: b.x, y2: b.y});
     clearTrail();
   }
+  // **押した瞬間を録画に写す。** 合成し直す契機はフレーム到着と pointermove しか
+  // 無く、静止画面ではフレームが 1 枚も来ないので、動かさずにタップすると
+  // 心拍（毎秒 1 枚）に当たらない限り指が写らない。
+  scheduleViewDraw();
   e.preventDefault();
 }
 
@@ -263,6 +267,9 @@ function onPointerUp(e) {
     mode = 0;
     clearTrail();
   }
+  pushFadeMark(p);
+  // 離した瞬間も同じ理由で描き直す（指が消えたことが録画に反映されない）
+  scheduleViewDraw();
   e.preventDefault();
 }
 
@@ -304,6 +311,14 @@ function pushTrail(p) {
   if (trailPoints.length > 40) trailPoints.shift();
   drawTrail();
   scheduleViewDraw();
+}
+
+/** テーマのアクセント色。高頻度パスから毎回呼ばないこと。 */
+function readAccent() {
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue('--vscode-focusBorder') ||
+    '#007acc'
+  );
 }
 
 function drawTrail() {
@@ -360,6 +375,20 @@ const VIEW_RECORD_MIMES = [
   'video/webm',
 ];
 
+/**
+ * 符号化のビットレート。**canvas の画素数から決める。**
+ *
+ * 幅はサイドバーの広さと「録画中か」で数倍変わるので、固定値だと狭いときに過剰、
+ * 広いときに不足する。上下限はホストが持つ（総量の蓋から逆算されている）。
+ */
+function viewRecordingBitrate(width, height, params) {
+  const p = params || {};
+  const perPixel = p.perPixel > 0 ? p.perPixel : 2.2;
+  const min = p.min > 0 ? p.min : 1500000;
+  const max = p.max > 0 ? p.max : 6000000;
+  return Math.round(Math.min(max, Math.max(min, width * height * perPixel)));
+}
+
 /** この環境で録れるコンテナ。録れないなら null（ホストは端末側の録画へ回す）。 */
 function supportedViewRecordingMime() {
   try {
@@ -378,6 +407,72 @@ function supportedViewRecordingMime() {
 
 // 録画中だけ載る。1 セッション 1 つで、終わったら必ず null に戻す。
 let viewRec = null;
+
+// ---- 離した跡の余韻（録画にだけ描く）------------------------------------------
+//
+// 指マークは `pointers` に載っているあいだしか描かれないので、タップは出力で
+// 数フレームしか残らない。画面には `showRipple` が 400ms の波紋を出しているが、
+// **あれは DOM 要素なので canvas には入らない** — 録画のほうが情報が少ない、
+// という逆転が起きていた。
+//
+// **写すかどうかは画面と揃える**（`secondarySimulator.showTouchTrail`）。
+// 「画面には出さないが録画には残す」を作ると、どちらがどちらに効く設定なのかを
+// 利用者が覚えられない。
+//
+// 溜めない決まりごと: 本数の上限（`MAX_FADE_MARKS`）と、時間で必ず消えること
+// （`FADE_MARK_MS`）をセットで持つ。古い順に並ぶので先頭から捨てられる。
+const FADE_MARK_MS = 350;
+const MAX_FADE_MARKS = 8;
+let fadeMarks = [];
+/**
+ * 余韻を描き続けるためのタイマー。**rAF の自己再帰にしない** — 消えるまでの
+ * 350ms を 60Hz で回す必要は無いし、確保したものを 1 本の変数で持てるので
+ * 後始末（`releaseViewRecording`）が確実になる。
+ */
+let fadeTimer = null;
+const FADE_FRAME_MS = 33;
+
+/** 離した点を余韻として積む。録画中で、かつ画面にも出す設定のときだけ。 */
+function pushFadeMark(p) {
+  if (!viewRec || !trailEnabled) return;
+  fadeMarks.push({x: p.x, y: p.y, at: nowMs()});
+  // 上限は「捨てる」で当てる（古い順に並んでいるので先頭が最も薄い）
+  while (fadeMarks.length > MAX_FADE_MARKS) fadeMarks.shift();
+  pumpFade();
+}
+
+/** 生きている余韻があるあいだだけ合成し直す。消え切ったら自分で止まる。 */
+function pumpFade() {
+  if (fadeTimer) return;
+  const step = () => {
+    fadeTimer = null;
+    dropExpiredFadeMarks();
+    // 「消えた状態」も 1 枚出力へ残してから止める
+    scheduleViewDraw();
+    if (!viewRec || fadeMarks.length === 0) return;
+    fadeTimer = setTimeout(step, FADE_FRAME_MS);
+  };
+  fadeTimer = setTimeout(step, FADE_FRAME_MS);
+}
+
+function dropExpiredFadeMarks() {
+  const t = nowMs();
+  while (fadeMarks.length && t - fadeMarks[0].at >= FADE_MARK_MS) {
+    fadeMarks.shift();
+  }
+}
+
+function clearFadeMarks() {
+  fadeMarks = [];
+  if (fadeTimer) clearTimeout(fadeTimer);
+  fadeTimer = null;
+}
+
+function nowMs() {
+  return typeof performance !== 'undefined' && performance.now
+    ? performance.now()
+    : Date.now();
+}
 
 /**
  * 合成し直す合図。フレーム到着とポインタ操作の両方から呼ばれるので、
@@ -410,11 +505,11 @@ function drawViewFrame() {
   }
 }
 
-/** 軌跡・触れている指・カーソルを重ねる。持っている点以上は描かない。 */
+/** 軌跡・触れている指・カーソル・離した跡を重ねる。持っている点以上は描かない。 */
 function drawInputMarks(ctx, w, h) {
-  const accent =
-    getComputedStyle(document.documentElement).getPropertyValue('--vscode-focusBorder') ||
-    '#007acc';
+  // **毎フレーム getComputedStyle を踏まない。** 余韻を入れて描画頻度が上がったので、
+  // 録画開始時に 1 度読んだ色を使い回す（テーマ変更は録画をまたがない）。
+  const accent = (viewRec && viewRec.accent) || readAccent();
   const unit = Math.max(w, h);
 
   if (trailPoints.length > 1) {
@@ -449,6 +544,24 @@ function drawInputMarks(ctx, w, h) {
     ctx.restore();
   }
 
+  // 離した跡。時間で薄くなって必ず消える（`FADE_MARK_MS`）。
+  if (fadeMarks.length) {
+    const t = nowMs();
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(2, unit * 0.004);
+    for (const mark of fadeMarks) {
+      const life = 1 - (t - mark.at) / FADE_MARK_MS;
+      if (life <= 0) continue;
+      ctx.globalAlpha = life;
+      ctx.beginPath();
+      // 薄くなりながら広がる（画面の波紋と同じ見え方に揃える）
+      ctx.arc(mark.x * w, mark.y * h, radius * (1 + (1 - life) * 0.9), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // 押していないあいだのカーソル。触れている指があるときは指の方が情報量が多い。
   if (cursor && pointers.size === 0) {
     ctx.save();
@@ -464,8 +577,11 @@ function drawInputMarks(ctx, w, h) {
 /** ホストの `startViewRecording` を受けて符号化を始める。 */
 function startViewRecording(message) {
   teardownViewRecording();
-  const width = img.naturalWidth || 0;
-  const height = img.naturalHeight || 0;
+  // **偶数へ丸める。** 先頭に試す MIME は H.264（`avc1`）で、奇数寸法は前提から
+  // 外れている。VP8/VP9 は通るので、揃えないと「サイドバー幅と環境次第で
+  // ときどき録画が始まらない」という切り分けの難しい壊れ方になる。
+  const width = (img.naturalWidth || 0) & ~1;
+  const height = (img.naturalHeight || 0) & ~1;
   if (!width || !height) {
     post('viewRecordingError', {message: 'no frame to record yet'});
     return;
@@ -497,7 +613,7 @@ function startViewRecording(message) {
     }
     recorder = new MediaRecorder(stream, {
       mimeType: message.mimeType,
-      videoBitsPerSecond: message.bitsPerSecond,
+      videoBitsPerSecond: viewRecordingBitrate(width, height, message.bitrate),
     });
   } catch (error) {
     if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop());
@@ -511,6 +627,8 @@ function startViewRecording(message) {
     stream,
     recorder,
     requestFrame,
+    // 開始時に 1 度だけ読む（`drawInputMarks` を高頻度パスのままにしない）
+    accent: readAccent(),
     seq: 0,
     unacked: 0,
     maxUnacked: message.maxUnacked || 8,
@@ -622,8 +740,11 @@ function failViewRecording(message) {
   post('viewRecordingError', {message: String(message || 'recording failed')});
 }
 
-/** 確保したもの（タイマー・トラック・レコーダー）を必ず外す。 */
+/** 確保したもの（タイマー・トラック・レコーダー・余韻）を必ず外す。 */
 function releaseViewRecording(rec) {
+  // 余韻は録画にしか描かないので、点も描き続けるタイマーもここで捨てる
+  // （次の録画へ持ち越さない）。
+  clearFadeMarks();
   if (rec.heartbeat) clearInterval(rec.heartbeat);
   rec.heartbeat = null;
   rec.recorder.ondataavailable = null;
