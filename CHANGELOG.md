@@ -28,6 +28,14 @@ so **there is no need to move entries by hand**.
 
 ### Changed
 
+- The view no longer keeps its content alive while hidden. Collapsing the sidebar used to
+  retain the whole webview in memory; the extension already stops capturing and recording
+  when the view goes away and restores everything the moment it comes back, so the memory
+  was buying nothing but a slightly faster reopen. Reopening now also restarts the video,
+  which the recreated view would otherwise be missing.
+- The version used when falling back to running mobilecli through npx is now taken from a
+  single constant that a test keeps equal to the pinned dependency. It had been left at an
+  older release, which defeats the point of pinning.
 - View recordings are no longer limited to the sidebar's own width. While a recording runs,
   the sidecar capture keeps at least 1080 pixels of width even when the panel is narrow, so
   the saved file is not stuck at the 640-pixel default. The ceiling is set by two memory
@@ -47,6 +55,38 @@ so **there is no need to move entries by hand**.
 
 ### Fixed
 
+- Pasting more than about ninety characters onto an iOS Simulator always failed. The
+  sidecar injects text one character at a time and only answers once it is done, but the
+  extension waited the same three seconds it uses for every other command. The paste kept
+  going while the extension reported a failure and the preview dropped to an error screen.
+  Text is now sent in chunks of forty-eight characters and the wait is derived from the
+  length, so a long URL arrives without the preview flinching. Chunking also keeps the
+  sidecar's queue moving, so touches are no longer blocked for the duration of a paste.
+  The paste limit is now 1,024 characters — roughly thirty seconds of typing over HID,
+  where the previous 4,096 was closer to two minutes — and a truncated paste says so.
+- Characters that need Shift were dropped from HID text injection. Only a handful of
+  symbols had a key mapping, so a pasted `https://example.com` arrived as
+  `https//example.com` with no error anywhere. Every printable ASCII character now has a
+  mapping on both sides of the sidecar protocol, and a test keeps the two tables in step.
+- Newlines and tabs took the WebDriverAgent path even on a device using HID, because the
+  split between the two paths tested a character range rather than the key table that
+  actually decides what HID can send. Multi-line text no longer waits for WebDriverAgent
+  to start.
+- Searching for a device wrote to the log forever when mobilecli could not be reached.
+  The search runs every five seconds while nothing is connected, and each failure logged a
+  message with its stack and pushed another error to the view; leaving the sidebar open on
+  a machine without mobilecli grew the output channel by well over a thousand lines an
+  hour, and the output channel cannot be trimmed from an extension. The interval now backs
+  off from five to thirty seconds, only the first three failures are logged, and an error
+  identical to the one already on screen is not sent again. One successful listing resets
+  all three.
+- Hiding the sidebar while a view recording was running could leave the capture running
+  behind it. Stopping the recording restarts the capture at the end, and with direct
+  streaming enabled that restart happened after the panel had already been put away.
+- An Android device reported its input path as WDA in the status bar and the footer, even
+  though WebDriverAgent is not involved — touches go to adb and everything else through
+  mobilecli. It now reads as adb, which keeps the label meaningful when an iOS Simulator
+  really does fall back to WDA.
 - A tap on a still screen could be missing from a view recording entirely. The composite
   was only redrawn when a frame arrived or the pointer moved, and a screen that is not
   changing sends no frames, so a press with no movement had to be lucky enough to coincide
