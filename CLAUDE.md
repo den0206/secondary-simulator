@@ -66,7 +66,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   設定値は上限として扱う）。**ビュー録画のあいだだけは幅を下げない**
   （`RECORDING_WIDTH`。サイドバーの狭さがそのままファイルの解像度になるため）。
   上限を 1080px で止めているのはメモリの蓋が 2 つあるから — サイドカーの stdout は
-  1 行 1MB で捨てる（`SimhidSidecar`）、合成 canvas は 幅 × 高さ × 4 バイトを確保する。静止画面ではフレームが 1 枚も来ないので、死活は
+  1 行 1MB で捨てる（`SimhidSidecar`）、合成 canvas は 幅 × 高さ × 4 バイトを確保する。
+  静止画面ではフレームが 1 枚も来ないので、死活は
   サイドカーの生存通知（`captureAlive`）で見る（`docs/sidecar-protocol.md` §3.5）。
 - **input**: `SimulatorInputController` が司令塔。**iOS Simulator かつサイドカーが
   存在する場合だけ** HID 直接注入（`HidSidecarBackend` → `SimhidSidecar` →

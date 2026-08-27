@@ -88,7 +88,7 @@ VSCodeの設定で以下のオプションを調整できます：
 - **`secondarySimulator.captureFps`**: サイドカー取り込みの通常時 fps（デフォルト: 30）。指を置いているあいだは最大 2 倍・60fps。変化のないフレームは送られない。
 - **`secondarySimulator.captureMaxWidth`**: サイドカーが送る JPEG 幅の上限 px（デフォルト: 640）。実際の幅はサイドバーの表示幅 × devicePixelRatio に追従する。
 - **`secondarySimulator.captureMode`**: `auto`（デフォルト）はディスプレイの変更通知が使えれば使い、駄目ならポーリング。`poll` はタイマ固定。私有 API なので、Xcode 更新で取り込みが不調なときは `poll` に固定する。
-- **`secondarySimulator.recordingSource`**: 録画の作り方 — `view`（既定）はサイドバーに出ている映像を、マウスカーソルとタップごと録る（ドラッグ軌跡は `secondarySimulator.showTouchTrail` を ON にしたときだけ）。`device` は端末側で録るので端末の解像度で残せるが、カーソルとタップは端末の画面そのものには無いため写らない。`view` は webview で符号化するので画質は表示中の映像に従い、ファイルは Chromium が符号化できるほうに応じて MP4 か WebM になる。端末の解像度で残したくてカーソルが要らないなら `device`。
+- **`secondarySimulator.recordingSource`**: 録画の作り方 — `view`（既定）はサイドバーに出ている映像を、マウスカーソルとタップごと録る（ドラッグ軌跡は `secondarySimulator.showTouchTrail` を ON にしたときだけ）。`device` は端末側で録るので端末の解像度で残せるが、カーソルとタップは端末の画面そのものには無いため写らない。`view` は webview で符号化するので、ファイルは Chromium が符号化できるほうに応じて MP4 か WebM になる。録画のあいだは取り込み幅を 1080px より下げないので、サイドバーの狭さがそのままファイルの解像度になることはない（この幅上げが効くのはサイドカー経路だけで、WDA / Android では表示中の映像に従う）。端末の解像度で残したくてカーソルが要らないなら `device`。
 - **`secondarySimulator.showTouchTrail`**: タップした場所にリップルを出し、ドラッグ中は軌跡を描く（デフォルト: false）。サイドバーの上に重ねるだけで、`view` の録画にも写る。
 - **`secondarySimulator.showDeviceFrame`**: 画面のまわりに端末の筐体を描く（デフォルト: true）。サイドバーが狭いときは OFF にすると横幅をすべて使える。
 - **`secondarySimulator.showResourceStats`**: フッターにメモリと拡張ディレクトリのサイズを出す（デフォルト: false）。開発者向けの診断で、映像レートと入力経路は常に出る。
