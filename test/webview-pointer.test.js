@@ -221,6 +221,30 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(SRC, 'utf8'), sandbox, {filename: 'main.js'});
 
 // ---- テスト ----
+
+/**
+ * main.js の内部状態を覗く。`let` の束縛は sandbox のプロパティにならないが、
+ * **同じコンテキストで後から評価すれば見える**（グローバルの字句環境を共有する）。
+ * 上限や後始末は外から観測できないので、ここだけ内部を見る。
+ */
+const evalIn = (expr) => vm.runInContext(expr, sandbox);
+const fadeMarkCount = () => evalIn('fadeMarks.length');
+
+/** ビュー録画を始める。既定は 26) と同じ形。 */
+function startRec(over) {
+  listeners['window:message']({
+    data: Object.assign(
+      {
+        type: 'startViewRecording',
+        mimeType: 'video/mp4;codecs=avc1.42E01E',
+        timesliceMs: 1000,
+        maxUnacked: 8,
+      },
+      over
+    ),
+  });
+}
+
 function fire(target, ev, obj) {
   const fn = listeners[`${target}:${ev}`];
   if (!fn) throw new Error(`no listener ${target}:${ev}`);
@@ -927,6 +951,103 @@ async function viewRecordingCases() {
   const rec3 = recorders[recorders.length - 1];
   listeners['window:message']({data: {type: 'disconnected'}});
   check('切断で止まる', rec3.state === 'inactive');
+
+  console.log('\n32) ビュー録画: 押下・離上でも合成し直す');
+  // 静止画面はフレームが 1 枚も来ないので、ここで描かないとタップが録画に写らない
+  sent.length = 0;
+  recorders.length = 0;
+  startRec({maxUnacked: 8});
+  framesRequested = 0;
+  fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+  check('押下で 1 枚出す', framesRequested >= 1, String(framesRequested));
+  const afterDown = framesRequested;
+  fire('simulator-container', 'pointerup', {clientX: 150, clientY: 300});
+  check('離上でも出す', framesRequested > afterDown, String(framesRequested));
+  listeners['window:message']({data: {type: 'stopViewRecording'}});
+  await tick();
+
+  console.log('\n33) ビュー録画: 寸法を偶数へ丸める（H.264 は奇数を前提にしない）');
+  els['simulator-img'].naturalWidth = 321;
+  els['simulator-img'].naturalHeight = 641;
+  recorders.length = 0;
+  startRec({maxUnacked: 8});
+  const dims = evalIn('viewRec && [viewRec.canvas.width, viewRec.canvas.height]');
+  check(
+    '321x641 を 320x640 へ丸める',
+    dims && dims[0] === 320 && dims[1] === 640,
+    JSON.stringify(dims)
+  );
+  listeners['window:message']({data: {type: 'stopViewRecording'}});
+  await tick();
+
+  console.log('\n34) ビュー録画: ビットレートを画素数から決める');
+  els['simulator-img'].naturalWidth = 1080;
+  els['simulator-img'].naturalHeight = 2340;
+  recorders.length = 0;
+  startRec({maxUnacked: 8, bitrate: {perPixel: 2.2, min: 1500000, max: 6000000}});
+  const wide = recorders[recorders.length - 1];
+  check(
+    '画素数 × 係数で決める（1080x2340 で約 5.6Mbps）',
+    wide.videoBitsPerSecond === Math.round(1080 * 2340 * 2.2),
+    String(wide.videoBitsPerSecond)
+  );
+  check(
+    '10 分でも総量の蓋（512MB）の内側に収まる',
+    (wide.videoBitsPerSecond / 8) * 600 < 512 * 1024 * 1024,
+    `${Math.round((wide.videoBitsPerSecond / 8) * 600 / 1024 / 1024)}MB`
+  );
+  listeners['window:message']({data: {type: 'stopViewRecording'}});
+  await tick();
+
+  els['simulator-img'].naturalWidth = 320;
+  els['simulator-img'].naturalHeight = 640;
+  recorders.length = 0;
+  startRec({maxUnacked: 8, bitrate: {perPixel: 2.2, min: 1500000, max: 6000000}});
+  const narrow = recorders[recorders.length - 1];
+  check(
+    '狭い canvas では下限まで落とす（無駄に太らせない）',
+    narrow.videoBitsPerSecond === 1500000,
+    String(narrow.videoBitsPerSecond)
+  );
+
+  els['simulator-img'].naturalWidth = 4000;
+  els['simulator-img'].naturalHeight = 4000;
+  recorders.length = 0;
+  startRec({bitrate: {perPixel: 2.2, min: 1500000, max: 6000000}});
+  check(
+    '極端に広くても上限で頭打ち（蓋を越えさせない）',
+    recorders[recorders.length - 1].videoBitsPerSecond === 6000000,
+    String(recorders[recorders.length - 1].videoBitsPerSecond)
+  );
+  listeners['window:message']({data: {type: 'stopViewRecording'}});
+  await tick();
+
+  console.log('\n35) ビュー録画: 離した跡は設定に従い、溜まらない');
+  els['simulator-img'].naturalWidth = 320;
+  els['simulator-img'].naturalHeight = 640;
+  recorders.length = 0;
+  startRec({bitrate: {perPixel: 2.2, min: 1500000, max: 6000000}});
+  // 画面に出さない設定（既定）なら録画にも出さない = 余韻の点を持たない
+  listeners['window:message']({data: {type: 'settings', showTouchTrail: false}});
+  framesRequested = 0;
+  fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+  fire('simulator-container', 'pointerup', {clientX: 150, clientY: 300});
+  check('設定 OFF では余韻を持たない', fadeMarkCount() === 0, String(fadeMarkCount()));
+
+  listeners['window:message']({data: {type: 'settings', showTouchTrail: true}});
+  for (let i = 0; i < 20; i++) {
+    fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
+    fire('simulator-container', 'pointerup', {clientX: 150, clientY: 300});
+  }
+  check(
+    '20 回タップしても上限で頭打ち（増える一方の入れ物にしない）',
+    fadeMarkCount() > 0 && fadeMarkCount() <= 8,
+    String(fadeMarkCount())
+  );
+
+  listeners['window:message']({data: {type: 'stopViewRecording'}});
+  await tick();
+  check('録画を止めたら余韻も捨てる', fadeMarkCount() === 0, String(fadeMarkCount()));
 }
 
 viewRecordingCases().then(() => {
