@@ -24,6 +24,16 @@ VSCode / Cursor 拡張機能として、iOS/Androidシミュレータとエミ�
   <img src="media/walkthrough/move.png" width="560" alt="アクティビティバーの Secondary Simulator アイコンを右クリックし、［移動先］→［セカンダリ サイド バー］を選ぶ操作">
 </p>
 
+### 🧩 モバイル開発者におすすめのレイアウト
+
+<p align="center">
+  <img src="media/recomend-layout.png" width="1200" alt="左にデバイスプレビュー、中央にエディタ、右のセカンダリサイドバーに AI CLI ターミナルを 2 つ並べたレイアウト">
+</p>
+
+左にデバイス、中央にコード、右に AI CLI のターミナル。エージェントがコードを直すあいだ、ウィンドウを切り替えずにアプリの反応をそのまま見られます。右側のターミナルは [Terminal For AI CLI](https://open-vsx.org/extension/yuuki-sakai/terminal-for-ai-cli)（作者による別の拡張機能）で、Claude Code や Cursor Agent などの CLI セッションをセカンダリサイドバーにまとめて置けます。
+
+この並びではプレビューはセカンダリサイドバーへ移さず、プライマリサイドバーに置いたままにします。画面の広さに合わせてどちらかを選んでください。
+
 ## 🎯 概要
 
 Secondary Simulatorは、XcodeやAndroid Studioのシミュレータウィンドウを開くことなく、エディタのサイドバーから直接デバイスを表示・操作できる拡張機能です。MJPEGストリーミングによる低レイテンシな画面表示と、iOS Simulator への HID 直接注入による低遅延な操作を実現しています。

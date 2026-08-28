@@ -24,6 +24,16 @@ A VS Code / Cursor extension that shows iOS Simulators and Android Emulators in 
   <img src="media/walkthrough/move.png" width="560" alt="Right-clicking the Secondary Simulator icon in the Activity Bar, then Move To, then Secondary Side Bar">
 </p>
 
+### 🧩 A layout that works well for mobile developers
+
+<p align="center">
+  <img src="media/recomend-layout.png" width="1200" alt="Device preview in the Primary Side Bar, the editor in the middle, and two AI CLI terminals in the Secondary Side Bar">
+</p>
+
+Device preview on the left, code in the middle, AI CLI terminals on the right: you can watch the app react while an agent edits the code, without a single window switch. The terminals on the right are [Terminal For AI CLI](https://open-vsx.org/extension/yuuki-sakai/terminal-for-ai-cli) — another extension of mine, which keeps several CLI sessions (Claude Code, Cursor Agent, and the like) in the Secondary Side Bar.
+
+With this arrangement the preview stays in the Primary Side Bar instead of moving to the Secondary Side Bar; pick whichever of the two suits your screen.
+
 ## 🎯 Overview
 
 Secondary Simulator mirrors your device inside the editor, so you never have to bring the Xcode or Android Studio window forward. The screen arrives over MJPEG streaming, and on the iOS Simulator input is injected directly as HID events for minimal latency.
