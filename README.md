@@ -132,7 +132,7 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 
 Picking a stopped device from the dropdown offers to boot it, the same as the command palette does.
 
-The status bar (bottom right) shows the connected device and whether input is going through **HID** or **WDA**; the same label appears in the sidebar footer. A silent demotion from HID to WDA is visible there.
+The status bar (bottom right) shows the connected device and the input path — **HID**, **WDA**, or **ADB** (Android, where WebDriverAgent is not involved at all); the same label appears in the sidebar footer. A silent demotion from HID to WDA is visible there.
 
 ## ⌨️ Commands
 
