@@ -25,8 +25,11 @@ node_modules/**
 !node_modules/mobilecli/package.json
 !node_modules/mobilecli/index.js
 !node_modules/mobilecli/bin/mobilecli-darwin-*
-# GitHub README はリポジトリ内の相対パスで参照。VSIX サイズ削減のため demo.gif だけ同梱しない。
+# README の画像は vsce が GitHub raw の絶対 URL へ書き換えるので、VSIX 内の実体は読まれない。
+# README でしか使わない画像は同梱しない（walkthrough は move.svg を使う）。
 media/demo.gif
+media/recomend-layout.png
+media/walkthrough/move.png
 
 *.md
 !README.md
