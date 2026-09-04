@@ -37,6 +37,14 @@ import {MobileCliClient} from '../utils/MobileCliClient';
 import {MobileCliServer} from '../utils/MobileCliServer';
 import {collectResourceStats} from '../utils/ResourceStats';
 import {statusStrings, webviewStrings} from '../utils/Strings';
+import {
+  asFiniteNumber,
+  asFlag,
+  asIndex,
+  asPositiveNumber,
+  asText,
+  asTextArray,
+} from './WebviewMessage';
 
 /**
  * 録画の作り方。
@@ -549,26 +557,31 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           Logger.show();
           break;
 
-        case 'setAutoConnect':
+        case 'setAutoConnect': {
           // 設定へ書き戻す。onDidChangeConfiguration 経由でタイマーと UI が揃う。
+          const enabled = asFlag(message.enabled);
+          if (enabled === null) break;
           await vscode.workspace
             .getConfiguration('secondarySimulator')
-            .update(
-              'autoConnect',
-              message.enabled as boolean,
-              vscode.ConfigurationTarget.Global
-            );
+            .update('autoConnect', enabled, vscode.ConfigurationTarget.Global);
           break;
+        }
 
-        case 'deviceChange':
-          await this.selectDevice(message.deviceId as string);
+        case 'deviceChange': {
+          const deviceId = asText(message.deviceId);
+          if (!deviceId) break;
+          await this.selectDevice(deviceId);
           break;
+        }
 
         // 停止中のデバイスを選んだとき。コマンドパレット側と同じ確認を出して起動する
         // （以前は webview からだけ「起動していません」で終わっていた）。
-        case 'bootDevice':
-          await this.confirmAndBoot(message.deviceId as string);
+        case 'bootDevice': {
+          const deviceId = asText(message.deviceId);
+          if (!deviceId) break;
+          await this.confirmAndBoot(deviceId);
           break;
+        }
 
         case 'record':
           await this.toggleRecording();
@@ -579,12 +592,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           this.viewStartWaiter?.({ok: true});
           break;
 
-        case 'viewRecordingChunk':
-          await this.writeViewChunk(
-            message.seq as number,
-            message.data as string
-          );
+        // 形が揃わないチャンクは書かない。**黙って捨てても消えはしない** —
+        // 連番が飛ぶので `ViewRecordingWriter` が gap として録画ごと打ち切る
+        // （壊れたファイルを「保存できた」と言わないため）。
+        case 'viewRecordingChunk': {
+          const seq = asIndex(message.seq);
+          const data = asText(message.data);
+          if (seq === null || !data) {
+            Logger.warn('ビュー録画のチャンクの形が不正（書かずに捨てる）');
+            break;
+          }
+          await this.writeViewChunk(seq, data);
           break;
+        }
 
         case 'viewRecordingStopped':
           this.viewStopWaiter?.();
@@ -612,11 +632,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
 
         // 表示中の実ピクセル幅。サイドバーの幅に合わせて取り込みの幅を決める。
-        case 'viewport':
+        case 'viewport': {
+          const width = asPositiveNumber(message.width);
+          if (width === null) break;
           if (this.currentCapture instanceof SidecarCapture) {
-            this.currentCapture.setViewportWidth(message.width as number);
+            this.currentCapture.setViewportWidth(width);
           }
           break;
+        }
 
         // Phase 1: 生ポインタイベント。タップ/スワイプ/ロングプレスの判定は端末に委ねる。
         case 'touchDown':
@@ -632,18 +655,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.handleTouch('up', message);
           break;
 
-        case 'keypress':
+        case 'keypress': {
+          const key = asText(message.key);
+          if (!key) break;
+          const special = asFlag(message.special) ?? false;
+          // 部分的に受けると意味が変わる（Cmd が落ちた Cmd+A は A になる）ので、
+          // 文字列以外が混ざった一覧は修飾キー無しとして扱う
+          const modifiers = asTextArray(message.modifiers) ?? undefined;
           // 内容は載せない。既定レベルで 1 打鍵 1 行を出力チャンネル（＝この拡張で
           // 唯一の無制限バッファ）へ書くと、パスワードまでセッション中残り続ける。
-          Logger.debug(
-            `keypress: ${keyLabel(message.key as string, message.special as boolean)}`
-          );
-          await this.handleKeypress(
-            message.key as string,
-            message.special as boolean,
-            message.modifiers as string[] | undefined
-          );
+          Logger.debug(`keypress: ${keyLabel(key, special)}`);
+          await this.handleKeypress(key, special, modifiers);
           break;
+        }
 
         case 'home':
           Logger.info('Home button pressed');
@@ -1115,9 +1139,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     message: {[key: string]: unknown}
   ): Promise<void> {
     if (!this.currentDeviceId || !this.inputController) return;
-    const x = message.x as number;
-    const y = message.y as number;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const x = asFiniteNumber(message.x);
+    const y = asFiniteNumber(message.y);
+    if (x === null || y === null) return;
 
     // 押している間だけ取り込みを速くする。move では呼ばない（60Hz で届くため）。
     if (phase !== 'move' && this.currentCapture instanceof SidecarCapture) {
@@ -1126,13 +1150,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const cx = this.clamp01(x);
     const cy = this.clamp01(y);
 
-    const hasSecond =
-      Number.isFinite(message.x2 as number) &&
-      Number.isFinite(message.y2 as number);
+    const x2 = asFiniteNumber(message.x2);
+    const y2 = asFiniteNumber(message.y2);
 
-    if (hasSecond) {
-      const cx2 = this.clamp01(message.x2 as number);
-      const cy2 = this.clamp01(message.y2 as number);
+    if (x2 !== null && y2 !== null) {
+      const cx2 = this.clamp01(x2);
+      const cy2 = this.clamp01(y2);
       if (phase === 'down') await this.inputController.touch2Down(cx, cy, cx2, cy2);
       else if (phase === 'move') await this.inputController.touch2Move(cx, cy, cx2, cy2);
       else await this.inputController.touch2Up(cx, cy, cx2, cy2);
