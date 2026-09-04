@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-09-04
+
 ### Fixed
 
 - A recording in progress is now finished before the extension shuts down. Closing the
@@ -475,7 +477,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.0...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.1...HEAD
+[0.6.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.0...Ver_0.6.1
 [0.6.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.5.0...Ver_0.6.0
 [0.5.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.4.0...Ver_0.5.0
 [0.4.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.3.1...Ver_0.4.0
