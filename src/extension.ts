@@ -131,10 +131,12 @@ export function activate(context: vscode.ExtensionContext): void {
     configListener,
     // **provider を statusBar より先に捨てる。** provider.dispose() は最後に
     // 「未接続」を流すので、順序が逆だと破棄済みの StatusBarItem を触ることになる。
+    // ここは `deactivate` が済んだ後の保険（Disposable は Promise を待てないので、
+    // 録画の書き終わりを待つ経路は `deactivate` 側に置く）。
     {
       dispose: () => {
         if (provider) {
-          provider.dispose();
+          void provider.dispose();
           provider = null;
         }
       },
@@ -199,9 +201,18 @@ async function pickDevice(p: SimulatorWebviewProvider): Promise<void> {
   await p.selectDevice(picked.deviceId);
 }
 
-export function deactivate(): void {
+/**
+ * **Promise を返す。** 録画中にウィンドウを閉じた場合、`provider.dispose()` は
+ * webview に符号化を止めさせて最後のチャンク（mp4 の `moov`）を書き終えるまで待つ。
+ * ここで待たないと、映像は入っているのに再生できないファイルが残る。
+ *
+ * `context.subscriptions` の Disposable は Promise を待てないので、待つ必要がある
+ * 後始末はこちらに置く（VS Code は `deactivate` の Thenable を待つ）。
+ * 待ちの上限は `SimulatorWebviewProvider.DISPOSE_STOP_BUDGET_MS` が持つ。
+ */
+export async function deactivate(): Promise<void> {
   if (provider) {
-    provider.dispose();
+    await provider.dispose();
     provider = null;
   }
   Logger.info('Secondary Simulator extension deactivated');
