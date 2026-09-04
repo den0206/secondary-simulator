@@ -10,6 +10,18 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Messages coming from the webview are checked at the boundary instead of being cast to
+  the expected type. Values arrive through `postMessage`, which carries no type guarantee,
+  and they used to flow straight into mobilecli parameters and `Buffer.from(data,
+  'base64')` — a webview rebuilt after a renderer crash, or a version skew between the
+  extension and the webview, could put anything there. Values that do not match are
+  dropped: an ill-formed recording chunk is not written (the sequence gap then aborts the
+  recording, which is the existing behaviour for a lost chunk — a broken file is never
+  reported as saved), and a malformed modifier list sends the key without modifiers rather
+  than dropping the keystroke.
+
 ## [0.6.0] — 2026-08-28
 
 ### Added
