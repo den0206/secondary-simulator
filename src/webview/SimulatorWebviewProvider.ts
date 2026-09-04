@@ -196,6 +196,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private static readonly VIEW_RECORDING_REPLY_MS = 10_000;
   /** 開始前に webview が出す秒読み。押した直後の画面が頭に写らないための猶予。 */
   private static readonly RECORDING_COUNTDOWN_SEC = 3;
+
+  /**
+   * 終了時に録画の後始末へ与える時間（ms）。VS Code は `deactivate` を無限には
+   * 待たないので、待ち切れないときは残りの後始末を優先する。
+   */
+  static readonly DISPOSE_STOP_BUDGET_MS = 5_000;
   /**
    * 開始／停止の RPC が飛んでいる最中か。停止は端末からの引き上げがあり数秒かかるので、
    * その間にもう一度押されると**止め終える前に新しい録画を始めて**しまう。
@@ -1612,11 +1618,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    */
   private async stopRecording(options?: {
     abort?: ViewRecordingAbort;
+    quiet?: boolean;
   }): Promise<void> {
     const session = this.recording;
     if (!session) return;
     if (session.source === 'view') {
-      await this.stopViewRecording(session, options?.abort);
+      await this.stopViewRecording(session, options?.abort, options?.quiet);
       return;
     }
 
@@ -1632,6 +1639,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       await this.mobileCliClient.stopScreenRecord(session.deviceId);
     } catch (error) {
       Logger.error('録画の停止に失敗', error as Error);
+      // 終了中は聞かない。ダイアログの応答を待つと deactivate が返らない
+      if (options?.quiet) {
+        this.recordingBusy = false;
+        this.clearRecordingTimer();
+        this.recording = null;
+        return;
+      }
       const retry = vscode.l10n.t('Retry');
       const answer = await vscode.window.showErrorMessage(
         vscode.l10n.t(
@@ -1651,7 +1665,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.clearRecordingTimer();
     this.recording = null;
-    await this.finishRecording(session);
+    await this.finishRecording(session, undefined, options?.quiet);
   }
 
   /**
@@ -1660,7 +1674,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    */
   private async stopViewRecording(
     session: {deviceId: string; target: vscode.Uri; source: RecordingSource},
-    abort?: ViewRecordingAbort
+    abort?: ViewRecordingAbort,
+    quiet?: boolean
   ): Promise<void> {
     // 停止ボタンと打ち切りが重なっても 1 回で終わらせる
     if (this.recordingBusy) return;
@@ -1682,7 +1697,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 停止の応答を待っているあいだに打ち切られた（停止と stall が重なった）場合、
     // 呼び手は abort を知らない。**書き込み側の記録を優先する** — 末尾が欠けた
     // ファイルを「保存できた」と言わないため。
-    await this.finishRecording(session, abort ?? writer?.abortReason ?? undefined);
+    await this.finishRecording(
+      session,
+      abort ?? writer?.abortReason ?? undefined,
+      quiet
+    );
   }
 
   /**
@@ -1692,16 +1711,36 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * （映像は入っているのに再生できない）。**成功と言い切る前に中身を見る** —
    * 音と通知が「保存できた」の合図になっているので、黙って通すと利用者は
    * 壊れたことに気づけない（`RecordingFile.ts`）。
+   *
+   * @param quiet 拡張の終了中。**結果はログにだけ残す** — 閉じていくウィンドウでは
+   *   `showInformationMessage` が解決しないことがあり、待つと `deactivate` が
+   *   返らない（返らなければ VS Code は待ちを打ち切り、後始末の途中でホストが消える）。
    */
   private async finishRecording(
     session: {deviceId: string; target: vscode.Uri; source: RecordingSource},
-    abort?: ViewRecordingAbort
+    abort?: ViewRecordingAbort,
+    quiet?: boolean
   ): Promise<void> {
     const check = await verifyRecording(session.target.fsPath);
     // 総量の上限は「そこまでは正しく録れている」なので成功として扱う。
     // 欠落・停止・エラーは末尾が落ちているので、成功の合図を出さない。
     const intact = check.ok && (!abort || abort.reason === 'size');
     this.postMessage({type: 'recording', active: false, ok: intact});
+
+    if (quiet) {
+      if (!check.ok) {
+        Logger.error(
+          `録画が完成していない（${check.reason}）: ${session.target.fsPath}`
+        );
+      } else if (abort && abort.reason !== 'size') {
+        Logger.error(
+          `録画が途中で切れた（${abort.reason}）: ${session.target.fsPath}`
+        );
+      } else {
+        Logger.info(`録画を保存: ${session.target.fsPath}`);
+      }
+      return;
+    }
 
     if (!check.ok) {
       Logger.error(
@@ -2079,12 +2118,35 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.visibilityDisposable = undefined;
   }
 
-  dispose(): void {
-    this.disposeListeners();
+  /**
+   * 後始末。**録画を書き終えるまで待つので Promise を返す**
+   * （`extension.ts` の `deactivate` がこれを返し、VS Code が待つ）。
+   *
+   * 順序が要る。以前はここで最初に `disposeListeners()` と `this.view = undefined`
+   * をやってから録画を止めていたので、**ビュー録画（既定の経路）は必ず壊れた**:
+   *
+   * - `requestViewStop()` は `this.view` が無いと即座に返る（＝ webview へ
+   *   「止めろ」を送らない）ので、`MediaRecorder.stop()` が呼ばれず、
+   *   コンテナを閉じる最後のチャンク（mp4 の `moov`）が生まれない
+   * - リスナーを外した後なので、仮に届いても `viewRecordingChunk` を受け取れない
+   *
+   * ＝ 映像は入っているのに再生できないファイルが残る。`verifyRecording` が
+   * 番人をしているのはまさにこの形で、しかもその検査もこの経路では走らなかった。
+   * **止めるのは、view とリスナーが生きているうちに。**
+   */
+  async dispose(): Promise<void> {
+    // タイマーだけ先に止める（放置すると後始末の途中で発火する）
     this.stopStatsTimer();
     this.stopAutoConnectTimer();
     this.clearRecordingTimer();
+    this.clearInputReleaseTimer();
 
+    if (this.recording) {
+      // 通知は出さない（quiet）。結果はログに残す。
+      await this.withStopBudget(this.stopRecording({quiet: true}));
+    }
+
+    this.disposeListeners();
     this.stopCapture();
     this.disposeProxy();
     this.view = undefined;
@@ -2094,16 +2156,49 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.devices = [];
     this.screenSize = null;
 
-    // mobilecli を先に落とすと stopScreenRecord が届かない。停止を待ってからサーバを止める。
-    // ビュー録画はここで webview が既に無いので、待たずにファイルを閉じて終わる。
-    const stopRecording = this.recording ? this.stopRecording() : Promise.resolve();
-    void stopRecording.finally(() => {
-      // 経路によらず、開いたままの書き込み先を残さない
-      const writer = this.viewWriter;
-      this.viewWriter = null;
-      void writer?.close();
-      this.mobileCliServer.stopServer();
-      this.mobileCliClient = null;
+    // 経路によらず、開いたままの書き込み先を残さない（close は多重呼び出し可）
+    const writer = this.viewWriter;
+    this.viewWriter = null;
+    await writer?.close();
+    // mobilecli を先に落とすと stopScreenRecord が届かない。停止のあとで止める。
+    this.mobileCliServer.stopServer();
+    this.mobileCliClient = null;
+  }
+
+  /**
+   * 終了時の待ちに上限を付ける。
+   *
+   * `requestViewStop` は 10 秒待てるし、端末側の停止は mobilecli の応答待ちになる。
+   * VS Code が `deactivate` を待つ時間は無限ではないので、**待ち切れないくらい
+   * 遅いときは諦めて残りの後始末を続ける**（抱えたまま落ちるより、ポートと
+   * 子プロセスを片付けたほうがよい）。正常な停止は 1 秒ほどで返る。
+   */
+  private async withStopBudget(work: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const budget = new Promise<'timeout'>((resolve) => {
+      // **ここは `unref` しない。** 他のタイマー（入力の解放待ちなど）は
+      // 「終了を遅らせない」ために unref するが、こちらは待っている間ずっと
+      // ファイルを書いている。unref すると、残りが unref 済みのタイマーだけに
+      // なった瞬間に Node がイベントループを空と見なして終わり、書きかけの
+      // 末尾が落ちる。待ちが終われば下の finally で必ず捨てるので、
+      // 終了が遅れるのは実際に書き終わりを待っている間だけ。
+      timer = setTimeout(
+        () => resolve('timeout'),
+        SimulatorWebviewProvider.DISPOSE_STOP_BUDGET_MS
+      );
     });
+    try {
+      const result = await Promise.race([work.then(() => 'done' as const), budget]);
+      if (result === 'timeout') {
+        Logger.warn(
+          '終了時の録画停止が時間内に終わらなかった（後始末を続ける）'
+        );
+      }
+    } catch (error) {
+      // ここで投げると後始末が止まる。理由だけ残す
+      Logger.error('終了時の録画停止に失敗', error as Error);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 }

@@ -12,6 +12,17 @@ so **there is no need to move entries by hand**.
 
 ### Fixed
 
+- A recording in progress is now finished before the extension shuts down. Closing the
+  window (or disabling the extension) while recording used to leave a file that held the
+  video but could not be played: teardown dropped the webview reference and the message
+  listener *before* stopping the recording, so the webview was never told to stop
+  encoding and the final chunk — the one that closes the container, `moov` in an mp4 —
+  was never produced. The check that exists for exactly this failure never ran either,
+  because it only runs after a stop completes. Teardown now stops the recording while the
+  view and the listener are still alive, and `deactivate` waits for the file to be written
+  (bounded, so a webview that never answers cannot hold up shutdown; the result is written
+  to the log instead of a dialog, since a dialog shown to a closing window is never
+  answered).
 - Messages coming from the webview are checked at the boundary instead of being cast to
   the expected type. Values arrive through `postMessage`, which carries no type guarantee,
   and they used to flow straight into mobilecli parameters and `Buffer.from(data,

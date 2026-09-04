@@ -117,7 +117,8 @@ async function main() {
     JSON.stringify(sent.filter((m) => m.type === 'error'))
   );
 
-  provider.dispose();
+  // dispose は録画の書き終わりを待つので Promise を返す
+  await provider.dispose();
 }
 
 main()
