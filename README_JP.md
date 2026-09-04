@@ -291,6 +291,7 @@ npm run build      # TypeScript + simhid-server（macOS 以外は native をス�
 npm run compile    # TypeScript のみ
 npm run typecheck  # 型チェックのみ
 npm test           # テスト（compile 込み）
+npm run coverage   # テスト＋行/分岐/関数のカバレッジ（要 Node 22+）
 npm run watch      # ウォッチモード
 npm run package    # vsix/secondary-simulator.vsix を生成
 npm run clean      # 生成物の削除

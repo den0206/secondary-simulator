@@ -284,6 +284,7 @@ npm run build      # TypeScript + simhid-server (native build is skipped off mac
 npm run compile    # TypeScript only
 npm run typecheck  # Type check only
 npm test           # Tests (includes compile)
+npm run coverage   # Tests with line/branch/function coverage (Node 22+)
 npm run watch      # Watch mode
 npm run package    # Produce vsix/secondary-simulator.vsix
 npm run clean      # Remove build output

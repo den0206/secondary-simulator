@@ -14,12 +14,18 @@ npm run build      # tsc + simhid-server（macOS 以外では native をスキ�
 npm run compile    # tsc のみ
 npm run typecheck  # tsc --noEmit
 npm test           # compile + test/*.test.js（Node 標準・フレームワークなし）
+npm run coverage   # npm test + 行/分岐/関数のカバレッジ（要 Node 22+）
 npm run package    # vsix/secondary-simulator.vsix を生成
 npm run watch      # tsc -watch
 npm run clean      # out/ と native/simhid-server を削除
 ```
 
 `npm test` は `node --test test/*.test.js`。**ファイルを置けば走る**（登録は要らない）。
+`npm run coverage` は同じ一式を `--experimental-test-coverage` で回す。**カバレッジは
+読み込まれたモジュールしか数えない**ので、テストから一度も require されないファイルは
+表に出ない（＝ 0% ではなく行が無い）。CI には載せていない — 閾値を置く前に基準を
+決める必要があり、`--test-coverage-exclude` は Node 22+ でしか使えない
+（CI は VS Code に合わせて 20 系）。
 各テストは node 標準のみの素の script で、`process.exit` の終了コードが結果になる。
 `test/*.device-test.js` は `*.test.js` に一致しないので `npm test` では走らない
 （起動中のシミュレータが要る）。ログを読めるように `vscode-stub` は

@@ -35,6 +35,8 @@ so **there is no need to move entries by hand**.
 
 ### Added
 
+- `npm run coverage` reports line, branch and function coverage for the test suite
+  (Node 22+). Not wired into CI yet — a baseline comes first, then a threshold.
 - Tests that pin the contract between `package.json` and the implementation: every
   contributed command has a handler and vice versa, menus and keybindings only point at
   commands that exist, keybindings scope on `focusedView` (using `view ==` makes them
