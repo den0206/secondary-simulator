@@ -33,6 +33,14 @@ so **there is no need to move entries by hand**.
   reported as saved), and a malformed modifier list sends the key without modifiers rather
   than dropping the keystroke.
 
+### Added
+
+- Tests that pin the contract between `package.json` and the implementation: every
+  contributed command has a handler and vice versa, menus and keybindings only point at
+  commands that exist, keybindings scope on `focusedView` (using `view ==` makes them
+  silently never fire), and every declared setting is actually read. `WdaSettings` now has
+  unit tests for parsing `lsof` output and for clamping the values sent to WebDriverAgent.
+
 ## [0.6.0] — 2026-08-28
 
 ### Added
