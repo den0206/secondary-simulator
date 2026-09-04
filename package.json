@@ -358,6 +358,7 @@
     "build": "npm run compile && npm run build:native",
     "package": "node -e \"require('node:fs').mkdirSync('vsix',{recursive:true})\" && vsce package --out vsix/secondary-simulator.vsix",
     "test": "npm run compile && node --test test/*.test.js",
+    "coverage": "npm run compile && node --test --experimental-test-coverage --test-coverage-exclude=\"test/**\" test/*.test.js",
     "watch": "tsc -watch -p ./",
     "clean": "rm -rf out native/simhid-server"
   },
