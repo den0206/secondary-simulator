@@ -351,7 +351,7 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
+    "vscode:prepublish": "npm run build && node scripts/prepare-mobilecli.js",
     "compile": "tsc -p ./",
     "typecheck": "tsc -p ./ --noEmit",
     "build:native": "sh scripts/build-native.sh",
@@ -369,6 +369,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "mobilecli": "1.0.5"
+    "mobilecli": "1.0.9"
   }
 }

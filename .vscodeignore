@@ -24,7 +24,8 @@ node_modules/**
 # 同梱に失敗しても MobileCliServer が npx 実行にフォールバックする。
 !node_modules/mobilecli/package.json
 !node_modules/mobilecli/index.js
-!node_modules/mobilecli/bin/mobilecli-darwin-*
+!node_modules/@mobilenext/mobilecli-darwin-*/package.json
+!node_modules/@mobilenext/mobilecli-darwin-*/mobilecli-darwin-*
 # README の画像は vsce が GitHub raw の絶対 URL へ書き換えるので、VSIX 内の実体は読まれない。
 # README でしか使わない画像は同梱しない（walkthrough は move.svg を使う）。
 media/demo.gif
