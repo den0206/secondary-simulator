@@ -234,6 +234,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   すると、実行の度にネットワークから取ってきたコードを利用者のマシンで走らせる
   ことになる。**追随は実行時ではなくビルド時にやる** — Dependabot が版上げの PR を
   出すので、CI を通してから利用者へ出す（`.github/dependabot.yml`）。
+  **バイナリは 1.0.7 から arch 別パッケージ（`@mobilenext/mobilecli-<os>-<arch>`）に
+  分かれた。** npm が入れるのはホストの 1 つだけなので、`npm install` しただけでは
+  Intel 用が揃わない。`vscode:prepublish` の `scripts/prepare-mobilecli.js` が
+  パッケージ時に darwin の arm64/amd64 を両方取り寄せる（**ネットワークが要る**）。
+  `vsce package` を直に叩いても走るよう、`package` ではなく `vscode:prepublish` に
+  置いてある — 片方欠けた VSIX は Intel Mac で黙って npx 経路に落ちるだけで気づけない。
 - **`mobilecli` は FSL-1.1-ALv2**（ソース公開型。OSI 承認のオープンソースではない）。
   同梱して再配布する以上、全文と著作権表示を `THIRD-PARTY-NOTICES.md` で運ぶ必要が
   あり、`.vscodeignore` はこれを VSIX に入れている。**版を上げたら

@@ -290,7 +290,7 @@ Server: WDA MJPEG Server
 
 ```bash
 # サーバ起動
-./node_modules/mobilecli/bin/mobilecli-darwin-arm64 server start --cors --listen localhost:12099
+./node_modules/@mobilenext/mobilecli-darwin-arm64/mobilecli-darwin-arm64 server start --cors --listen localhost:12099
 
 # デバイス一覧 / 起動（調査時点。現行は `"method":"devices.list"`）
 curl -s -X POST localhost:12099/rpc -H 'Content-Type: application/json' \

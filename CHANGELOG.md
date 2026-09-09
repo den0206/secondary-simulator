@@ -10,6 +10,10 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Changed
+
+- Update bundled mobilecli to 1.0.9 and support its platform-specific binary packages.
+
 ### Fixed
 
 - Recheck device state before booting and after a failed boot request, connecting to already-running devices instead of reporting a boot failure.

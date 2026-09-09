@@ -8,18 +8,18 @@ covered by its own license.
 
 ## mobilecli
 
-- **Version bundled**: 1.0.5
+- **Version bundled**: 1.0.9
 - **Copyright**: Copyright 2025-2026 Mobile Next HQ, Inc.
 - **License**: Functional Source License, Version 1.1, ALv2 Future License
   (FSL-1.1-ALv2), full text below
 - **Homepage**: https://github.com/mobile-next/mobilecli
-- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/f498fa525e216fa37017c9c102836cfb9929cbc5
-  (tag `1.0.5`, tagged 2026-08-26)
+- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/583fdc752a3c410f1b63ecc7cfbe93135c45ee9a
+  (tag `1.0.9`, tagged 2026-09-08)
 
 ### What is bundled
 
-Only the prebuilt macOS binaries `bin/mobilecli-darwin-arm64` /
-`bin/mobilecli-darwin-amd64` and the `index.js` launcher, unmodified, as
+Only the prebuilt macOS binaries `@mobilenext/mobilecli-darwin-arm64` /
+`@mobilenext/mobilecli-darwin-amd64` and the `index.js` launcher, unmodified, as
 published to npm. Secondary Simulator runs mobilecli as a **separate process**
 and communicates with it over JSON-RPC 2.0; it neither links against it nor
 modifies it.
