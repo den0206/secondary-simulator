@@ -1220,6 +1220,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * として現れるまで待つ。無限には待たない。
    */
   async bootAndConnect(deviceId: string): Promise<void> {
+    if (this.bootWaitDeviceId) return;
     if (!this.mobileCliClient) {
       await this.refreshDevices();
     }
@@ -1242,9 +1243,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           cancellable: false,
         },
         async () => {
+          // 一覧を表示してから選ぶまでに、他のツールで起動されることがある。
+          await this.refreshDevices();
+          if (this.devices.find((d) => d.id === deviceId)?.state === 'Booted') {
+            await this.selectDevice(deviceId);
+            return;
+          }
           try {
             await this.mobileCliClient!.boot(deviceId);
           } catch (error) {
+            // 状態取得と起動要求の間にも起動し得る。エラー文言ではなく状態で判断する。
+            await this.refreshDevices();
+            if (this.devices.find((d) => d.id === deviceId)?.state === 'Booted') {
+              await this.selectDevice(deviceId);
+              return;
+            }
             Logger.error('デバイスの起動に失敗', error as Error);
             void vscode.window.showErrorMessage(
               vscode.l10n.t(
