@@ -10,6 +10,10 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Recheck device state before booting and after a failed boot request, connecting to already-running devices instead of reporting a boot failure.
+
 ## [0.6.1] — 2026-09-04
 
 ### Fixed
