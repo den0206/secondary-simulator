@@ -54,6 +54,7 @@ const METHODS = [
   'devices.list',
   'device.info',
   'device.boot',
+  'device.shutdown',
   'device.url',
   'device.screenshot',
   'device.screenrecord',

@@ -76,5 +76,10 @@
   "Recording": "录制",
   "Secondary Simulator: This view cannot be recorded here, so the device recorder is used instead (taps and the pointer will not appear).": "Secondary Simulator: 此视图无法在此录制，改用设备端录制（点击和指针不会出现）。",
   "Secondary Simulator: The recording was cut short and may be missing the end — {0}": "Secondary Simulator: 录制被中断，末尾可能缺失 — {0}",
-  "Recording stopped at the size limit and was saved: {0}": "已在达到大小上限时停止录制并保存: {0}"
+  "Recording stopped at the size limit and was saved: {0}": "已在达到大小上限时停止录制并保存: {0}",
+  "Disconnect and shut down": "断开连接并关闭设备",
+  "Disconnect only": "仅断开连接",
+  "Disconnect from {0}?": "要断开与 {0} 的连接吗？",
+  "You can also shut down this simulator or emulator. Apps running inside it will stop.": "您也可以关闭此模拟器。其中运行的应用也将停止。",
+  "Secondary Simulator: Disconnected, but could not shut down {0} — {1}": "Secondary Simulator: 已断开连接，但无法关闭 {0} — {1}"
 }

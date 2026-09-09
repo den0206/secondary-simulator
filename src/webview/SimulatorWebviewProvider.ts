@@ -68,6 +68,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private static readonly PROXY_BASE_PORT = 12200;
   private inputController: SimulatorInputController | null = null;
   private currentDeviceId: string | null = null;
+  private disconnectBusy = false;
   private devices: Device[] = [];
   private screenSize: {width: number; height: number} | null = null;
   private messageDisposable?: vscode.Disposable;
@@ -2011,19 +2012,58 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async disconnect(): Promise<void> {
-    // 切断で録画を宙に浮かせない（止めないと mobilecli 側のセッションが残る）
-    await this.stopRecording();
-    this.stopCapture();
-    this.disposeProxy();
-    this.currentDeviceId = null;
-    this.setStatus({state: 'disconnected'});
-    this.postMessage({type: 'disconnected'});
-    Logger.info('Device disconnected');
-    // 押した直後に繋ぎ直さないよう自動接続を切る。表示（Auto スイッチ）も OFF に揃う。
-    await vscode.workspace
-      .getConfiguration('secondarySimulator')
-      .update('autoConnect', false, vscode.ConfigurationTarget.Global);
-    this.syncAutoConnectTimer();
+    if (this.disconnectBusy || !this.currentDeviceId) return;
+    this.disconnectBusy = true;
+    const deviceId = this.currentDeviceId;
+    const device = this.devices.find((d) => d.id === deviceId);
+    const client = this.mobileCliClient;
+    try {
+      let shutdown = false;
+      if (device?.type === 'simulator' || device?.type === 'emulator') {
+        const stop = vscode.l10n.t('Disconnect and shut down');
+        const keep = vscode.l10n.t('Disconnect only');
+        const answer = await vscode.window.showInformationMessage(
+          vscode.l10n.t('Disconnect from {0}?', device.name),
+          {modal: true, detail: vscode.l10n.t(
+            'You can also shut down this simulator or emulator. Apps running inside it will stop.'
+          )},
+          stop,
+          keep
+        );
+        if (answer !== stop && answer !== keep) return;
+        shutdown = answer === stop;
+      }
+      if (this.currentDeviceId !== deviceId) return;
+      await this.stopRecording();
+      // 停止失敗・別の停止処理中は録画を残したまま端末を終了しない。
+      if (this.recording || this.recordingBusy || this.currentDeviceId !== deviceId) return;
+      await vscode.workspace
+        .getConfiguration('secondarySimulator')
+        .update('autoConnect', false, vscode.ConfigurationTarget.Global);
+      if (this.currentDeviceId !== deviceId) return;
+      this.stopCapture();
+      this.disposeProxy();
+      this.currentDeviceId = null;
+      this.setStatus({state: 'disconnected'});
+      this.postMessage({type: 'disconnected'});
+      this.syncAutoConnectTimer();
+      Logger.info('Device disconnected');
+      if (shutdown) {
+        try {
+          if (!client) throw new Error('mobilecli is not available');
+          await client.shutdown(deviceId);
+        } catch (error) {
+          Logger.error('Device shutdown failed', error as Error);
+          void vscode.window.showErrorMessage(vscode.l10n.t(
+            'Secondary Simulator: Disconnected, but could not shut down {0} — {1}',
+            device!.name, (error as Error).message
+          ));
+        }
+        await this.refreshDevices();
+      }
+    } finally {
+      this.disconnectBusy = false;
+    }
   }
 
   private postMessage(message: unknown): void {

@@ -76,5 +76,10 @@
   "Recording": "録画",
   "Secondary Simulator: This view cannot be recorded here, so the device recorder is used instead (taps and the pointer will not appear).": "Secondary Simulator: この画面は録画できないため、端末側の録画を使います（タップとポインタは写りません）。",
   "Secondary Simulator: The recording was cut short and may be missing the end — {0}": "Secondary Simulator: 録画が途中で切れました。末尾が欠けている可能性があります — {0}",
-  "Recording stopped at the size limit and was saved: {0}": "サイズの上限で録画を止めて保存しました: {0}"
+  "Recording stopped at the size limit and was saved: {0}": "サイズの上限で録画を止めて保存しました: {0}",
+  "Disconnect and shut down": "切断して本体も停止",
+  "Disconnect only": "表示のみ切断",
+  "Disconnect from {0}?": "{0} との接続を切断しますか？",
+  "You can also shut down this simulator or emulator. Apps running inside it will stop.": "シミュレーター／エミュレーター本体も停止できます。端末内で実行中のアプリも停止します。",
+  "Secondary Simulator: Disconnected, but could not shut down {0} — {1}": "Secondary Simulator: 切断しましたが、{0} を停止できませんでした — {1}"
 }

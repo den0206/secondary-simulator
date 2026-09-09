@@ -94,6 +94,14 @@ export class MobileCliClient {
     );
   }
 
+  async shutdown(deviceId: string): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest(
+      'device.shutdown',
+      {deviceId},
+      30_000
+    );
+  }
+
   /**
    * 画面録画を開始する。
    *
