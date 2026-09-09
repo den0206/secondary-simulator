@@ -369,6 +369,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "mobilecli": "1.0.5"
+    "mobilecli": "1.0.7"
   }
 }
