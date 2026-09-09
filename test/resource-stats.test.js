@@ -23,8 +23,11 @@ const {
   fs.mkdirSync(path.join(tmp, 'node_modules', 'typescript'), {recursive: true});
   fs.writeFileSync(path.join(tmp, 'node_modules', 'typescript', 'lib.js'), Buffer.alloc(8000));
 
+  fs.mkdirSync(path.join(tmp, 'node_modules', '@mobilenext', 'mobilecli-darwin-arm64'), {recursive: true});
+  fs.writeFileSync(path.join(tmp, 'node_modules', '@mobilenext', 'mobilecli-darwin-arm64', 'mobilecli-darwin-arm64'), Buffer.alloc(600));
+
   // 再帰で合計する。symlink / .git / 開発用 node_modules は含めない。
-  assert.strictEqual(await dirSizeBytes(tmp), 3400);
+  assert.strictEqual(await dirSizeBytes(tmp), 4000);
 
   // 計測に失敗しても落ちず、0 をキャッシュしない
   const missing = path.join(tmp, 'nope');

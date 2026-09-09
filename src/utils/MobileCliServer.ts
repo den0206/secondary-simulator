@@ -18,7 +18,7 @@ export class MobileCliServer {
    * 「利用者のマシンで未検証のコードを走らせない」ためなので、ここだけ古い版に
    * 貼り付いていると目的から外れる（`test/third-party-notices.test.js` が一致を見る）。
    */
-  static readonly FALLBACK_MOBILECLI_VERSION = '1.0.5';
+  static readonly FALLBACK_MOBILECLI_VERSION = '1.0.9';
 
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
@@ -41,28 +41,15 @@ export class MobileCliServer {
 
       // 1. node_modulesから探す（npmパッケージとしてインストールされた場合）
       try {
-        const packageJsonPath = require.resolve('mobilecli/package.json');
-        const packageDir = path.dirname(packageJsonPath);
-        const binDir = path.join(packageDir, 'bin');
-
-        // プラットフォーム別のバイナリ名を決定
-        let binaryName: string;
-        if (process.platform === 'win32') {
-          binaryName = 'mobilecli-windows-amd64.exe';
-        } else if (process.platform === 'darwin') {
-          binaryName =
-            process.arch === 'arm64'
-              ? 'mobilecli-darwin-arm64'
-              : 'mobilecli-darwin-amd64';
-        } else {
-          // Linux
-          binaryName =
-            process.arch === 'arm64'
-              ? 'mobilecli-linux-arm64'
-              : 'mobilecli-linux-amd64';
-        }
-
-        const binaryPath = path.join(binDir, binaryName);
+        const platform = process.platform === 'win32' ? 'windows' : process.platform;
+        const arch = process.arch === 'x64' ? 'amd64' : process.arch;
+        const name = `mobilecli-${platform}-${arch}`;
+        const packageDir = path.dirname(
+          require.resolve(`@mobilenext/${name}/package.json`)
+        );
+        const binaryPath = path.join(
+          packageDir, name + (process.platform === 'win32' ? '.exe' : '')
+        );
         if (fs.existsSync(binaryPath)) {
           try {
             // 実行可否は access で見る。この constructor は activate から呼ばれるので、

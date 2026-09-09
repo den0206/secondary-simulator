@@ -42,11 +42,12 @@ export async function dirSizeBytes(dir: string): Promise<number> {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
       if (entry.name === 'node_modules') {
-        const bundled = path.join(p, 'mobilecli');
-        try {
-          total += await dirSizeBytes(bundled);
-        } catch {
-          // 未インストールなら 0
+        for (const name of ['mobilecli', '@mobilenext']) {
+          try {
+            total += await dirSizeBytes(path.join(p, name));
+          } catch {
+            // 未インストールなら 0
+          }
         }
         continue;
       }

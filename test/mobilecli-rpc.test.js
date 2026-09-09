@@ -29,13 +29,16 @@ function check(name, cond, detail) {
  * （Go の同じソースから吐いている）ので、動く必要は無く読めればよい。
  */
 function findBinary() {
-  const dir = path.join(ROOT, 'node_modules', 'mobilecli', 'bin');
-  if (!fs.existsSync(dir)) return null;
-  const entries = fs
-    .readdirSync(dir)
-    .filter((f) => f.startsWith('mobilecli-'))
-    .sort();
-  return entries.length ? path.join(dir, entries[0]) : null;
+  const packages = require('mobilecli/package.json').optionalDependencies;
+  for (const name of Object.keys(packages)) {
+    try {
+      const dir = path.dirname(require.resolve(`${name}/package.json`));
+      const binary = name.split('/')[1] + (name.includes('windows') ? '.exe' : '');
+      const file = path.join(dir, binary);
+      if (fs.existsSync(file)) return file;
+    } catch {}
+  }
+  return null;
 }
 
 const binary = findBinary();
@@ -45,6 +48,11 @@ if (!binary) {
   console.log('mobilecli の同梱バイナリが無いので検査を見送る');
   process.exit(0);
 }
+
+require('./helpers/vscode-stub').install();
+const {MobileCliServer} = require('../out/utils/MobileCliServer');
+check('インストール済みバイナリを npx なしで解決する',
+  new MobileCliServer().mobilecliPath !== 'npx');
 
 const blob = fs.readFileSync(binary).toString('latin1');
 console.log(`対象: ${path.basename(binary)}（${Math.round(blob.length / 1e6)}MB）`);
