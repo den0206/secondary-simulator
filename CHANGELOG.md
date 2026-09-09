@@ -14,6 +14,10 @@ so **there is no need to move entries by hand**.
 
 - Recheck device state before booting and after a failed boot request, connecting to already-running devices instead of reporting a boot failure.
 
+### Added
+
+- Disconnecting a simulator or emulator now offers to shut down that device, disconnect only, or cancel. Physical devices are never shut down.
+
 ## [0.6.1] — 2026-09-04
 
 ### Fixed
