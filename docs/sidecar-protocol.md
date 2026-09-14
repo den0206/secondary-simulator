@@ -294,22 +294,20 @@ interface InputBackend {
 
 ### 7.1 Android のタッチを貯めない理由
 
-mobilecli の `device.io.gesture` は、Android では**アクション 1 個 = adb コマンド 1 回**
-（`adb shell input touchscreen motionevent down|move|up X Y`）に展開される。
-**`duration` は読まれない**（`pause` だけがホスト側の `time.Sleep` になる。
-mobilecli `devices/android.go` の `Gesture`）。1 回あたりの往復は 100ms 前後。
+Android のドラッグは **指が動いているあいだに届ける**必要がある。WdaBackend のように
+`touchUp` まで軌跡を貯めて一括送信すると、画面は離してからしか動かず、注入時刻も
+指の動きとずれるので VelocityTracker が速度を拾えず、**フリックが効かない**。
 
-そのため WdaBackend の「`touchUp` まで軌跡を貯めて一括送信」を Android に当てると:
+主経路は `AdbTouch`（`adb shell` を 1 本張りっぱなしにして `motionevent` を書き込む）。
+1 イベントの往復がサンプリング周期そのものになるので、前の書き込みが返るまで次を出さず、
+常に**最新の 1 点だけ**を送る。adb が見つからない・シリアルを解決できないときは
+mobilecli の `device.io.gesture` へ落ちる。
 
-1. 240 点のドラッグが adb 242 回になり、**指を離してから数十秒かけて再生される**
-2. 各イベントの注入時刻が指の実際の動きと無関係になるため、Android の VelocityTracker が
-   速度を拾えず、**フリック（慣性スクロール）が一切効かない**
-
-`tap` は `input tap` 1 回で終わるので影響を受けない（＝タップだけ正常に見える）。
-
-AndroidBackend は貯めずに、押しているあいだ送り続ける。
-速い経路は `AdbTouch`（`adb shell` を 1 本張りっぱなしにして `motionevent` を書き込む）。
-adb が見つからない・シリアルを解決できないときは mobilecli の `device.io.gesture` へ落ちる。
+mobilecli 1.0.10 以降、Android の `Gesture` は adb をアクションごとに起こすのではなく、
+端末内エージェントが timed MotionEvent として再生する（`devices/android.go`）。
+1.0.9 以前は 1 アクション = `adb shell input touchscreen motionevent` で `duration` も
+無視されていたが、いまのフォールバック経路には当てはまらない。どちらにせよ離してから
+一括再生すると追従が遅れるので、フォールバックでも「最新の 1 点」を送り続ける。
 
 AdbTouch（主経路）。`DOWN`/`UP` が座標を引数に取れるので、位置決めの MOVE は挟まない:
 
@@ -332,7 +330,8 @@ mobilecli へ落ちたときだけ、次の形になる（Android 側は `pointe
 | 静止のまま 400ms | `[pointerMove(始点), pointerDown]` |
 
 - `down`..`up` の実時間が指の実時間と一致するので、速度が正しく伝わりフリックが効く
-- 送信数は点数ではなく **adb の往復時間**で頭打ちになる（常駐セッション実測 約 20ms、mobilecli 経由は約 70ms）
+- 送信数は点数ではなく **往復時間**で頭打ちになる（常駐 adb 実測 約 20ms。mobilecli
+  フォールバックは RPC 待ちでそれより遅い）
 - 長押しで先出しした `down` は、実際に 400ms 押されるまで次の `move`/`up` を出さない
   （すぐ出すと「速いタップ」になり、長押しも長押し→ドラッグも成立しない）
 - `dispose()` は押しっぱなしの指を離す（残すと次のタッチが別のジェスチャーになる）

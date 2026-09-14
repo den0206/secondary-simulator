@@ -111,9 +111,8 @@ export class SimulatorInputController {
    * HID を使わないときの主経路。
    *
    * Android は `AndroidBackend`（adb の motionevent を押している間ずっと送る）。
-   * `WdaBackend` の「touchUp まで貯めて一括送信」は、Android では 1 アクションが
-   * adb 1 回に展開され duration も無視されるため、ドラッグが数十秒かけて再生され
-   * フリックも効かない（AndroidBackend の冒頭コメント）。
+   * `WdaBackend` の「touchUp まで貯めて一括送信」は、離してから再生されるので
+   * ドラッグが追従せずフリックも効かない（AndroidBackend の冒頭コメント）。
    */
   private defaultBackend(): InputBackend {
     if (this.opts.platform === 'android') {

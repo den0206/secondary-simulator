@@ -10,22 +10,23 @@ const execFileAsync = promisify(execFile);
 /**
  * Android のタッチだけを `adb shell` の常駐セッションへ流す送信口。
  *
- * mobilecli の `device.io.gesture` は **1 アクションごとに `adb` を起動し直す**
- * （`devices/android.go`）。実測（Pixel 9 エミュレータ）では
+ * 実測（Pixel 9 エミュレータ）では
  *
  * - `adb shell input touchscreen motionevent …` 単発 … 約 70ms
  * - 同じ `adb shell` の中で 2 回目以降 … 約 15〜20ms
  *
  * ＝ 費用のほとんどは `input` ではなく **adb の起動と往復**。ドラッグ中は
- * 「前の adb が返るまで次を出さない」ので、この差がそのままサンプリング周期
+ * 「前の書き込みが返るまで次を出さない」ので、この差がそのままサンプリング周期
  * （14Hz と 45Hz）になる。ここでは `adb shell` を 1 本張りっぱなしにして、
  * 行を書き込むだけで済むようにする。
  *
- * ついでに mobilecli 経由では避けられなかった無駄も落ちる:
- * `input touchscreen motionevent DOWN|UP` は座標を引数に取れるのに、mobilecli は
- * 直前の `pointerMove` からしか座標を取れない。とくに指を離すとき、同じ座標の
- * MOVE を 1 回挟んでから UP になるため、**離す直前に「止まっている時間」が生まれ**
- * VelocityTracker の速度が落ちる（＝フリックが弱くなる）。
+ * mobilecli の `device.io.gesture` は 1.0.10 から端末内エージェント経由になり、
+ * 1.0.9 以前の「1 アクションごとに adb を起こす」経路ではない。それでも
+ * `input touchscreen motionevent DOWN|UP` は座標を引数に取れるのに、gesture の
+ * `pointerDown` / `pointerUp` は直前の `pointerMove` からしか座標を取れない。
+ * 指を離すとき同じ座標の MOVE を挟むと、**離す直前に「止まっている時間」が生まれ**
+ * VelocityTracker の速度が落ちる（＝フリックが弱くなる）。常駐 adb なら UP に
+ * 座標を渡せるので、その 1 往復が要らない。
  *
  * 起動・解決に失敗したら黙って死ぬ。呼び手（{@link AndroidBackend}）は
  * mobilecli 経路へ戻すだけでよい。
