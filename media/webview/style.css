@@ -161,6 +161,13 @@ body {
     0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
+/* 展開したブック型 foldable は通常スマホより正方形に近いので、同じ 420px 上限では
+   表示面積が小さくなる。縦長端末と横向きアプリには main.js 側の比率判定で付かない。 */
+body.book-fold-inner .phone-frame,
+body.book-fold-inner .controls {
+  max-width: none;
+}
+
 /* スピーカー（上）とホームインジケータ（下）。画面には被せない。 */
 .phone-frame::before,
 .phone-frame::after {

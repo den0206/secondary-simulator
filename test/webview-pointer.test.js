@@ -808,6 +808,25 @@ listeners['window:message']({
 check('フレームを戻す', !body.classList.contains('no-frame'));
 check('リソース数値を戻す', !body.classList.contains('hide-stats'));
 
+console.log('\n23.1) 展開した foldable だけ横幅上限を緩める');
+check('Pixel Fold / iPhone Duo の名称を対象にする',
+  evalIn("isBookFold('Pixel 10 Pro Fold') && isBookFold('iPhone Duo')"));
+check('通常の Pixel は対象にしない', !evalIn("isBookFold('Pixel 10')"));
+evalIn("deviceById.set('fold', {bookFold: true}); deviceSelect.value = 'fold'; syncFoldableDevice()");
+els['simulator-img'].naturalWidth = 1856;
+els['simulator-img'].naturalHeight = 2160;
+evalIn('updateFoldableLayout()');
+check('Galaxy Z Fold 系の比率は対象', body.classList.contains('book-fold-inner'));
+els['simulator-img'].naturalWidth = 1080;
+els['simulator-img'].naturalHeight = 2400;
+evalIn("deviceById.set('pixel', {bookFold: false}); deviceSelect.value = 'pixel'; syncFoldableDevice()");
+evalIn('updateFoldableLayout()');
+check('通常の縦長端末は対象外', !body.classList.contains('book-fold-inner'));
+els['simulator-img'].naturalWidth = 2400;
+els['simulator-img'].naturalHeight = 1080;
+evalIn('updateFoldableLayout()');
+check('横向きの通常端末も対象外', !body.classList.contains('book-fold-inner'));
+
 console.log('\n24) 画面をタップしたらフォーカスを取る');
 // pointerdown の preventDefault はフォーカス移動も止める。明示的に取らないと
 // 打鍵と Cmd+V がエディタ側へ流れる（webview には keydown / paste が来ない）。
