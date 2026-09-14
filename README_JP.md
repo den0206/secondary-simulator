@@ -50,8 +50,8 @@ Secondary Simulatorは、XcodeやAndroid Studioのシミュレータウィンド
 
 ## 📋 要件
 
-- **VSCode / Cursor**: VSCode バージョン 1.90.0 以上（Node 20）
-- **Node.js**: 20 以上（拡張機能ホストの実行に必要）
+- **VSCode / Cursor**: VSCode バージョン 1.90.0 以上
+- **Node.js**: 開発・CI は 24 LTS。拡張の実行互換性は `engines.node >=20` を維持
 - **macOS**: iOS Simulator の利用と HID 直接注入に必要（Android のみなら他 OS でも動作しますが未検証）
 - **mobilecli**: `mobilecli` を VSIX に同梱。同梱するのは darwin 版バイナリだけなので、
   他 OS では `npx -y mobilecli@<固定版>` にフォールバックする（パッケージを
