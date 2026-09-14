@@ -50,8 +50,8 @@ Secondary Simulator mirrors your device inside the editor, so you never have to 
 
 ## 📋 Requirements
 
-- **VS Code / Cursor**: VS Code 1.90.0 or later (Node 20)
-- **Node.js**: 20 or later (to run the extension host)
+- **VS Code / Cursor**: VS Code 1.90.0 or later
+- **Node.js**: 24 LTS for development and CI. The extension keeps `engines.node >=20` for runtime compatibility
 - **macOS**: required for the iOS Simulator and HID injection (Android-only use may work on other platforms, but is untested)
 - **mobilecli**: `mobilecli` ships inside the VSIX. Only the darwin binaries are
   bundled, so on other platforms the extension falls back to `npx -y mobilecli@<pinned version>`,
