@@ -19,6 +19,11 @@ const statsEl = document.getElementById('stats');
 const modeEl = document.getElementById('mode');
 const lamp = document.getElementById('lamp');
 
+// 展開したブック型 foldable の内側画面はほぼ正方形。Galaxy Z Fold6 の 1856/2160
+// (= .859) を下限にし、通常端末を横向きにした映像は除く。機種名には依存しない。
+const FOLDABLE_INNER_MIN_ASPECT = 0.85;
+const FOLDABLE_INNER_MAX_ASPECT = 1.2;
+
 // ---- 文言 --------------------------------------------------------------------
 
 // 拡張ホストが翻訳して HTML に埋めた辞書（index.html の #l10n-strings）。
@@ -858,8 +863,17 @@ document.addEventListener('paste', (e) => {
 
 const btnBack = document.getElementById('btn-back');
 const btnRecord = document.getElementById('btn-record');
-// deviceId -> {platform, booted}。<option> を作り直しても引けるように持つ。
+// deviceId -> {platform, booted, bookFold}。<option> を作り直しても引けるように持つ。
 const deviceById = new Map();
+// 一覧には fold 状態の標準フィールドが無いため、対応メーカーの製品名だけを使う。
+// Flip は内側も縦長なので対象に含めない。iPhone Duo の名称にもそのまま対応する。
+const isBookFold = (name) => /\b(?:fold|duo|find\s+n|mate\s+x|magic\s+v|x\s*fold)\b/i.test(name);
+let selectedBookFold = false;
+
+function syncFoldableDevice() {
+  selectedBookFold = deviceById.get(deviceSelect.value)?.bookFold === true;
+  if (!selectedBookFold) document.body.classList.remove('book-fold-inner');
+}
 
 // iOS に Back は存在しないので押せないようにする（未選択時も同様）
 function syncBackButton() {
@@ -869,6 +883,7 @@ function syncBackButton() {
 
 deviceSelect.addEventListener('change', () => {
   syncBackButton();
+  syncFoldableDevice();
   const id = deviceSelect.value;
   const info = deviceById.get(id);
   // 停止中を選んだら起動を尋ねる。以前は「起動していません」で終わっていて、
@@ -960,10 +975,22 @@ function showFrame(base64) {
 // 属性ごと外す（直結ストリームではこれが GET の切断になる）。
 function clearImage() {
   streamMode = false;
+  document.body.classList.remove('book-fold-inner');
   img.removeAttribute('src');
 }
 
+function updateFoldableLayout() {
+  const aspect = img.naturalWidth / img.naturalHeight;
+  document.body.classList.toggle(
+    'book-fold-inner',
+    selectedBookFold && Number.isFinite(aspect) &&
+      aspect >= FOLDABLE_INNER_MIN_ASPECT &&
+      aspect <= FOLDABLE_INNER_MAX_ASPECT
+  );
+}
+
 img.addEventListener('load', () => {
+  updateFoldableLayout();
   paintedFrames++;
   scheduleViewDraw();
   if (img.naturalWidth && img.naturalHeight) {
@@ -1082,7 +1109,11 @@ window.addEventListener('message', (event) => {
 
       message.devices.forEach((device) => {
         const booted = device.state === 'Booted';
-        deviceById.set(device.id, {platform: device.platform, booted});
+        deviceById.set(device.id, {
+          platform: device.platform,
+          booted,
+          bookFold: isBookFold(device.name),
+        });
         const option = document.createElement('option');
         option.value = device.id;
         // 起動中は状態を書かない（大半が起動中で、毎行に付くと名前が読みにくい）
@@ -1096,6 +1127,7 @@ window.addEventListener('message', (event) => {
       const next = deviceById.has(selected) ? selected : '';
       deviceSelect.value = next;
       syncBackButton();
+      syncFoldableDevice();
       if (selected && next === '') {
         vscode.postMessage({type: 'deviceChange', deviceId: ''});
         cleanup();
@@ -1180,6 +1212,7 @@ window.addEventListener('message', (event) => {
     case 'selectedDevice':
       deviceSelect.value = message.deviceId;
       syncBackButton();
+      syncFoldableDevice();
       break;
 
     case 'streamUrl': {

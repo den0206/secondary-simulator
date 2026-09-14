@@ -10,6 +10,12 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Changed
+
+- Unfolded book-style foldables (Galaxy Z Fold, Pixel Fold, iPhone Duo, and similar)
+  no longer use the 420px phone-frame width cap, so the inner display can fill the
+  sidebar. Cover screens, Flip phones, and landscape on ordinary phones stay capped.
+
 ## [0.7.0] — 2026-09-09
 
 ### Changed
