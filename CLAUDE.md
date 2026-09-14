@@ -81,15 +81,14 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   （mobilecli 経由）へ降格する。**キー入力だけは `secondarySimulator.keyInput` で
   WDA へ回せる**（HID のキーはハードウェアキーボード扱いになり、iOS がソフトウェア
   キーボードを描かなくなるため。`docs/ios-hid-injection.md` §6）。タッチは常に HID。
-  **Android は `AndroidBackend`**（`WdaBackend` ではない）。mobilecli の
-  `device.io.gesture` は Android では 1 アクション = `adb shell input ... motionevent`
-  1 回に展開され、**`duration` は無視される**。貯めて一括送信すると数十秒かけて再生され
-  フリックも効かないので、押しているあいだ「最新の 1 点だけ」を送り続ける
-  （前の adb が返るまで次を出さない）。さらに `AdbTouch` が `adb shell` を 1 本
-  張りっぱなしにして motionevent を流し込む（Pixel 9 エミュレータ実測で 1 イベント
-  約 42ms → 約 20ms。`DOWN`/`UP` が座標を引数に取れるので位置決めの `MOVE` も要らず、
-  **離す直前に「止まっている 1 往復」が消えてフリックが効く**）。adb が見つからない・
-  シリアルを解決できないときは黙って mobilecli 経路へ落ちる。
+  **Android は `AndroidBackend`**（`WdaBackend` ではない）。タッチの主経路は
+  `AdbTouch`（常駐 `adb shell` へ `motionevent`。Pixel 9 エミュレータ実測で 1 イベント
+  約 20ms。`DOWN`/`UP` が座標を引数に取れるので位置決めの `MOVE` も要らず、
+  **離す直前に「止まっている 1 往復」が消えてフリックが効く**）。押しているあいだ
+  「最新の 1 点だけ」を送り、前の書き込みが返るまで次を出さない。adb が見つからない・
+  シリアルを解決できないときは黙って mobilecli の `device.io.gesture` へ落ちる
+  （1.0.10 以降は端末内エージェントが timed MotionEvent として再生する。離してから
+  軌跡を一括送ると追従が遅れるので、フォールバックでも同じ「最新の 1 点」にする）。
   キー・テキスト・ボタンは `WdaBackend` へ委譲する。**矢印キーだけは Android で
   `KEYCODE_DPAD_*`**（`AndroidBackend` → `device.io.button`）。HID usage は元からあったが
   webview が `e.key.length === 1` に載らず捨てられていたので `special` 経路へ載せた。

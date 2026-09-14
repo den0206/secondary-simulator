@@ -1,9 +1,8 @@
 // Android（adb）タッチ経路の検証。
 //
-// mobilecli の device.io.gesture は Android では「1 アクション = adb 1 回」に展開され、
-// duration は無視される。つまり **アクションの数がそのまま所要時間**で、
-// **イベントが届いた実時刻がそのまま端末の見る時刻**になる。
-// ここではその 2 点（数が爆発しないこと・指を離す前に届くこと）を実デバイス無しで見る。
+// 押しているあいだ最新の 1 点だけを送り、離す前に端末へ届ける。一括再生すると
+// 追従が遅れフリックも効かない。ここではその 2 点（数が爆発しないこと・指を離す前に
+// 届くこと）を実デバイス無しで見る。
 const assert = require('node:assert');
 require('./helpers/vscode-stub').install();
 
@@ -328,8 +327,8 @@ const makeBackend = (client, screen = SCREEN) =>
 
   console.log('\n7) adb 常駐セッション（速い送信口）');
   {
-    // adb を 1 本張りっぱなしにすると 1 イベント約 20ms。mobilecli の
-    // 「1 アクション = adb 1 起動」は約 42ms（Pixel 9 エミュレータ実測）。
+    // adb を 1 本張りっぱなしにすると 1 イベント約 20ms（Pixel 9 エミュレータ実測）。
+    // 単発の `adb shell input …` は約 70ms。mobilecli 1.0.9 以前の gesture は後者相当。
     const fakeAdb = (alive = true) => ({
       isDead: false,
       lines: [],

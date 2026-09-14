@@ -19,35 +19,25 @@ type GestureAction = {
 /**
  * Android（adb）向けタッチバックエンド。
  *
- * mobilecli の `device.io.gesture` は Android では **1 アクション = adb 1 起動**
- * （`adb shell input touchscreen motionevent down|move|up X Y`）に展開される。
- * **`duration` は Android では完全に無視される**（mobilecli `devices/android.go` の
- * `Gesture`。`pause` だけがホスト側の sleep になる）。
- *
- * そのため `WdaBackend` のように「touchUp まで軌跡を貯めて一括送信」すると:
- *
- * 1. 240 点のドラッグが 240 回の adb 起動になり、指を離してから数十秒かけて再生される
- * 2. 各イベントの時刻が指の実際の動きと無関係になるため、Android の VelocityTracker が
- *    速度を拾えず、フリック（慣性スクロール）が一切効かない
- *
- * ＝ これが「ドラッグ／スクロールの感度が酷い」の正体。タップ（`input tap` 1 回）と
- * 画面同期は別経路なので影響を受けない。
- *
+ * `WdaBackend` のように touchUp まで軌跡を貯めて一括送信すると、画面は離してからしか
+ * 動かず、注入時刻も指とずれるので VelocityTracker が速度を拾えずフリックが効かない。
  * ここでは貯めずに**押している間ずっと送り続ける**:
  *
  * - `down` は「タップかドラッグか」が決まるまで送らない。タップは `input tap` 1 回で
  *   済ませたい（今のタップの速さを落とさない）ため
- * - ドラッグに入ったら常に**最新の 1 点だけ**を送る。前の adb が返るまで次を出さない
+ * - ドラッグに入ったら常に**最新の 1 点だけ**を送る。前の送信が返るまで次を出さない
  *   （溜めない・詰まらせない。webview の `MAX_FRAME_QUEUE = 1` と同じ考え方）
  * - `up` は指を離した時点で送る。down..up の実時間が指の実時間と一致するので
  *   速度が正しく伝わり、フリックが効く
  * - 動かないまま {@link LONG_PRESS_MS} 押し続けたら `down` を先出しして「押しっぱなし」に
  *   する（長押し、および長押し→ドラッグのため）
  *
- * それでも mobilecli 経由では **1 イベント = adb 1 起動**（実測 約 70ms ＝ 14Hz）で、
- * ドラッグはまだ粗い。{@link AdbTouch} が使えるときは `adb shell` の常駐セッションへ
- * 直接流し（同 約 20ms ＝ 45Hz）、`UP` にも座標を持たせて「離す直前に止まっている時間」
- * を無くす。使えなければ mobilecli 経路へそのまま落ちる。
+ * 主経路は {@link AdbTouch}（常駐 `adb shell` へ motionevent。実測 約 20ms ＝ 45Hz）。
+ * `DOWN`/`UP` に座標を渡せるので、離す直前の位置決め MOVE が要らずフリックが落ちない。
+ * adb が見つからない・シリアルを解決できないときは mobilecli の `device.io.gesture` へ
+ * 落ちる。1.0.10 以降その Gesture は端末内エージェントの timed MotionEvent であり、
+ * 1.0.9 以前のような「1 アクション = adb 起動、duration 無視」ではない。フォールバック
+ * でも一括再生せず、同じ「最新の 1 点」を送り続ける。
  *
  * 座標は正規化 [0,1] で受け、ピクセル変換はこの中だけで行う。
  */
