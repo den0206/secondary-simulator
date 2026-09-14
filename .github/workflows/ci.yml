@@ -91,9 +91,15 @@ jobs:
       - name: シミュレータを起動
         id: sim
         run: |
+          # Pro / Max / e を除いた標準モデルの最新。Xcode が更新されて機種が
+          # 入れ替わっても拾えるように、固定名では書かない。
+          # **15 で下限を切っている** — tap-effect の TOP_CELL_Y は設定トップの
+          # 縦配分に依存していて、それ以前の機種では比が合わない
           TYPE=$(xcrun simctl list devicetypes \
             | grep -oE 'com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-[0-9]+\)' \
             | tr -d ')' | sort -t- -k2,2n | awk -F- '$NF >= 15' | tail -1)
+          # unavailable なランタイムも列挙されるので先に外す。並び順は保証されない
+          # ので、識別子の major/minor で数値ソートしてから最新を採る
           RT=$(xcrun simctl list runtimes \
             | grep -v unavailable \
             | grep -oE 'com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]+(-[0-9]+)?' \
@@ -102,9 +108,14 @@ jobs:
           [ -n "$TYPE" ] || { echo "::error::iPhone 15 以降の device type がありません"; exit 1; }
           [ -n "$RT" ] || { echo "::error::利用可能な iOS runtime がありません"; exit 1; }
           UDID=$(xcrun simctl create ci-device "$TYPE" "$RT")
+          # boot が転けても「後片付け」が消せるように、作った直後に出す
           echo "udid=$UDID" >> $GITHUB_OUTPUT
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
+          # **bootstatus は Data Migration の途中でも Finished を返すことがある**
+          # （実測: "Waiting on Data Migration / Gathering plugins" のまま
+          # Status=4294967295, isTerminal=YES）。その状態では HID クライアントを
+          # 張れずに WDA へ降格するので、実際にアプリを起動できるまで待つ
           for _ in $(seq 60); do
             xcrun simctl launch "$UDID" com.apple.Preferences > /dev/null 2>&1 && break
             sleep 2
@@ -114,9 +125,13 @@ jobs:
             || { echo "::error::シミュレータがアプリを起動できる状態になりません"; exit 1; }
           xcrun simctl terminate "$UDID" com.apple.Preferences > /dev/null 2>&1 || true
 
+      # HID 注入が実際に画面を動かすか（操作の前後をスクリーンショットで比べる）
       - name: 実操作テスト（HID 注入）
         id: tap
         env:
+          # 落ちたときに比べた 2 枚が残る。変化の割合だけでは、注入が届かなかったのか
+          # 想定した画面が出ていなかったのかが分からない。ランナーの temp に寄せて
+          # 次のステップで拾えるようにする
           TMPDIR: ${{ runner.temp }}
         run: node test/tap-effect.device-test.js "${{ steps.sim.outputs.udid }}"
 
@@ -135,6 +150,9 @@ jobs:
           xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
           xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 
+  # build-and-test は macos-14 固定なので、新しい Xcode を積んだイメージでは回らない。
+  # こちらは macos-latest（＝より新しい Xcode）で私有 API の解決だけを確認する。
+  # 週次 cron で回るので、push が無い週の Xcode 更新にも気づける。
   xcode-canary:
     name: Xcode canary (private API)
     runs-on: macos-latest
@@ -149,6 +167,8 @@ jobs:
       - name: Xcode 私有 API チェック
         run: sh scripts/check-xcode-hid.sh
 
+  # Release の "Sync version to main" が落ちると package.json が古いまま残る。
+  # ここが赤くなることで気づける。
   version-check:
     name: Version not behind latest release
     runs-on: ubuntu-latest
@@ -156,10 +176,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Ver_* タグの取得に必要
 
       - name: Compare package.json version with latest release tag
         run: |
+          # +N は再ビルド番号で package.json には入らないため比較前に落とす
           LATEST="$(git tag -l 'Ver_*' | sed 's/^Ver_//; s/+.*//' | sort -V | tail -1)"
           CURRENT="$(node -p "require('./package.json').version")"
 
@@ -168,6 +189,7 @@ jobs:
             exit 0
           fi
 
+          # sort -V で新しい方が後ろに来る。同値なら CURRENT が返るので合格。
           if [ "$(printf '%s\n%s\n' "$LATEST" "$CURRENT" | sort -V | tail -1)" != "$CURRENT" ]; then
             echo "::error::package.json の version ($CURRENT) が最新リリース Ver_$LATEST より古いままです。Release の main 同期が失敗した可能性があります"
             exit 1
