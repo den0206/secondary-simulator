@@ -19,6 +19,7 @@ let resizeObserved = null; // observe された要素
 const listeners = {}; // "elementId:event" -> handler
 // 要素に addEventListener で張られたハンドラ（同じイベントに複数張れる）
 const elListeners = {}; // "elementId:event" -> [handler]
+const releasedPointers = [];
 
 function makeEl(id, opts = {}) {
   const el = {
@@ -49,7 +50,7 @@ function makeEl(id, opts = {}) {
       opts.rect || {left: 0, top: 0, width: 300, height: 600},
     focus() {},
     setPointerCapture() {},
-    releasePointerCapture() {},
+    releasePointerCapture(pointerId) { releasedPointers.push({id, pointerId}); },
     appendChild() {},
     removeChild() {},
     // removeAttribute('src') は .src も空にする（実 DOM と同じ）
@@ -279,6 +280,13 @@ check('move の正規化座標 (0.5,0.25)', sent[1].x === 0.5 && sent[1].y === 0
 check('up の正規化座標 (0.5,0.1)', sent[2].x === 0.5 && Math.abs(sent[2].y - 0.1) < 1e-9,
   `${sent[2].x},${sent[2].y}`);
 
+console.log('\n2b) 画面外へ出てもタッチを離す');
+sent.length = 0;
+fire('simulator-container', 'pointerdown', {pointerId: 9, clientX: 150, clientY: 300});
+fire('simulator-container', 'pointerleave', {pointerId: 9, clientX: 320, clientY: 300});
+check('pointerleave が touchUp を送る',
+  JSON.stringify(sent.map((m) => m.type)) === JSON.stringify(['touchDown', 'touchUp']),
+  JSON.stringify(sent.map((m) => m.type)));
 console.log('\n3) 座標は [0,1] にクランプされる');
 sent.length = 0;
 fire('simulator-container', 'pointerdown', {clientX: -50, clientY: 900});
