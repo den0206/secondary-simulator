@@ -26,6 +26,7 @@ export const keyLabel = (key: string, special?: boolean): string =>
 
 export interface ControllerOptions {
   deviceId: string;
+  version?: string;
   platform: 'ios' | 'android';
   type: 'simulator' | 'emulator' | 'real';
   mobileCliClient: MobileCliClient;
@@ -356,6 +357,20 @@ export class SimulatorInputController {
   }
 
   async home(): Promise<void> {
+    // ponytail: runtime major is the available DeviceHub proxy; use an explicit
+    // Xcode capability when mobilecli exposes one.
+    const isDeviceHub =
+      this.opts.platform === 'ios' &&
+      this.opts.type === 'simulator' &&
+      Number.parseInt(this.opts.version ?? '', 10) >= 27;
+    if (isDeviceHub) {
+      try {
+        await this.wdaFallback.button('home');
+        return;
+      } catch (error) {
+        Logger.warn(`DeviceHub Home を agent 経由で送れないため HID を試行: ${(error as Error).message}`);
+      }
+    }
     await this.primary.button('home');
   }
 

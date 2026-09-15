@@ -235,6 +235,10 @@ void *IndigoHIDMessageForButton(uint32_t keyCode, uint32_t op, uint32_t target);
 `IndigoHIDTargetForScreen` の実体は `w0 | 0x40000000` を返すだけの 2 命令。
 ボタンにこれを使うと壊れる。正しくは `SimDeviceScreen.buttonTarget` = **`0x33`**。
 
+Xcode 27 の DeviceHub ではこの legacy Indigo Home が反応しない。拡張は iOS runtime 27
+以降の Home だけ `mobilecli` の agent（WDA）経由にし、agent が使えない場合に限りこの
+legacy 経路を試す。タッチ・キー・ロックは引き続き HID を使う。
+
 ---
 
 ## 6. キーボード

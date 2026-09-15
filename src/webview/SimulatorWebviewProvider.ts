@@ -925,6 +925,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.inputController = null;
       const controller = new SimulatorInputController({
         deviceId,
+        version: device.runtime,
         platform: device.platform,
         // type 不明は実機扱い → HID を選ばない
         type: device.type ?? 'real',
