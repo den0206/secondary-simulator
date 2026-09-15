@@ -364,12 +364,11 @@ export class SimulatorInputController {
       this.opts.type === 'simulator' &&
       Number.parseInt(this.opts.version ?? '', 10) >= 27;
     if (isDeviceHub) {
-      try {
-        await this.wdaFallback.button('home');
-        return;
-      } catch (error) {
-        Logger.warn(`DeviceHub Home を agent 経由で送れないため HID を試行: ${(error as Error).message}`);
-      }
+      // **失敗を飲まない。** ここで HID へ落としても DeviceHub には届かないので
+      // 「押しても何も起きない」になるだけ。呼び手（`pressHome`）が理由を見て、
+      // agent 未導入なら導入を促す。
+      await this.wdaFallback.button('home');
+      return;
     }
     await this.primary.button('home');
   }
