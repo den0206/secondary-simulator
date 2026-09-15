@@ -10,6 +10,14 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Xcode 27's DeviceHub now loads SimulatorKit from its new location for direct display
+  and input. Its Home button is delivered through the mobilecli agent because DeviceHub
+  no longer accepts the legacy Indigo Home event.
+- Releasing a pointer outside the preview now ends the simulated touch instead of leaving
+  a horizontal scroll or drag active.
+
 ## [0.7.1] — 2026-09-14
 
 ### Changed

@@ -119,7 +119,8 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
    - **Double click**: double tap
    - **Click & drag**: swipe and drag (follows your pointer)
    - **Press and hold**: long press
-   - **Home**: control below the preview
+   - **Home**: control below the preview. Xcode 27 iOS Simulators use the bundled
+     mobilecli agent for this button; the Output channel shows the install command if it is missing.
    - **Back**: Android only (disabled on iOS)
    - **Shot**: save a screenshot of the connected device
    - **Rec**: record the screen to a video file. Recording begins after a three-second
