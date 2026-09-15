@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-15
+
 ### Fixed
 
 - Screenshots, recordings to the device, and the Home button no longer fail silently on a
@@ -520,7 +522,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.1...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.8.0...HEAD
+[0.8.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.1...Ver_0.8.0
 [0.7.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.0...Ver_0.7.1
 [0.7.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.1...Ver_0.7.0
 [0.6.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.0...Ver_0.6.1
