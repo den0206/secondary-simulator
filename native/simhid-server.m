@@ -1286,6 +1286,8 @@ static void handleCommand(NSDictionary *cmd) {
 #pragma mark - 起動とシンボル解決
 
 static NSString *developerDir(void) {
+  NSString *env = NSProcessInfo.processInfo.environment[@"DEVELOPER_DIR"];
+  if (env.length) return env;
   NSTask *t = [NSTask new];
   t.executableURL = [NSURL fileURLWithPath:@"/usr/bin/xcode-select"];
   t.arguments = @[ @"-p" ];
@@ -1307,9 +1309,16 @@ static BOOL setupSymbols(NSString **reason) {
     *reason = @"CoreSimulator を読み込めない";
     return NO;
   }
+  // Xcode 27 moved SimulatorKit from Developer/Library/PrivateFrameworks to
+  // Contents/SharedFrameworks. Keep the legacy path first for older Xcodes.
   NSString *skPath = [dev stringByAppendingPathComponent:
       @"Library/PrivateFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"];
   void *sk = dlopen(skPath.UTF8String, RTLD_NOW);
+  if (!sk) {
+    skPath = [[dev stringByDeletingLastPathComponent] stringByAppendingPathComponent:
+        @"SharedFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"];
+    sk = dlopen(skPath.UTF8String, RTLD_NOW);
+  }
   if (!sk) { *reason = @"SimulatorKit を読み込めない"; return NO; }
 
   mouseMsg = (MouseMsgFn)dlsym(sk, "IndigoHIDMessageForMouseNSEvent");
