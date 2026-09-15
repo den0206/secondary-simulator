@@ -155,6 +155,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    */
   private forceRelayCapture = false;
   /**
+   * agent 未導入を表す mobilecli のエラー文言の一部。
+   * `device.info` / `device.screenshot` / `device.io.*` が共通でこれを含む
+   * （`error starting agent: agent is not installed, use 'mobilecli agent install …'`）。
+   * **版で変わりうるので `test/mobilecli-rpc.test.js` が同梱バイナリで見張る。**
+   */
+  private static readonly AGENT_MISSING = 'agent is not installed';
+  /**
+   * agent の導入を尋ねた端末。自動接続は未接続のあいだ 5 秒ごとに回るので、
+   * これが無いと通知が積み上がる。**入るのは接続した端末の UDID だけ**で、
+   * 手元にあるシミュレータの台数より増えない。
+   */
+  private readonly agentPrompted = new Set<string>();
+  /**
    * ビュー録画のために取り込み幅を上げているか。
    * 取り込みを作り直すと新しいインスタンスになるので、**ここが唯一の持ち主**で、
    * `createCaptureInstance` の後に必ず載せ直す。
@@ -896,25 +909,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     // Get device info and send screen size to webview (mobiledeck-style)
     if (this.mobileCliClient) {
-      try {
-        const deviceInfo = await this.mobileCliClient.getDeviceInfo(deviceId);
-        if (deviceInfo?.device?.screenSize) {
-          this.screenSize = {
-            width: deviceInfo.device.screenSize.width,
-            height: deviceInfo.device.screenSize.height,
-          };
-          this.postMessage({
-            type: 'screenSize',
-            width: this.screenSize.width,
-            height: this.screenSize.height,
-          });
-        }
-      } catch (error) {
-        Logger.warn(
-          `Failed to get device info for screen size: ${
-            (error as Error).message
-          }`
-        );
+      const failure = await this.applyScreenSize(deviceId);
+      // agent 未導入ならここで入れる。**この 1 箇所で足りる** — 接続で必ず通り、
+      // 入れば Shot・Home・`device` 録画・WDA 入力が全部通るようになる。
+      if (failure && (await this.ensureAgent(deviceId, failure))) {
+        await this.applyScreenSize(deviceId);
       }
     }
 
@@ -965,6 +964,101 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     await this.startDisplayForDevice(deviceId, device);
+  }
+
+  /**
+   * 画面サイズを取り直して webview へ送る。失敗したらその例外を返す（投げない）
+   * — 取れなくても表示は始められるので、接続を止めない。
+   */
+  private async applyScreenSize(deviceId: string): Promise<Error | null> {
+    try {
+      const deviceInfo = await this.mobileCliClient!.getDeviceInfo(deviceId);
+      if (deviceInfo?.device?.screenSize) {
+        this.screenSize = {
+          width: deviceInfo.device.screenSize.width,
+          height: deviceInfo.device.screenSize.height,
+        };
+        this.postMessage({
+          type: 'screenSize',
+          width: this.screenSize.width,
+          height: this.screenSize.height,
+        });
+      }
+      return null;
+    } catch (error) {
+      Logger.warn(
+        `Failed to get device info for screen size: ${(error as Error).message}`
+      );
+      return error as Error;
+    }
+  }
+
+  /**
+   * 端末側 agent が無いことが原因の失敗なら、尋ねて導入する。導入できたら true。
+   *
+   * **mobilecli は自動で入れない。** `device.info` / `device.screenshot` /
+   * `device.io.*` は agent が無いと「`agent is not installed`」で失敗し、
+   * agent はシミュレータ 1 台ごとなので**新しい端末では必ず未導入から始まる**。
+   * 入っていないと Shot が撮れず、iOS 27 では Home も効かない（HID の Home が
+   * 届かないため。`docs/ios-hid-injection.md`）。
+   *
+   * 判定は mobilecli のエラー文言。**版で変わりうるので
+   * `test/mobilecli-rpc.test.js` が同梱バイナリに実在することを見張る。**
+   */
+  private async ensureAgent(
+    deviceId: string,
+    error: Error,
+    /**
+     * ユーザーが明示的に押した操作からの呼び出しか（Home / Shot）。
+     * **その場合は尋ね直す** — 接続時に［後で］を選んでも、あとでボタンを押したら
+     * もう一度出ないと「押しても何も起きない」に戻る。
+     */
+    explicit = false
+  ): Promise<boolean> {
+    if (!error.message.includes(SimulatorWebviewProvider.AGENT_MISSING)) {
+      return false;
+    }
+    // 自動接続は未接続のあいだ 5 秒ごとに回る。**接続時だけ**端末 1 台につき
+    // 1 回に絞る（通知が積み上がるのを防ぐ）。押された操作からは絞らない。
+    if (!explicit && this.agentPrompted.has(deviceId)) return false;
+    this.agentPrompted.add(deviceId);
+
+    const install = vscode.l10n.t('Install');
+    const answer = await vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        'Secondary Simulator: this device needs the mobilecli agent. Without it, screenshots, recordings, and the Home button do not work. Install it now?'
+      ),
+      install,
+      vscode.l10n.t('Not now')
+    );
+    if (answer !== install) return false;
+
+    try {
+      return await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: vscode.l10n.t(
+            'Secondary Simulator: installing the mobilecli agent…'
+          ),
+          cancellable: false,
+        },
+        async () => {
+          await this.mobileCliServer.installAgent(deviceId);
+          return true;
+        }
+      );
+    } catch (installError) {
+      Logger.error('agent の導入に失敗', installError as Error);
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: could not install the mobilecli agent — {0}',
+          (installError as Error).message
+        )
+      );
+      // 失敗の理由が消えるまで尋ね直せるようにする（一度きりにしない）
+      this.agentPrompted.delete(deviceId);
+      return false;
+    }
   }
 
   /**
@@ -1192,7 +1286,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       Logger.warn('Cannot press home: no device selected');
       return;
     }
-    await this.inputController.home();
+    const deviceId = this.currentDeviceId;
+    try {
+      await this.inputController.home();
+    } catch (error) {
+      // iOS 27 の Home は agent 経由（HID の Home は届かない）。未導入なら
+      // 導入を促し、入ったら**そのまま押し直す** — Home は押せば済むので、
+      // ユーザーにもう一度押させる理由がない。
+      if (!(await this.ensureAgent(deviceId, error as Error, true))) throw error;
+      await this.inputController.home();
+    }
   }
 
   async pressBack(): Promise<void> {
@@ -1899,6 +2002,17 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       const result = await this.mobileCliClient.screenshot(deviceId, 'png');
       shot = decodeScreenshotResult(result, 'png');
     } catch (error) {
+      // `device.screenshot` も agent が要る。未導入なら導入して**そこで終わる** —
+      // 導入直後は runner の起動で端末画面が数秒黒くなるので、続けて撮ると
+      // 黒い画像を保存してしまう。撮り直しはユーザーに押してもらう。
+      if (await this.ensureAgent(deviceId, error as Error, true)) {
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t(
+            'Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.'
+          )
+        );
+        return;
+      }
       Logger.error('スクリーンショットの取得に失敗', error as Error);
       void vscode.window.showErrorMessage(
         vscode.l10n.t(

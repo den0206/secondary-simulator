@@ -81,5 +81,11 @@
   "Disconnect only": "仅断开连接",
   "Disconnect from {0}?": "要断开与 {0} 的连接吗？",
   "You can also shut down this simulator or emulator. Apps running inside it will stop.": "您也可以关闭此模拟器。其中运行的应用也将停止。",
-  "Secondary Simulator: Disconnected, but could not shut down {0} — {1}": "Secondary Simulator: 已断开连接，但无法关闭 {0} — {1}"
+  "Secondary Simulator: Disconnected, but could not shut down {0} — {1}": "Secondary Simulator: 已断开连接，但无法关闭 {0} — {1}",
+  "Install": "安装",
+  "Not now": "以后再说",
+  "Secondary Simulator: this device needs the mobilecli agent. Without it, screenshots, recordings, and the Home button do not work. Install it now?": "Secondary Simulator: 此设备需要 mobilecli agent。缺少它将无法使用截图、录制和 Home 按钮。现在安装吗？",
+  "Secondary Simulator: installing the mobilecli agent…": "Secondary Simulator: 正在安装 mobilecli agent…",
+  "Secondary Simulator: could not install the mobilecli agent — {0}": "Secondary Simulator: 无法安装 mobilecli agent — {0}",
+  "Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.": "Secondary Simulator: 已安装 mobilecli agent。请再次按 Shot 进行截图。"
 }

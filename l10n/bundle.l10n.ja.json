@@ -81,5 +81,11 @@
   "Disconnect only": "表示のみ切断",
   "Disconnect from {0}?": "{0} との接続を切断しますか？",
   "You can also shut down this simulator or emulator. Apps running inside it will stop.": "シミュレーター／エミュレーター本体も停止できます。端末内で実行中のアプリも停止します。",
-  "Secondary Simulator: Disconnected, but could not shut down {0} — {1}": "Secondary Simulator: 切断しましたが、{0} を停止できませんでした — {1}"
+  "Secondary Simulator: Disconnected, but could not shut down {0} — {1}": "Secondary Simulator: 切断しましたが、{0} を停止できませんでした — {1}",
+  "Install": "インストール",
+  "Not now": "後で",
+  "Secondary Simulator: this device needs the mobilecli agent. Without it, screenshots, recordings, and the Home button do not work. Install it now?": "Secondary Simulator: この端末には mobilecli の agent が必要です。無いとスクリーンショット・録画・Home ボタンが動きません。今すぐインストールしますか？",
+  "Secondary Simulator: installing the mobilecli agent…": "Secondary Simulator: mobilecli の agent を導入中…",
+  "Secondary Simulator: could not install the mobilecli agent — {0}": "Secondary Simulator: mobilecli の agent を導入できませんでした — {0}",
+  "Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.": "Secondary Simulator: mobilecli の agent を導入しました。もう一度 Shot を押すと撮影します。"
 }
