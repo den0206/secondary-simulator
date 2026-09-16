@@ -291,6 +291,8 @@ interface InputBackend {
 - `SimulatorInputController` が起動時にバックエンドを選ぶ:
   iOS Simulator かつ HID 注入が使える → HidBackend、Android → AndroidBackend、
   それ以外（iOS 実機・降格時）→ WdaBackend
+- iOS Simulator の runtime 27 以降の Home は、DeviceHub が旧 Indigo Home を受けないため
+  WdaBackend（mobilecli agent）へ送る。agent が使えない場合だけ従来の HID を試す
 
 ### 7.1 Android のタッチを貯めない理由
 
@@ -377,7 +379,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `touch2Down` / `touch2Move` / `touch2Up` | 2本指（ピンチ等） |
 | `keypress {key, special, modifiers?}` | ASCII は HID `text`/`key`、非 ASCII は WdaBackend.inputText（§10.3）。`modifiers`（`command`/`control`/`option`/`shift`）があれば `modifier` で挟んだ `keyDown`/`keyUp` を組む（HID 経路のみ。`text` は使えない — project-review.md §5.7）。`special: true` の `up`/`down`/`left`/`right` は HID usage へ。Android は `KEYCODE_DPAD_*`（`device.io.button`） |
 | `paste` | 貼り付けの合図。**中身は載せない** — クリップボードはホストが `vscode.env.clipboard` で読む（webview の `clipboardData` は外部アプリでコピーした内容がひとつ前のまま返る）。`InputBackend.text` へ流す。URL 入力用。長さはホスト側で上限 |
-| `home` | `button "home"` |
+| `home` | runtime 27 以降の iOS Simulator は WdaBackend の `button "home"`、それ以外は選択中の backend の `button "home"` |
 | `back` | iOS: no-op（UI ではボタン無効）。Android は WdaBackend |
 | `screenshot` | 接続中デバイスの画面を保存（`device.screenshot` → 保存ダイアログ） |
 | `record` | 画面録画の開始/停止をトグル。`secondarySimulator.recordingSource` が `view`（既定）なら webview で合成して録る（§7.2）、`device` なら `device.screenrecord` / `.stop`（保存先はユーザーが選ぶパスを `output` に渡す） |

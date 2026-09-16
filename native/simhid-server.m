@@ -1309,21 +1309,19 @@ static BOOL setupSymbols(NSString **reason) {
     *reason = @"CoreSimulator を読み込めない";
     return NO;
   }
-  NSArray<NSString *> *skPaths = @[
-    [dev stringByAppendingPathComponent:
-        @"Library/PrivateFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"],
-    [[[dev stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"SharedFrameworks"]
-        stringByAppendingPathComponent:@"SimulatorKit.framework/Versions/A/SimulatorKit"],
-  ];
-  void *sk = NULL;
-  for (NSString *path in skPaths) {
-    sk = dlopen(path.UTF8String, RTLD_NOW);
-    if (sk) break;
+  // Xcode 27 moved SimulatorKit from Developer/Library/PrivateFrameworks to
+  // Contents/SharedFrameworks. Keep the legacy path first for older Xcodes.
+  NSString *skPath = [dev stringByAppendingPathComponent:
+      @"Library/PrivateFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"];
+  void *sk = dlopen(skPath.UTF8String, RTLD_NOW);
+  if (!sk) {
+    skPath = [[dev stringByDeletingLastPathComponent] stringByAppendingPathComponent:
+        @"SharedFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"];
+    sk = dlopen(skPath.UTF8String, RTLD_NOW);
   }
   if (!sk) {
     const char *detail = dlerror();
-    *reason = [NSString stringWithFormat:@"SimulatorKit を読み込めない%s%s",
-        detail ? @": ".UTF8String : "", detail ?: ""];
+    *reason = [NSString stringWithFormat:@"SimulatorKit を読み込めない: %s", detail ?: "unknown"];
     return NO;
   }
 

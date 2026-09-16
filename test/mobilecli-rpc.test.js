@@ -139,6 +139,23 @@ for (const button of BUTTONS) {
   check(button, blob.includes(`KEYCODE_${button}`) || blob.includes(`"${button}"`));
 }
 
+console.log('\n4c) agent 未導入の判定に使う文言が実在する');
+// mobilecli は端末側 agent を自動で入れない。`device.info` / `device.screenshot` /
+// `device.io.*` は未導入だとこの文言で失敗し、拡張はそれを見て導入を促す
+// （`SimulatorWebviewProvider.AGENT_MISSING`）。**版で文言が変わると黙って
+// 「Shot が撮れないだけ」に戻る**ので、ここで見張る。
+{
+  const marker = 'agent is not installed';
+  check(`"${marker}" がバイナリにある`, blob.includes(marker));
+  const src = fs.readFileSync(
+    path.join(ROOT, 'src/webview/SimulatorWebviewProvider.ts'),
+    'utf8'
+  );
+  check('実装が同じ文言を見ている', src.includes(`'${marker}'`));
+  // 導入に使うサブコマンド（MobileCliServer.installAgent）
+  check('agent install がある', blob.includes('agent install'));
+}
+
 console.log('\n4b) 照合が空振りしていない（表そのものの見張り）');
 // 実在しない名前が通ってしまうなら、上の ✅ は何も確かめていない
 check('存在しない RPC は落ちる', !blob.includes('device.io.nonexistent'));

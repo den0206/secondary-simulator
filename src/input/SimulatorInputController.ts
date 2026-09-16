@@ -26,6 +26,7 @@ export const keyLabel = (key: string, special?: boolean): string =>
 
 export interface ControllerOptions {
   deviceId: string;
+  version?: string;
   platform: 'ios' | 'android';
   type: 'simulator' | 'emulator' | 'real';
   mobileCliClient: MobileCliClient;
@@ -358,6 +359,19 @@ export class SimulatorInputController {
   }
 
   async home(): Promise<void> {
+    // ponytail: runtime major is the available DeviceHub proxy; use an explicit
+    // Xcode capability when mobilecli exposes one.
+    const isDeviceHub =
+      this.opts.platform === 'ios' &&
+      this.opts.type === 'simulator' &&
+      Number.parseInt(this.opts.version ?? '', 10) >= 27;
+    if (isDeviceHub) {
+      // **失敗を飲まない。** ここで HID へ落としても DeviceHub には届かないので
+      // 「押しても何も起きない」になるだけ。呼び手（`pressHome`）が理由を見て、
+      // agent 未導入なら導入を促す。
+      await this.wdaFallback.button('home');
+      return;
+    }
     await this.primary.button('home');
   }
 

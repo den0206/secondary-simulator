@@ -2,7 +2,7 @@
   "name": "secondary-simulator",
   "displayName": "Secondary Simulator",
   "description": "%extension.description%",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "publisher": "yuuki-sakai",
   "icon": "media/icon.png",
   "license": "MIT",
@@ -363,7 +363,7 @@
     "clean": "rm -rf out native/simhid-server"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.9.2",
     "typescript": "^7.0.2"

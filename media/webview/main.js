@@ -273,6 +273,7 @@ function onPointerUp(e) {
     clearTrail();
   }
   pushFadeMark(p);
+  container.releasePointerCapture?.(e.pointerId);
   // 離した瞬間も同じ理由で描き直す（指が消えたことが録画に反映されない）
   scheduleViewDraw();
   e.preventDefault();
@@ -283,10 +284,14 @@ container.addEventListener('pointerdown', onPointerDown);
 container.addEventListener('pointermove', onPointerMove);
 container.addEventListener('pointerup', onPointerUp);
 container.addEventListener('pointercancel', onPointerUp);
-// 画面の外へ出たらカーソルを消す（居ない指を録画に描き続けない）
-container.addEventListener('pointerleave', () => {
-  cursor = null;
-  scheduleViewDraw();
+// Pointer Capture が使えない環境では、画面外で離すと pointerup を受け取れない。
+// ここで同じ終了処理へ通し、端末へ押しっぱなしを残さない。
+container.addEventListener('pointerleave', (e) => {
+  if (pointers.has(e.pointerId)) onPointerUp(e);
+  else {
+    cursor = null;
+    scheduleViewDraw();
+  }
 });
 
 // ---- 楽観的フィードバック（リップル・軌跡）----------------------------------

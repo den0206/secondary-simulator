@@ -10,6 +10,28 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-15
+
+### Fixed
+
+- Screenshots, recordings to the device, and the Home button no longer fail silently on a
+  simulator that has never been used with the extension. mobilecli needs an agent on the
+  device and does not install it on its own, so a freshly created simulator always starts
+  without one — `device.info`, `device.screenshot` and every input call then fail with
+  `agent is not installed`. The extension now offers to install it, on connect and again
+  whenever Home or Shot is pressed, so choosing "Not now" is never a dead end. After an
+  install, Shot asks to be pressed again instead of capturing right away: the agent's test
+  runner blanks the device screen for a couple of seconds while it launches, and capturing
+  through that would save a black image.
+
+### Fixed
+
+- Xcode 27's DeviceHub now loads SimulatorKit from its new location for direct display
+  and input. Its Home button is delivered through the mobilecli agent because DeviceHub
+  no longer accepts the legacy Indigo Home event.
+- Releasing a pointer outside the preview now ends the simulated touch instead of leaving
+  a horizontal scroll or drag active.
+
 ## [0.7.1] — 2026-09-14
 
 ### Changed
@@ -500,7 +522,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.1...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.8.0...HEAD
+[0.8.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.1...Ver_0.8.0
 [0.7.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.0...Ver_0.7.1
 [0.7.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.1...Ver_0.7.0
 [0.6.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.6.0...Ver_0.6.1

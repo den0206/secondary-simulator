@@ -22,7 +22,7 @@ const fakeClient = {
   inputText: async (_id, text) => calls.push(['wda:text', text]),
   tap: async () => calls.push(['wda:tap']),
   gesture: async () => calls.push(['wda:gesture']),
-  pressButton: async () => calls.push(['wda:button']),
+  pressButton: async (_id, button) => calls.push(['wda:button', button]),
 };
 
 const controller = new SimulatorInputController({
@@ -79,6 +79,19 @@ async function main() {
     JSON.stringify(calls) ===
       JSON.stringify([['hid:touchDown'], ['hid:touchMove'], ['hid:touchUp']]),
     JSON.stringify(calls));
+
+  console.log('\n4) DeviceHub の Home は agent 経由にする');
+  controller.opts.version = '27.0';
+  calls.length = 0;
+  await controller.home();
+  check('iOS 27 は WDA の HOME',
+    JSON.stringify(calls) === JSON.stringify([['wda:button', 'HOME']]), JSON.stringify(calls));
+
+  controller.opts.version = '26.0';
+  calls.length = 0;
+  await controller.home();
+  check('旧版は HID の Home',
+    JSON.stringify(calls) === JSON.stringify([['hid:button']]), JSON.stringify(calls));
 
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
   process.exit(failures === 0 ? 0 : 1);

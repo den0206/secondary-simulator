@@ -322,4 +322,52 @@ export class MobileCliServer {
   public getPid(): number | undefined {
     return this.mobilecliServerProcess?.pid;
   }
+
+  /**
+   * 端末側 agent（WebDriverAgent の XCTest runner）を導入する。
+   *
+   * **mobilecli は自動で入れない** — `device.info` / `device.screenshot` /
+   * `device.io.*` は agent が無いと
+   * 「`agent is not installed, use 'mobilecli agent install …'`」で失敗する。
+   * シミュレータ 1 台ごとに要るので、**新しい端末では必ず未導入から始まる**。
+   *
+   * バイナリの場所と npx フォールバックの知識はこのクラスに閉じているので、
+   * 導入もここでやる（呼び手にコマンドを組ませない）。
+   */
+  public async installAgent(deviceId: string): Promise<void> {
+    if (!this.mobilecliPath) {
+      throw new Error('mobilecli が見つからないため agent を導入できない');
+    }
+    const args =
+      this.mobilecliPath === 'npx'
+        ? ['--ignore-scripts', '-y', this.npxPackageSpec()]
+        : [];
+    args.push('agent', 'install', '--device', deviceId);
+
+    Logger.info(`端末側 agent を導入する: ${deviceId}`);
+    const proc = spawn(this.mobilecliPath, args, {stdio: 'pipe'});
+    // 失敗の理由は stdout の JSON か stderr に出る。最後の一塊だけ持つ（溜めない）
+    let tail = '';
+    const keep = (chunk: Buffer) => {
+      tail = (tail + chunk.toString()).slice(-2000);
+    };
+    proc.stdout?.on('data', keep);
+    proc.stderr?.on('data', keep);
+
+    await new Promise<void>((resolve, reject) => {
+      proc.on('error', reject);
+      proc.on('close', (code) => {
+        if (code === 0) {
+          Logger.info('端末側 agent を導入した');
+          resolve();
+          return;
+        }
+        reject(
+          new Error(
+            `agent の導入に失敗（終了コード ${code}）: ${tail.trim().slice(-400)}`
+          )
+        );
+      });
+    });
+  }
 }
