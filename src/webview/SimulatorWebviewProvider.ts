@@ -84,6 +84,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    */
   private frameCount = 0;
   private frameBytes = 0;
+  /** webview の描画待ちは 1 枚だけにし、到着中は最新フレームへ上書きする。 */
+  private pendingFrame: string | null = null;
+  private frameInFlight: number | null = null;
+  private frameSeq = 0;
   private lastStatsAtMs = Date.now();
   /**
    * 直結表示中か。フレームが拡張ホストを通らないので、**受信 fps と帯域は測れない**。
@@ -392,7 +396,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     return this.view?.visible === true;
   }
 
-  // ---- 自動接続（未接続のあいだだけ 5 秒ごとに探す）----------------------------
+  // ---- 自動接続・接続状態の監視（5 秒ごと）------------------------------------
 
   private isAutoConnectEnabled(): boolean {
     return vscode.workspace
@@ -422,7 +426,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 未接続かつ表示中のときだけタイマーを回す。条件が崩れたら止める。
+   * 表示中かつ、接続中または Auto ON のときだけタイマーを回す。
+   * 接続中も一覧を更新し、端末が停止したら MJPEG の再接続を止める。
    *
    * 間隔は連続失敗数で伸びる（`autoConnectDelayFor`）。伸びたときはタイマーを
    * 張り直す —— mobilecli が起動できない環境で 5 秒ごとに失敗し続けると、
@@ -431,8 +436,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private syncAutoConnectTimer(): void {
     const wanted =
       this.isViewVisible() &&
-      !this.currentDeviceId &&
-      this.isAutoConnectEnabled();
+      (this.currentDeviceId !== null || this.isAutoConnectEnabled());
     const running = this.autoConnectTimer !== null;
     const delay = autoConnectDelayFor(this.deviceListFailures);
     // 回っていないときに間隔だけ比べない（毎回 else へ落ちて searching を送り直す）
@@ -446,7 +450,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         () => void this.refreshDevices(),
         delay
       );
-      this.postMessage({type: 'searching', active: true});
+      if (!this.currentDeviceId) {
+        this.postMessage({type: 'searching', active: true});
+      }
     } else {
       this.stopAutoConnectTimer();
       // 繋がって止まったときは「Connecting…」を消さない。探すのをやめた場合だけ戻す。
@@ -648,6 +654,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'frameAck': {
+          const seq = asIndex(message.seq);
+          if (seq === null || seq !== this.frameInFlight) break;
+          this.frameInFlight = null;
+          this.sendPendingFrame();
+          break;
+        }
+
         // Phase 1: 生ポインタイベント。タップ/スワイプ/ロングプレスの判定は端末に委ねる。
         case 'touchDown':
         case 'touch2Down':
@@ -786,6 +800,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         runtime: d.version || '',
         type: d.type as DeviceType,
       }));
+      const current = this.devices.find((d) => d.id === this.currentDeviceId);
+      if (this.currentDeviceId && current?.state !== 'Booted') {
+        this.disconnectUnavailableDevice(this.currentDeviceId);
+      }
       // 5秒ごとのポーリングで毎回送ると webview の <select> が作り直される。差分だけ送る。
       const signature = this.devices.map((d) => `${d.id}:${d.state}`).join(',');
       if (signature !== this.lastDevicesSignature) {
@@ -865,10 +883,26 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.syncAutoConnectTimer();
   }
 
+  /** 一覧上で停止・消失した端末のストリーム再接続を打ち切る。 */
+  private disconnectUnavailableDevice(deviceId: string): void {
+    if (this.currentDeviceId !== deviceId) return;
+    Logger.info(`デバイスが停止したため接続を終了: ${deviceId}`);
+    this.stopCapture();
+    this.currentDeviceId = null;
+    this.setStatus({state: 'disconnected'});
+    this.postMessage({type: 'disconnected'});
+    this.syncAutoConnectTimer();
+  }
+
   private async startCaptureForDevice(
     deviceId: string,
     device: Device
   ): Promise<void> {
+    // 再表示・Retry・設定変更もここへ来る。入口で止めないと停止中でも再接続する。
+    if (device.state !== 'Booted') {
+      this.disconnectUnavailableDevice(deviceId);
+      return;
+    }
     // 同じデバイスへ繋ぎ直すなら入力はそのまま使う（再表示・設定変更で作り直さない）。
     // 判定は currentDeviceId を書き換える前に行う。
     const reuseInput =
@@ -1046,11 +1080,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       // （webview 側が 3 通りの形を推測していたのはこのため）。
       this.frameCount++;
       this.frameBytes += frameBase64.length;
-      this.postMessage({
-        type: 'frame',
-        encoding: 'base64',
-        data: frameBase64,
-      });
+      this.pendingFrame = frameBase64;
+      this.sendPendingFrame();
     });
 
     try {
@@ -1964,6 +1995,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    *   やり直さないため。
    */
   private stopCapture(options?: {keepInput?: boolean}): void {
+    this.pendingFrame = null;
+    this.frameInFlight = null;
+    this.frameSeq++;
     if (this.currentCapture) {
       this.currentCapture.dispose();
       this.currentCapture = null;
@@ -2071,6 +2105,16 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   private postMessage(message: unknown): void {
     this.view?.webview.postMessage(message);
+  }
+
+  /** 描画完了の ack が返るまで送らず、IPC に古い映像を溜めない。 */
+  private sendPendingFrame(): void {
+    if (this.frameInFlight !== null || !this.pendingFrame || !this.view) return;
+    const seq = ++this.frameSeq;
+    const data = this.pendingFrame;
+    this.pendingFrame = null;
+    this.frameInFlight = seq;
+    this.postMessage({type: 'frame', encoding: 'base64', data, seq});
   }
 
   private sendError(text: string): void {

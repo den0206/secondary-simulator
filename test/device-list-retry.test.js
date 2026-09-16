@@ -127,6 +127,24 @@ async function main() {
     JSON.stringify(sent.filter((m) => m.type === 'error'))
   );
 
+  console.log('\n7) 接続中のデバイスが停止したら再接続を止める');
+  const stopped = new SimulatorWebviewProvider({fsPath: '/tmp/ext'});
+  const stoppedSent = [];
+  let captureStops = 0;
+  stopped.view = {visible: true, webview: {postMessage: (m) => stoppedSent.push(m)}};
+  stopped.currentDeviceId = 'SIM-1';
+  stopped.currentCapture = {dispose: () => captureStops++};
+  stopped.mobileCliClient = {
+    listDevices: async () => ({devices: [{
+      id: 'SIM-1', name: 'iPhone', platform: 'ios', type: 'simulator', state: 'offline',
+    }]}),
+  };
+  await stopped.refreshDevices();
+  check('キャプチャを止める', captureStops === 1, String(captureStops));
+  check('接続中の ID を捨てる', stopped.currentDeviceId === null);
+  check('切断を webview へ通知する', stoppedSent.some((m) => m.type === 'disconnected'));
+  await stopped.dispose();
+
   // dispose は録画の書き終わりを待つので Promise を返す
   await provider.dispose();
 }

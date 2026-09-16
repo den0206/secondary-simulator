@@ -530,6 +530,14 @@ listeners['window:message']({data: {type: 'frame', data: null}});
 check('base64 文字列以外は無視する', els['simulator-img'].src === before,
   els['simulator-img'].src);
 
+sent.length = 0;
+listeners['window:message']({
+  data: {type: 'frame', encoding: 'base64', data: b64, seq: 7},
+});
+fireImg('load');
+check('描画後に frameAck を返す',
+  sent.some((m) => m.type === 'frameAck' && m.seq === 7), JSON.stringify(sent));
+
 console.log('\n14b) 個別フレームの error は無視する');
 // 直結ストリームと違い、1 枚壊れただけなので次のフレームで直る。
 // ここで警告を出すと毎秒 30 回の経路でオーバーレイが点滅する。

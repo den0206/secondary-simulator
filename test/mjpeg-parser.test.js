@@ -219,5 +219,21 @@ console.log('\n10) 再接続のバックオフ');
     JSON.stringify(delays));
 }
 
+console.log('\n11) mobilecli の途中 boundary 切替');
+{
+  const frameBoundary = '--mjpeg-frame-boundary';
+  const p = new MjpegParser(BOUNDARY, {additionalBoundaries: [frameBoundary]});
+  const notice = part(Buffer.from('{"message":"Starting video stream"}'), 'application/json');
+  const frame = jpegLike(256);
+  const frameHeader = Buffer.from(
+    `${frameBoundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`,
+    'latin1'
+  );
+  const parts = p.push(Buffer.concat([notice, frameHeader, frame]));
+  check('宣言と違う WDA boundary の JPEG も取れる',
+    parts.length === 2 && parts[1].contentType === 'image/jpeg' &&
+      Buffer.from(parts[1].data).equals(frame));
+}
+
 assert.strictEqual(failures, 0, `${failures} 件のテストが失敗`);
 console.log('\n全て成功');

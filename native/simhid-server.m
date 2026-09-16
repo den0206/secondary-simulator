@@ -1286,6 +1286,8 @@ static void handleCommand(NSDictionary *cmd) {
 #pragma mark - 起動とシンボル解決
 
 static NSString *developerDir(void) {
+  NSString *env = NSProcessInfo.processInfo.environment[@"DEVELOPER_DIR"];
+  if (env.length) return env;
   NSTask *t = [NSTask new];
   t.executableURL = [NSURL fileURLWithPath:@"/usr/bin/xcode-select"];
   t.arguments = @[ @"-p" ];
@@ -1307,10 +1309,23 @@ static BOOL setupSymbols(NSString **reason) {
     *reason = @"CoreSimulator を読み込めない";
     return NO;
   }
-  NSString *skPath = [dev stringByAppendingPathComponent:
-      @"Library/PrivateFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"];
-  void *sk = dlopen(skPath.UTF8String, RTLD_NOW);
-  if (!sk) { *reason = @"SimulatorKit を読み込めない"; return NO; }
+  NSArray<NSString *> *skPaths = @[
+    [dev stringByAppendingPathComponent:
+        @"Library/PrivateFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"],
+    [[[dev stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"SharedFrameworks"]
+        stringByAppendingPathComponent:@"SimulatorKit.framework/Versions/A/SimulatorKit"],
+  ];
+  void *sk = NULL;
+  for (NSString *path in skPaths) {
+    sk = dlopen(path.UTF8String, RTLD_NOW);
+    if (sk) break;
+  }
+  if (!sk) {
+    const char *detail = dlerror();
+    *reason = [NSString stringWithFormat:@"SimulatorKit を読み込めない%s%s",
+        detail ? @": ".UTF8String : "", detail ?: ""];
+    return NO;
+  }
 
   mouseMsg = (MouseMsgFn)dlsym(sk, "IndigoHIDMessageForMouseNSEvent");
   buttonMsg = (ButtonMsgFn)dlsym(sk, "IndigoHIDMessageForButton");

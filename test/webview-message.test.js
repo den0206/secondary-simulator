@@ -185,6 +185,18 @@ async function wiring() {
   await provider.handleMessage({type: 'viewport'});
   check('壊れた viewport で落ちない', true);
 
+  console.log('\n8) 映像は描画待ち 1 枚と最新 1 枚だけに畳む');
+  sent.length = 0;
+  provider.pendingFrame = 'old';
+  provider.sendPendingFrame();
+  const firstSeq = sent[0].seq;
+  provider.pendingFrame = 'new';
+  provider.sendPendingFrame();
+  check('ack 前は 1 枚しか送らない', sent.length === 1, JSON.stringify(sent));
+  await provider.handleMessage({type: 'frameAck', seq: firstSeq});
+  check('ack 後は最新だけ送る',
+    sent.length === 2 && sent[1].data === 'new', JSON.stringify(sent));
+
   await provider.dispose();
 }
 

@@ -24,6 +24,8 @@ export interface MjpegParserOptions {
   maxPartSize?: number;
   /** バッファの上限。超えたら壊れた入力とみなす（既定 10MB）。 */
   maxBufferSize?: number;
+  /** Content-Type の宣言と実際のフレーム境界が違う実装向け。 */
+  additionalBoundaries?: string[];
 }
 
 /** パーサが壊れた入力を検出したときに投げる。呼び出し側はストリームを張り直す。 */
@@ -51,7 +53,7 @@ export function parseBoundary(contentType: string | null): string | null {
 export class MjpegParser {
   private readonly maxPartSize: number;
   private readonly maxBufferSize: number;
-  private readonly boundaryBytes: Uint8Array;
+  private readonly boundaryBytes: Uint8Array[];
 
   private buf: Uint8Array = new Uint8Array(0);
   /** buf のうち未処理データの開始位置。slice せずここを進める。 */
@@ -65,7 +67,9 @@ export class MjpegParser {
 
   constructor(boundary: string, options: MjpegParserOptions = {}) {
     if (!boundary) throw new Error('boundary が空');
-    this.boundaryBytes = new TextEncoder().encode(boundary);
+    this.boundaryBytes = [boundary, ...(options.additionalBoundaries ?? [])].map(
+      (value) => new TextEncoder().encode(value)
+    );
     this.maxPartSize = options.maxPartSize ?? DEFAULT_MAX;
     this.maxBufferSize = options.maxBufferSize ?? DEFAULT_MAX;
   }
@@ -122,21 +126,24 @@ export class MjpegParser {
 
   /** バウンダリとヘッダを読む。ヘッダが揃っていなければ false。 */
   private readHeader(): boolean {
-    const boundaryAt = this.indexOfBytes(this.boundaryBytes, this.head);
-    if (boundaryAt < 0) {
+    const boundary = this.boundaryBytes
+      .map((bytes) => ({bytes, at: this.indexOfBytes(bytes, this.head)}))
+      .filter(({at}) => at >= 0)
+      .sort((a, b) => a.at - b.at)[0];
+    if (!boundary) {
       // バウンダリの一部が次チャンクに跨る可能性があるので、末尾だけ残して捨てる。
-      const keep = this.boundaryBytes.length - 1;
+      const keep = Math.max(...this.boundaryBytes.map((bytes) => bytes.length)) - 1;
       const drop = this.buf.length - keep - this.head;
       if (drop > 0) this.head += drop;
       return false;
     }
 
-    const headerEnd = this.indexOfHeaderEnd(boundaryAt + this.boundaryBytes.length);
+    const headerEnd = this.indexOfHeaderEnd(boundary.at + boundary.bytes.length);
     if (headerEnd < 0) return false; // ヘッダがまだ揃っていない
 
     // ヘッダ部分だけを文字列化する。ここは ASCII なのでバイト位置と一致する。
     const headerBytes = this.buf.subarray(
-      boundaryAt + this.boundaryBytes.length,
+      boundary.at + boundary.bytes.length,
       headerEnd
     );
     const headers = new TextDecoder('utf-8').decode(headerBytes);

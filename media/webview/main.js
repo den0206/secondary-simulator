@@ -946,6 +946,7 @@ let streamMode = false;
 // 実際に描けたフレーム数。resources の更新時に読んで 0 に戻す（貯めない）。
 // 拡張ホストが数える「受信 fps」との差が、そのまま落としたフレームになる。
 let paintedFrames = 0;
+let relayFrameSeq = null;
 let paintedSince = Date.now();
 
 /** 前回の集計からの描画 fps を返し、カウンタを 0 に戻す。 */
@@ -995,6 +996,10 @@ img.addEventListener('load', () => {
     reportViewport();
   }
   setOverlayVisible(false);
+  if (relayFrameSeq !== null) {
+    post('frameAck', {seq: relayFrameSeq});
+    relayFrameSeq = null;
+  }
 });
 
 // 表示中の実ピクセル幅をホストへ伝える。取り込みの幅がこれに追従する
@@ -1022,6 +1027,10 @@ img.addEventListener('error', () => {
   // 直結ストリームは接続そのものが切れた合図。個別フレームは 1 枚壊れただけなので
   // 次のフレームで直る（毎秒 30 回届く経路で警告を出さない）。
   if (streamMode) setOverlayVisible(true, t('streamFailed'));
+  if (relayFrameSeq !== null) {
+    post('frameAck', {seq: relayFrameSeq});
+    relayFrameSeq = null;
+  }
 });
 
 let overlayVisible = null; // 直近に適用した状態。frame 毎の DOM 書き換えを避ける
@@ -1224,6 +1233,7 @@ window.addEventListener('message', (event) => {
 
     case 'frame':
       // load ハンドラが paintedFrames を数え、オーバーレイを消す
+      relayFrameSeq = Number.isInteger(message.seq) ? message.seq : null;
       showFrame(message.data);
       break;
 
