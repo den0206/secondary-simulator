@@ -18,7 +18,6 @@
   "Through mobilecli/WDA. HID is unavailable or was demoted.": "mobilecli/WDA 経由。HID が使えないか、降格した状態。",
   "Touches go straight to adb; keys and buttons go through mobilecli.": "タッチは adb へ直接、キーとボタンは mobilecli 経由。",
   "Select Device…": "デバイスを選択…",
-  "Refresh the device list": "デバイス一覧を再取得",
   "Connected": "接続中",
   "Disconnected": "切断中",
   "Home": "ホーム",

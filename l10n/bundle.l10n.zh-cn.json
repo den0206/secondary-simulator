@@ -18,7 +18,6 @@
   "Through mobilecli/WDA. HID is unavailable or was demoted.": "经由 mobilecli/WDA。HID 不可用或已降级。",
   "Touches go straight to adb; keys and buttons go through mobilecli.": "触摸直接经由 adb，按键与按钮经由 mobilecli。",
   "Select Device…": "选择设备…",
-  "Refresh the device list": "重新获取设备列表",
   "Connected": "已连接",
   "Disconnected": "已断开",
   "Home": "主屏幕",

@@ -23,6 +23,7 @@ export class MobileCliServer {
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
   private mobilecliServerProcess: ChildProcess | null = null;
+  private launchPromise: Promise<void> | null = null;
   /**
    * 使えるサーバを掴んでいるか。自分で spawn した場合と、既存サーバを再利用した場合の
    * 両方で true になる。プロセスの有無だけで判定すると、再利用時に毎回ポート走査
@@ -166,7 +167,16 @@ export class MobileCliServer {
     );
   }
 
-  public async launchServer(): Promise<void> {
+  public launchServer(): Promise<void> {
+    if (!this.launchPromise) {
+      this.launchPromise = this.launchServerImpl().finally(() => {
+        this.launchPromise = null;
+      });
+    }
+    return this.launchPromise;
+  }
+
+  private async launchServerImpl(): Promise<void> {
     if (!this.mobilecliPath) {
       throw new Error('mobilecli not found');
     }
@@ -302,6 +312,11 @@ export class MobileCliServer {
   /** 使えるサーバを掴んでいるか。外部サーバを再利用している場合も true。 */
   public isServerRunning(): boolean {
     return this.serverReady;
+  }
+
+  /** 次回の利用時に health を取り直す（RPC 接続が切れた後の再試行用）。 */
+  public invalidateServer(): void {
+    this.serverReady = false;
   }
 
   public getPid(): number | undefined {

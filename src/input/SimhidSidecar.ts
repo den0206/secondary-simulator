@@ -25,7 +25,7 @@ type Pending = {
 export class SimhidSidecar {
   /** 1 往復で終わるコマンドの応答待ち。長くかかるものは send の引数で上書きする。 */
   private static readonly REQUEST_TIMEOUT_MS = 3000;
-  private static readonly READY_TIMEOUT_MS = 5000;
+  private static readonly READY_TIMEOUT_MS = 10_000;
   private static readonly MAX_RESTARTS = 1;
   /**
    * 改行が来ないまま溜め込む stdout の上限。1 行 1 メッセージの JSON Lines なので、

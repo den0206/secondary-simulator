@@ -110,7 +110,6 @@ const i18nEls = [
   makeEl('i18n-icon', {
     attrs: {'data-i18n': 'home', 'data-i18n-icon': '⌂', 'data-i18n-title': 'home'},
   }),
-  makeEl('i18n-title-only', {attrs: {'data-i18n-title': 'refresh'}}),
   makeEl('i18n-unknown', {attrs: {'data-i18n': 'noSuchKey'}}),
 ];
 
@@ -464,8 +463,6 @@ listeners['window:message']({data: {type: 'disconnected'}});
 check('選択が空に戻る', els.device.value === '', els.device.value);
 check('Back も無効に戻る', els['btn-back'].disabled === true);
 sent.length = 0;
-listeners['btn-refresh:click']();
-check('Refresh が refresh を送る', sent.some((m) => m.type === 'refresh'));
 
 console.log('\n12) 接続ランプ');
 listeners['window:message']({data: {type: 'frame', data: 'AQ=='}});
@@ -604,13 +601,11 @@ check('fps が無ければ映像チップを出さない', !els.stats.innerHTML.
   els.stats.innerHTML);
 
 console.log('\n15c) HTML に静的に書かれた文言を差し替える');
-const [textEl, iconEl, titleEl, unknownEl] = i18nEls;
+const [textEl, iconEl, unknownEl] = i18nEls;
 check('data-i18n で textContent を差し替える',
   textEl.textContent === STRINGS.disconnect, textEl.textContent);
 check('data-i18n-icon は記号を残して後ろだけ訳す',
   iconEl.textContent === `⌂ ${STRINGS.home}`, iconEl.textContent);
-check('data-i18n-title で title を差し替える',
-  titleEl.title === STRINGS.refresh, String(titleEl.title));
 check('text と title の両方を持つ要素も両方当たる',
   iconEl.title === STRINGS.home, String(iconEl.title));
 // 辞書に無いキーは英語の原文がそのまま出る（空白にしない）

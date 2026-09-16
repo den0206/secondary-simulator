@@ -804,6 +804,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       );
       this.devices = [];
       this.lastDevicesSignature = '';
+      // fetch failed は RPC サーバーとの接続断。次の Retry で古い client を使わない。
+      this.mobileCliClient = null;
+      this.mobileCliServer.invalidateServer();
       this.postMessage({type: 'devices', devices: []});
     }
     this.syncAutoConnectTimer();

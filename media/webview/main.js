@@ -900,9 +900,6 @@ document
   .getElementById('btn-disconnect')
   .addEventListener('click', () => post('disconnect'));
 document
-  .getElementById('btn-refresh')
-  .addEventListener('click', () => post('refresh'));
-document
   .getElementById('btn-shot')
   .addEventListener('click', () => {
     unlockUiAudio();
