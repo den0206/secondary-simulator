@@ -65,6 +65,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   multipart の解析は `MjpegParser` が持つ（ネットワークに触らないので単体テスト可能）。
   **フレームは base64 の文字列のまま webview へ渡し、`<img>` の data URL にする**
   （経路の途中で復号して詰め直さない。復号は Chromium がやる）。
+  **中継フレームは `frameAck` が返るまで次を送らない**（未送信は最新 1 枚だけ持ち、
+  上書きする。ack が 1 秒返らなければ次を送る — 取りこぼしで表示が止まらないため）。
   `MjpegProxy` は起動毎のトークンを URL に要求する（同じマシンの他プロセスから
   覗かれないため）。iOS の帯域は `WdaSettings` が WDA の scale/quality を設定する。
   **取り込みの粗さは固定ではない** — webview が報告する表示幅（× DPR）に幅を合わせ、
@@ -103,8 +105,9 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   `pointerdown` の `preventDefault` はフォーカス移動も止めるので、取らないと打鍵と
   Cmd+V がエディタ側へ流れる（ボタンや `<select>` を触った後だけ効く間欠故障になる）。
   デバイス選択の `<select>` などテキスト UI にフォーカスがあるあいだはキーを送らない。
-  未接続かつ `secondarySimulator.autoConnect` が ON のあいだ、provider が 5 秒ごとに
-  デバイス一覧を取り、起動中があれば接続する（Disconnect で設定が OFF になる）。
+  表示中で「接続中」または「`secondarySimulator.autoConnect` が ON」のあいだ、provider が
+  5 秒ごとにデバイス一覧を取る。未接続なら起動中へ接続し（Disconnect で設定が OFF になる）、
+  接続中の端末が一覧で停止していたら取り込みと録画を止めて切断する。
   **デバッグ開始（`onDidStartDebugSession`）で、非表示ならビューを出す**
   （`secondarySimulator.autoShow`。判定は `src/simulator/autoShow.ts` の純粋関数、
   種別の絞りは `autoShowDebugTypes`。VS Code に「ビルド」のイベントは無いので
