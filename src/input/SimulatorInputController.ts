@@ -87,8 +87,9 @@ export class SimulatorInputController {
       fs.existsSync(this.opts.sidecarBinaryPath);
 
     if (canUseHid) {
+      let sidecar: SimhidSidecar | null = null;
       try {
-        const sidecar = new SimhidSidecar(this.opts.sidecarBinaryPath);
+        sidecar = new SimhidSidecar(this.opts.sidecarBinaryPath);
         sidecar.onFatal = (reason) => this.degradeToWda(reason);
         await sidecar.start();
         this.sidecar = sidecar;
@@ -97,6 +98,7 @@ export class SimulatorInputController {
         this.opts.onBackendChange?.(this.primary.label);
         return;
       } catch (error) {
+        sidecar?.dispose();
         Logger.warn(
           `HID サイドカーの起動に失敗、WDA へフォールバック: ${
             (error as Error).message

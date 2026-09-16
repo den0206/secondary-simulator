@@ -10,6 +10,24 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- The iOS simulator connection recovers after mobilecli stops responding: a failed device
+  list now reconnects to the server on the next attempt, and concurrent launches no longer
+  start mobilecli twice.
+- When the connected device is shut down, the view disconnects (and stops any recording)
+  instead of retrying the stream forever.
+- The relayed preview stays responsive: frames are sent to the view one at a time and
+  only the latest one waits, so a slow view no longer falls behind the device.
+- The preview no longer stays blank when mobilecli switches to a different MJPEG boundary
+  after the stream starts.
+- The HID sidecar gets more time to start on Xcode 27, and a sidecar that failed to start
+  is cleaned up before falling back to WDA.
+
+### Removed
+
+- The duplicate refresh button inside the view. Use the refresh icon in the view title bar.
+
 ## [0.8.0] — 2026-09-15
 
 ### Fixed

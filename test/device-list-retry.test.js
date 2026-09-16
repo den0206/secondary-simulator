@@ -49,15 +49,19 @@ async function main() {
   const sent = [];
   provider.view = {visible: true, webview: {postMessage: (m) => sent.push(m)}};
   let mode = 'fail';
-  provider.mobileCliClient = {
+  const failingClient = {
     listDevices: async () => {
       if (mode === 'fail') throw new Error('connect ECONNREFUSED 127.0.0.1:12000');
       return {devices: []};
     },
   };
+  provider.mobileCliClient = failingClient;
 
   console.log('1) 失敗が続いてもログは増え続けない');
-  for (let i = 0; i < 8; i++) await provider.refreshDevices();
+  for (let i = 0; i < 8; i++) {
+    provider.mobileCliClient = failingClient;
+    await provider.refreshDevices();
+  }
   check('8 回失敗した', provider.deviceListFailures === 8, String(provider.deviceListFailures));
   check(
     '記録は最初の 3 回まで',
@@ -73,6 +77,7 @@ async function main() {
     errors[0] && errors[0].text.includes('Failed to list devices'),
     JSON.stringify(errors[0])
   );
+  check('失敗した client を捨てる', provider.mobileCliClient === null);
 
   console.log('\n3) 探索の間隔が伸びている');
   check(
@@ -88,6 +93,9 @@ async function main() {
 
   console.log('\n4) 1 回でも取れたら元に戻る');
   mode = 'ok';
+  provider.mobileCliClient = {
+    listDevices: async () => ({devices: []}),
+  };
   await provider.refreshDevices();
   check('失敗数が 0', provider.deviceListFailures === 0);
   check(
@@ -100,6 +108,7 @@ async function main() {
   lines.length = 0;
   sent.length = 0;
   mode = 'fail';
+  provider.mobileCliClient = failingClient;
   await provider.refreshDevices();
   check('記録する', errorLines().length === 1, `${errorLines().length} 行`);
   check(
@@ -110,12 +119,35 @@ async function main() {
 
   console.log('\n6) 再試行を押したら同じ文言でも出し直す');
   sent.length = 0;
+  provider.mobileCliClient = failingClient;
   await provider.handleMessage({type: 'retry'});
   check(
     '押した回数だけ反応する',
     sent.filter((m) => m.type === 'error').length === 1,
     JSON.stringify(sent.filter((m) => m.type === 'error'))
   );
+
+  console.log('\n7) 接続中のデバイスが停止したら再接続を止める');
+  const stopped = new SimulatorWebviewProvider({fsPath: '/tmp/ext'});
+  const stoppedSent = [];
+  let captureStops = 0;
+  stopped.view = {visible: true, webview: {postMessage: (m) => stoppedSent.push(m)}};
+  stopped.currentDeviceId = 'SIM-1';
+  stopped.currentCapture = {dispose: () => captureStops++};
+  let recordingStops = 0;
+  stopped.recording = {deviceId: 'SIM-1'};
+  stopped.stopRecording = async () => { recordingStops++; stopped.recording = null; };
+  stopped.mobileCliClient = {
+    listDevices: async () => ({devices: [{
+      id: 'SIM-1', name: 'iPhone', platform: 'ios', type: 'simulator', state: 'offline',
+    }]}),
+  };
+  await stopped.refreshDevices();
+  check('キャプチャを止める', captureStops === 1, String(captureStops));
+  check('接続中の ID を捨てる', stopped.currentDeviceId === null);
+  check('切断を webview へ通知する', stoppedSent.some((m) => m.type === 'disconnected'));
+  check('録画も止める', recordingStops === 1, String(recordingStops));
+  await stopped.dispose();
 
   // dispose は録画の書き終わりを待つので Promise を返す
   await provider.dispose();

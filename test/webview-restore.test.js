@@ -85,7 +85,11 @@ async function main() {
   );
 
   console.log('\n3b) 繋いだままの作り直しでは選択も戻す（<select> は新品）');
+  provider.mobileCliClient = {
+    listDevices: async () => ({devices: [{...DEVICES[0], state: 'online'}]}),
+  };
   provider.currentDeviceId = 'SIM-1';
+  provider.currentCapture = {dispose() {}};
   sent.length = 0;
   await provider.handleMessage({type: 'init'});
   const order = sent.map((m) => m.type);
@@ -100,6 +104,10 @@ async function main() {
     JSON.stringify(order)
   );
   provider.currentDeviceId = null;
+  provider.currentCapture = null;
+  provider.mobileCliClient = {
+    listDevices: async () => ({devices: DEVICES}),
+  };
 
   console.log('\n4) 更新ボタンは「差分なし」で黙らない');
   sent.length = 0;

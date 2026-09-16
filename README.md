@@ -112,7 +112,7 @@ There are no gesture threshold settings: tap, swipe, and long press are all reco
 1. Open VS Code and activate the extension
 2. The **Secondary Simulator** activity bar appears in the sidebar (view name: Device Preview)
 3. Move it to the Secondary Side Bar so the device sits beside your code instead of covering the file tree: **right-click the Secondary Simulator icon in the Activity Bar → Move To → Secondary Side Bar** (dragging the icon to the right edge of the window does the same). The bundled walkthrough (**Help → Welcome**) shows the same steps. To undo it, right-click again and pick Move To → Side Bar
-4. Pick a device from the dropdown (↻ refreshes the list). With Auto ON, a booted device is selected for you.
+4. Pick a device from the dropdown (the refresh icon in the view title bar re-fetches the list). With Auto ON, a booted device is selected for you.
 5. The device screen is mirrored in real time
 6. Interact with the mouse or touchpad:
    - **Click / tap**: single tap

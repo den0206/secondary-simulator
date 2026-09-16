@@ -68,6 +68,8 @@ ObjC ランタイムに `_TtC12SimulatorKit24SimDeviceLegacyHIDClient` として
 ```
 `<DEVELOPER_DIR>` は `xcode-select -p` で取得すること。ハードコードしない
 （検証環境では `/Applications/Xcode.app` ではなく `/Applications/Xcode-26.6.0.app` が実体だった）。
+Xcode 27 では `SimulatorKit.framework` が
+`<Xcode.app>/Contents/SharedFrameworks/` へ移動したため、実装は新旧両方を探索する。
 
 ---
 

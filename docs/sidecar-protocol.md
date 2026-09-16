@@ -394,6 +394,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない。**`init` は「webview が作り直された」の合図**でもあり、ホストが一度しか送らないもの（デバイス一覧・`selectedDevice`・`mode`・録画中の表示・直結の `streamUrl`）を全部送り直す。一覧は差分判定（署名）を飛ばす — `resolveWebviewView` が呼ばれない作り直し（レンダラのクラッシュ・リロード・ビューの移動）では、送り直す機会がここしか無いため |
 | `setAutoConnect {enabled}` | `secondarySimulator.autoConnect` を書き戻す |
 | `disconnect` | キャプチャ停止。自動接続設定を OFF にする |
+| `frameAck {seq}` | 中継フレーム `seq` の描画が終わった（`<img>` の load / error）。ホストはこれが返るまで次の `frame` を送らず、届いたフレームは最新 1 枚だけ持つ。1 秒返らなければ次を送る（取りこぼしで表示が止まらないため） |
 | `viewport {width}` | 表示中の実ピクセル幅（CSS 幅 × devicePixelRatio）。取り込みの幅がこれに追従する（`captureMaxWidth` が上限）。**ビュー録画のあいだだけは例外**で、`RECORDING_WIDTH`（1080px）を下回らせない（§7.2） |
 
 | ホスト → webview | 意味 |
@@ -410,7 +411,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `searching` | 未接続で起動中デバイスを探している |
 | `connecting` | 接続開始。最初のフレームまでオーバーレイを出す |
 | `autoConnect` | 設定値。Auto ボタンと揃える |
-| `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ 個別フレーム（`data` は base64 文字列）。どちらも同じ `<img>` に出す（frame は data URL） |
+| `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ 個別フレーム（`data` は base64 文字列、`seq` は `frameAck` で返す連番）。どちらも同じ `<img>` に出す（frame は data URL） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
 | `resources` | 録画中は `recMb` / `recKbps`（書けている量と実効ビットレート）も載る。webview（レンダラ）の RSS はホストから見えないので、ファイルの伸び方が唯一見える数字。RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム）。**直結中は `direct: true` だけを送る** — フレームが拡張ホストを通らないので受信側は測れず、0 と出すと誤解される |
 | `mode` | 入力経路のラベル。文言は表示言語に従う（既定は `Fast mode (HID)` / `Compatible mode (WDA)`）。`null` で隠す。フッターの `#mode` とステータスバーが同じ文字列を使う |

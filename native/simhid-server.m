@@ -1319,7 +1319,11 @@ static BOOL setupSymbols(NSString **reason) {
         @"SharedFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit"];
     sk = dlopen(skPath.UTF8String, RTLD_NOW);
   }
-  if (!sk) { *reason = @"SimulatorKit を読み込めない"; return NO; }
+  if (!sk) {
+    const char *detail = dlerror();
+    *reason = [NSString stringWithFormat:@"SimulatorKit を読み込めない: %s", detail ?: "unknown"];
+    return NO;
+  }
 
   mouseMsg = (MouseMsgFn)dlsym(sk, "IndigoHIDMessageForMouseNSEvent");
   buttonMsg = (ButtonMsgFn)dlsym(sk, "IndigoHIDMessageForButton");

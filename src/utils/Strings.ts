@@ -44,7 +44,6 @@ export function webviewStrings(): Record<string, string> {
   return {
     // ツールバー
     selectDevice: vscode.l10n.t('Select Device…'),
-    refresh: vscode.l10n.t('Refresh the device list'),
     lampConnected: vscode.l10n.t('Connected'),
     lampDisconnected: vscode.l10n.t('Disconnected'),
 

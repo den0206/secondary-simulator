@@ -14,6 +14,8 @@ export class MjpegCapture implements CaptureStrategy {
   private static readonly MAX_IMAGE_DATA_SIZE = 10 * 1024 * 1024; // 10MB
   /** boundary が取れなかったときだけ使う既定値（mobilecli の実装値） */
   private static readonly FALLBACK_BOUNDARY = '--BoundaryString';
+  /** mobilecli 1.0.x は開始通知の後、宣言と異なる WDA の境界へ切り替える。 */
+  private static readonly WDA_FRAME_BOUNDARY = '--mjpeg-frame-boundary';
   /**
    * この時間フレームが 1 枚も来なければ、繋がったまま死んだとみなして張り直す。
    * 実測のフレーム間隔は p99 41ms（docs/sync-research.md §1.1）なので桁で余裕がある。
@@ -220,6 +222,7 @@ export class MjpegCapture implements CaptureStrategy {
       this.parser = new MjpegParser(boundary, {
         maxBufferSize: MjpegCapture.MAX_BUFFER_SIZE,
         maxPartSize: MjpegCapture.MAX_IMAGE_DATA_SIZE,
+        additionalBoundaries: [MjpegCapture.WDA_FRAME_BOUNDARY],
       });
 
       const reader = response.body.getReader();
