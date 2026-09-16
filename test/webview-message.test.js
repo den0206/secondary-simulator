@@ -196,6 +196,11 @@ async function wiring() {
   await provider.handleMessage({type: 'frameAck', seq: firstSeq});
   check('ack 後は最新だけ送る',
     sent.length === 2 && sent[1].data === 'new', JSON.stringify(sent));
+  provider.pendingFrame = 'late';
+  provider.frameSentAtMs = Date.now() - 5000;
+  provider.sendPendingFrame();
+  check('ack が返らなくても時間切れで次を送る',
+    sent.length === 3 && sent[2].data === 'late', JSON.stringify(sent));
 
   await provider.dispose();
 }

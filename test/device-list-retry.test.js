@@ -134,6 +134,9 @@ async function main() {
   stopped.view = {visible: true, webview: {postMessage: (m) => stoppedSent.push(m)}};
   stopped.currentDeviceId = 'SIM-1';
   stopped.currentCapture = {dispose: () => captureStops++};
+  let recordingStops = 0;
+  stopped.recording = {deviceId: 'SIM-1'};
+  stopped.stopRecording = async () => { recordingStops++; stopped.recording = null; };
   stopped.mobileCliClient = {
     listDevices: async () => ({devices: [{
       id: 'SIM-1', name: 'iPhone', platform: 'ios', type: 'simulator', state: 'offline',
@@ -143,6 +146,7 @@ async function main() {
   check('キャプチャを止める', captureStops === 1, String(captureStops));
   check('接続中の ID を捨てる', stopped.currentDeviceId === null);
   check('切断を webview へ通知する', stoppedSent.some((m) => m.type === 'disconnected'));
+  check('録画も止める', recordingStops === 1, String(recordingStops));
   await stopped.dispose();
 
   // dispose は録画の書き終わりを待つので Promise を返す

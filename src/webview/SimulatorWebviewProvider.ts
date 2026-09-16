@@ -87,7 +87,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /** webview の描画待ちは 1 枚だけにし、到着中は最新フレームへ上書きする。 */
   private pendingFrame: string | null = null;
   private frameInFlight: number | null = null;
+  private frameSentAtMs = 0;
   private frameSeq = 0;
+  /**
+   * ack がこの時間返らなければ次を送る。ack を 1 つ取りこぼすと中継表示が
+   * 止まったままになり、`MjpegCapture` の死活監視（端末側のフレーム到着）では拾えない。
+   */
+  private static readonly FRAME_ACK_TIMEOUT_MS = 1000;
   private lastStatsAtMs = Date.now();
   /**
    * 直結表示中か。フレームが拡張ホストを通らないので、**受信 fps と帯域は測れない**。
@@ -900,6 +906,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private disconnectUnavailableDevice(deviceId: string): void {
     if (this.currentDeviceId !== deviceId) return;
     Logger.info(`デバイスが停止したため接続を終了: ${deviceId}`);
+    // 手動の切断と同じく録画も止める（止まった画面を上限まで録り続けない）
+    if (this.recording) void this.stopRecording();
     this.stopCapture();
     this.currentDeviceId = null;
     this.setStatus({state: 'disconnected'});
@@ -2224,11 +2232,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
   /** 描画完了の ack が返るまで送らず、IPC に古い映像を溜めない。 */
   private sendPendingFrame(): void {
-    if (this.frameInFlight !== null || !this.pendingFrame || !this.view) return;
+    if (!this.pendingFrame || !this.view) return;
+    const now = Date.now();
+    if (
+      this.frameInFlight !== null &&
+      now - this.frameSentAtMs < SimulatorWebviewProvider.FRAME_ACK_TIMEOUT_MS
+    ) {
+      return;
+    }
     const seq = ++this.frameSeq;
     const data = this.pendingFrame;
     this.pendingFrame = null;
     this.frameInFlight = seq;
+    this.frameSentAtMs = now;
     this.postMessage({type: 'frame', encoding: 'base64', data, seq});
   }
 
