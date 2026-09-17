@@ -145,12 +145,19 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   ファイル全体は読まない — 先頭から box を辿って 128 個で打ち切る。**検査は形式で分ける**
   （mp4 は `moov`、webm は Cluster。webm は長さも Cues も入らないので「未完成」を
   判定できず、途中で落ちたことは連番の欠落として書き込み側が捉える）。
+- **端末設定**: `DeviceSettings` が外観・文字サイズ・Liquid Glass（iOS 26+）・模擬位置を
+  短命の `execFile` で変える。iOS は `xcrun devicectl` を先に試し、Simulator だけ
+  `simctl` へ落ちる。Android は `adb shell`（`cmd uimode` / `font_scale` / `cmd location`）。
+  **値はホスト側で検証してから渡す**（`adb shell` は端末側の sh が引数を解釈するため）。
+  模擬位置は OS から共通に読み戻せないので、拡張が設定した値だけを provider の Map に持ち、
+  端末停止で消す。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA / adb）をステータスバーへ出す。
   **経路の呼び名（`InputBackend.label`）は分岐に使う `kind` と別に持つ** — Android は
   `kind` としては WDA 側だが、経路に WebDriverAgent は登場しない（adb と mobilecli）。
   WDA と表示すると HID からの降格と見分けが付かなくなる。
   表示文字列の組み立ては `renderStatus`（vscode に触らない純粋関数）が持ち、webview の
-  フッター（`mode` メッセージ）と同じ文字列を使う。**HID→WDA の降格は無音**なので、
+  ステータス行の `#mode` バッジ（`mode` メッセージ）と同じ文字列を使う（バッジ本文は
+  `backend` の略称 HID / WDA / ADB で色分けし、文字列はツールチップに出す）。**HID→WDA の降格は無音**なので、
   遅くなった理由が見える場所を 1 つ用意する、が趣旨。
 - **utils**: `MobileCliServer` が mobilecli をサーバとして起動し、
   `MobileCliClient` が JSON-RPC 2.0（`JsonRpcClient`）で叩く。
