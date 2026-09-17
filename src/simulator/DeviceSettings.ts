@@ -88,23 +88,15 @@ function findJsonValue(value: unknown, names: string[]): unknown {
   return undefined;
 }
 
-async function readDevicectl(deviceId: string): Promise<Partial<DeviceSettingsSnapshot>> {
-  const text = await run('xcrun', [
-    'devicectl',
-    'device',
-    'info',
-    'appearance',
-    '--device',
-    deviceId,
-    '--json-output',
-    '-',
-    '--quiet',
-  ]);
-  const json = JSON.parse(text) as unknown;
+export function parseDevicectlAppearance(
+  json: unknown
+): Partial<DeviceSettingsSnapshot> {
   const rawAppearance = String(
-    findJsonValue(json, ['mode', 'appearance', 'interfaceStyle']) ?? ''
+    findJsonValue(json, ['mode', 'appearance', 'interfaceStyle', 'userInterfaceStyle']) ?? ''
   ).toLowerCase();
-  const rawTextSize = String(findJsonValue(json, ['textSize', 'contentSize']) ?? '');
+  const rawTextSize = String(
+    findJsonValue(json, ['textSize', 'contentSize']) ?? ''
+  ).toLowerCase();
   const rawOpacity = Number(findJsonValue(json, ['liquidGlassOpacity']));
   return {
     appearance: rawAppearance.includes('dark')
@@ -117,6 +109,21 @@ async function readDevicectl(deviceId: string): Promise<Partial<DeviceSettingsSn
       : undefined,
     liquidGlassOpacity: Number.isFinite(rawOpacity) ? rawOpacity : undefined,
   };
+}
+
+async function readDevicectl(deviceId: string): Promise<Partial<DeviceSettingsSnapshot>> {
+  const text = await run('xcrun', [
+    'devicectl',
+    'device',
+    'info',
+    'appearance',
+    '--device',
+    deviceId,
+    '--json-output',
+    '-',
+    '--quiet',
+  ]);
+  return parseDevicectlAppearance(JSON.parse(text) as unknown);
 }
 
 export async function readDeviceSettings(
@@ -138,19 +145,28 @@ export async function readDeviceSettings(
   }
 
   if (device.type === 'simulator') {
-    const [appearance, textSize] = await Promise.all([
-      run('xcrun', ['simctl', 'ui', device.id, 'appearance']),
-      run('xcrun', ['simctl', 'ui', device.id, 'content_size']),
-    ]);
-    if (appearance === 'light' || appearance === 'dark') snapshot.appearance = appearance;
-    if ((TEXT_SIZES as readonly string[]).includes(textSize)) {
-      snapshot.textSize = textSize as TextSize;
+    try {
+      const [appearance, textSize] = await Promise.all([
+        run('xcrun', ['simctl', 'ui', device.id, 'appearance']),
+        run('xcrun', ['simctl', 'ui', device.id, 'content_size']),
+      ]);
+      if (appearance === 'light' || appearance === 'dark') snapshot.appearance = appearance;
+      if ((TEXT_SIZES as readonly string[]).includes(textSize)) {
+        snapshot.textSize = textSize as TextSize;
+      }
+    } catch {
+      // iOS 26 以降は devicectl が同じ値を読み取れるため、ここでは続行する。
     }
     if (!liquidGlass) return snapshot;
   }
 
   try {
-    Object.assign(snapshot, await readDevicectl(device.id));
+    const appearance = await readDevicectl(device.id);
+    if (appearance.appearance) snapshot.appearance = appearance.appearance;
+    if (appearance.textSize) snapshot.textSize = appearance.textSize;
+    if (appearance.liquidGlassOpacity !== undefined) {
+      snapshot.liquidGlassOpacity = appearance.liquidGlassOpacity;
+    }
   } catch {
     // Simulator の基本設定は simctl で取得済み。実機も設定操作自体は試せる。
   }
