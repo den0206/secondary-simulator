@@ -1111,6 +1111,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     try {
       const settings = await readDeviceSettings(device);
       if (this.currentDeviceId !== device.id) return;
+      // 読めなかった端末ではパネルを出さない。出すと前の端末の値がそのまま見える。
+      if (!settings.appearance) {
+        Logger.warn(`端末設定を取得できない: ${device.id}`);
+        return;
+      }
       const location = this.simulatedLocations.get(device.id);
       this.postMessage({
         type: 'deviceSettings',
@@ -1119,14 +1124,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       });
     } catch (error) {
       Logger.warn(`端末設定を取得できない: ${(error as Error).message}`);
-      if (this.currentDeviceId === device.id) {
-        this.postMessage({
-          type: 'deviceSettings',
-          liquidGlass:
-            device.platform === 'ios' && /(?:iOS\s*)?(?:2[6-9]|[3-9]\d)/i.test(device.runtime ?? ''),
-          location: null,
-        });
-      }
     }
   }
 
