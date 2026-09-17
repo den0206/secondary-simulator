@@ -19,6 +19,7 @@ so **there is no need to move entries by hand**.
 
 ### Changed
 
+- Update bundled mobilecli to 1.0.11.
 - The status row above the device is now a single pill that carries the device picker,
   connection dot, and backend badge together, instead of three separate boxes.
 - The input backend indicator is a color-coded badge — moss for HID (fast, direct),

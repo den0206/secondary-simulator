@@ -18,7 +18,7 @@ export class MobileCliServer {
    * 「利用者のマシンで未検証のコードを走らせない」ためなので、ここだけ古い版に
    * 貼り付いていると目的から外れる（`test/third-party-notices.test.js` が一致を見る）。
    */
-  static readonly FALLBACK_MOBILECLI_VERSION = '1.0.10';
+  static readonly FALLBACK_MOBILECLI_VERSION = '1.0.11';
 
   private mobilecliPath: string | null = null;
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
