@@ -6,9 +6,9 @@
   --ss-soft: rgba(127, 127, 127, 0.16);
   --ss-line: var(--vscode-widget-border, rgba(127, 127, 127, 0.28));
   /* バックエンドバッジの色。HID = 直結（速い）、WDA = 降格した互換、adb = Android 経路。 */
-  --ss-hid: 76, 155, 111;   /* moss */
-  --ss-wda: 205, 145, 80;   /* amber */
-  --ss-adb: 122, 158, 200;  /* steel blue */
+  --ss-hid: 76, 155, 111; /* moss */
+  --ss-wda: 205, 145, 80; /* amber */
+  --ss-adb: 122, 158, 200; /* steel blue */
   --ss-accent: var(--vscode-focusBorder, #2f80ed);
 }
 
@@ -49,7 +49,9 @@ body {
   color: var(--ss-lamp-off);
   background: currentColor;
   box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.14);
-  transition: color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .lamp.on {
@@ -109,7 +111,13 @@ body {
   flex: none;
   padding: 2px 8px;
   border-radius: 4px;
-  font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(
+    --vscode-editor-font-family,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace
+  );
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -121,9 +129,15 @@ body {
   cursor: default;
 }
 
-.backend-badge[data-backend="hid"] { --sw: var(--ss-hid); }
-.backend-badge[data-backend="wda"] { --sw: var(--ss-wda); }
-.backend-badge[data-backend="adb"] { --sw: var(--ss-adb); }
+.backend-badge[data-backend='hid'] {
+  --sw: var(--ss-hid);
+}
+.backend-badge[data-backend='wda'] {
+  --sw: var(--ss-wda);
+}
+.backend-badge[data-backend='adb'] {
+  --sw: var(--ss-adb);
+}
 
 /* ---- 端末の筐体（既定 ON。`no-frame` クラスで畳む） ----------------------- */
 
@@ -134,17 +148,26 @@ body {
 .phone-frame {
   position: relative;
   width: 100%;
-  max-width: 420px;
+  /* サイドバーが広いときの上限。狭いサイドバーではここには当たらず、
+     内側の画像アスペクト比 × コンテナ幅で自然に決まる（`main.js` の reportViewport）。
+     `.controls` の max-width と揃えて、筐体とボタン列の中心線を合わせる。 */
+  max-width: 450px;
   margin: 0 auto;
   padding: 18px 11px 22px;
   box-sizing: border-box;
-  background: linear-gradient(150deg, #4a4a50 0%, #26262b 40%, #141417 100%);
+  /* 単色チャコールの控えめな縦グラデ。3 色グレーの diagonal shine を止め、質感を落ち着かせる。 */
+  background: linear-gradient(180deg, #1a1a1e 0%, #0f0f13 100%);
   border-radius: 34px;
+  /* 2 段レイヤーの影で「浮いている端末」を作る。
+     - 上端 1px の hairline highlight（ガラス面の縁光）
+     - 極薄の内側リング（境界を柔らかく）
+     - 接地の締まり影（1px 近影）
+     - 遠くの拡散影（大きく薄く）— 影は下方向に寄せる */
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 10px 26px rgba(0, 0, 0, 0.5),
-    0 2px 6px rgba(0, 0, 0, 0.4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 16px 40px -14px rgba(0, 0, 0, 0.6);
 }
 
 /* 展開したブック型 foldable は通常スマホより正方形に近いので、同じ 420px 上限では
@@ -154,44 +177,59 @@ body.book-fold-inner .controls {
   max-width: none;
 }
 
-/* スピーカー（上）とホームインジケータ（下）。画面には被せない。 */
+/* スピーカー（上）とホームインジケータ（下）。画面には被せない。
+   厚み・色ともに控えめにして、装飾を主張しないよう抑える。 */
 .phone-frame::before,
 .phone-frame::after {
   content: '';
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  border-radius: 3px;
 }
 
+/* 上端スピーカー: 細身のピル + 上端 1px の暗い縁で「切込み」に見せる。 */
 .phone-frame::before {
-  top: 7px;
-  width: 30%;
-  height: 5px;
-  background: #0e0e10;
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.9);
-}
-
-.phone-frame::after {
-  bottom: 9px;
-  width: 28%;
+  top: 6px;
+  width: 32%;
   height: 4px;
-  background: #7c7c83;
+  border-radius: 999px;
+  background: #05060899;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
-/* 側面のボタン。筐体の縁に半分だけ出す。 */
+/* 下端ホームインジケータ: 半透明の白で最小限に。iOS/Android 共に浮かない色。 */
+.phone-frame::after {
+  bottom: 7px;
+  width: 32%;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+/* 側面のボタン。筐体の縁に半分だけ出す。細めに、筐体トーンに寄せて浮かせない。 */
 .side-btn {
   position: absolute;
-  width: 3px;
+  width: 2.5px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #4c4c53, #202024);
+  background: linear-gradient(90deg, #3a3a40, #17171a);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
-.side-mute { left: -2px; top: 74px; height: 22px; }
-.side-vol  { left: -2px; top: 104px; height: 46px; }
+.side-mute {
+  left: -1.5px;
+  top: 78px;
+  height: 20px;
+}
+.side-vol {
+  left: -1.5px;
+  top: 106px;
+  height: 44px;
+}
 .side-power {
-  right: -2px; top: 96px; height: 56px;
-  background: linear-gradient(270deg, #4c4c53, #202024);
+  right: -1.5px;
+  top: 98px;
+  height: 52px;
+  background: linear-gradient(270deg, #3a3a40, #17171a);
 }
 
 .simulator-container {
@@ -246,8 +284,14 @@ body.book-fold-inner .controls {
 }
 
 @keyframes ripple {
-  0% { transform: scale(0); opacity: 1; }
-  100% { transform: scale(2); opacity: 0; }
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
 }
 
 /* ---- 録画前の秒読み ---------------------------------------------------------- */
@@ -284,7 +328,11 @@ body.book-fold-inner .controls {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 40%, rgba(40, 40, 46, 0.92), rgba(0, 0, 0, 0.92));
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgba(40, 40, 46, 0.92),
+    rgba(0, 0, 0, 0.92)
+  );
   color: #fff;
   font-size: 12px;
   line-height: 1.5;
@@ -320,7 +368,9 @@ body.book-fold-inner .controls {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ---- 操作ボタン ------------------------------------------------------------ */
@@ -330,8 +380,10 @@ body.book-fold-inner .controls {
   justify-content: center;
   align-items: center;
   gap: 8px;
-  margin: 16px auto 0;
-  max-width: 420px;
+  /* 筐体との縦間隔。触るのは端末（上）とボタン（下）の区切りなので、上を少し広めに取る。 */
+  margin: 24px auto 0;
+  /* .phone-frame と同じ上限にして、筐体とボタン列の中心線・幅を揃える。 */
+  max-width: 450px;
   flex-wrap: wrap;
 }
 
@@ -360,7 +412,10 @@ body.book-fold-inner .controls {
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
 }
 
 .control-btn:focus-visible {
@@ -435,7 +490,9 @@ body.book-fold-inner .controls {
 }
 
 @keyframes rec-pulse {
-  50% { opacity: 0.62; }
+  50% {
+    opacity: 0.62;
+  }
 }
 
 /* ---- 表示の切り替え（設定）-------------------------------------------------- */
