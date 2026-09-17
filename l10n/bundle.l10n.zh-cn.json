@@ -35,7 +35,6 @@
   "Disconnected — pick a device to reconnect": "已断开 — 重新选择设备即可再次连接",
   "Cannot connect to the stream": "无法连接到视频流",
   "Measuring…": "正在测量…",
-  "Input path. HID injects straight into the device (fast); WDA goes through mobilecli (compatible).": "输入通道。HID 直接注入设备（快），WDA 经由 mobilecli（兼容）。",
   "Updated every 30 seconds. The extension host process is shared with other extensions. The extension directory is the size of the bundled files and does not grow at runtime (this extension keeps no persistent storage). WebDriverAgent installed by mobilecli is not included.": "每 30 秒更新一次。扩展主机进程与其他扩展共享。扩展目录是随包文件的大小，运行期间不会增长（本扩展不保存持久化数据）。不包含 mobilecli 安装的 WebDriverAgent。",
   "Video": "画面",
   "direct": "直连",

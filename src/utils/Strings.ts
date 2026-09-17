@@ -91,9 +91,6 @@ export function webviewStrings(): Record<string, string> {
 
     // フッター
     measuring: vscode.l10n.t('Measuring…'),
-    modeTitle: vscode.l10n.t(
-      'Input path. HID injects straight into the device (fast); WDA goes through mobilecli (compatible).'
-    ),
     statsTitle: vscode.l10n.t(
       'Updated every 30 seconds. The extension host process is shared with other extensions. The extension directory is the size of the bundled files and does not grow at runtime (this extension keeps no persistent storage). WebDriverAgent installed by mobilecli is not included.'
     ),
