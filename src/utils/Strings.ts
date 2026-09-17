@@ -65,6 +65,19 @@ export function webviewStrings(): Record<string, string> {
     autoTitle: vscode.l10n.t('Connect automatically to a running device'),
     disconnect: vscode.l10n.t('Disconnect'),
 
+    // 端末設定
+    deviceSettings: vscode.l10n.t('Device Settings'),
+    appearance: vscode.l10n.t('Appearance'),
+    light: vscode.l10n.t('Light'),
+    dark: vscode.l10n.t('Dark'),
+    liquidGlass: vscode.l10n.t('Liquid Glass'),
+    textSize: vscode.l10n.t('Text Size'),
+    location: vscode.l10n.t('Location'),
+    selectCity: vscode.l10n.t('Select a city…'),
+    locationTemplates: vscode.l10n.t('Major cities'),
+    none: vscode.l10n.t('None'),
+    clearLocation: vscode.l10n.t('Clear simulated location'),
+
     // オーバーレイ
     selectToStart: vscode.l10n.t('Select a device to start'),
     searching: vscode.l10n.t('Searching…'),

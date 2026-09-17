@@ -10,6 +10,13 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- A collapsible device-settings panel below the controls can set and read back light/dark
+  appearance and text size on iOS and Android, iOS 26 Liquid Glass opacity, and a simulated
+  location with major-city presets. Location is cleared from the panel after a device restart
+  because neither platform provides a common API to read it back.
+
 ### Changed
 
 - The status row above the device is now a single pill that carries the device picker,

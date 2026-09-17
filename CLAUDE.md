@@ -163,11 +163,11 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 ## 守る境界
 
-- **座標は常に正規化 [0,1]** でやり取りする。ピクセル変換は各バックエンドの内側。
+- **入力座標は常に正規化 [0,1]** でやり取りする。ピクセル変換は各バックエンドの内側。
 - **私有 API は `native/` の中だけ**。TypeScript 側から直接触らない。
 - **HID は iOS Simulator 限定**。iOS 実機は `WdaBackend`（mobilecli 経由）、
   Android は `AndroidBackend`（タッチだけ `AdbTouch` の adb 直叩き、それ以外は mobilecli）。
-  **adb を直接叩くのは `AdbTouch` の中だけ**。他から `adb` を生やさない。
+  **入力用の adb を直接叩くのは `AdbTouch` の中だけ**。端末設定は `DeviceSettings` に閉じ込める。
 - 入力経路を増やすときは `InputBackend` を実装する。webview から個別経路を生やさない。
 - `native/simhid-server` は macOS 専用。ビルドは `scripts/build-native.sh` が
   非 macOS を自動スキップするので、拡張は WDA だけでも動く状態を保つ。

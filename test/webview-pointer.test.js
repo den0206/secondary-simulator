@@ -102,6 +102,20 @@ const els = {
   lamp: makeEl('lamp'),
   stats: makeEl('stats'),
   mode: makeEl('mode'),
+  'device-settings': makeEl('device-settings'),
+  'setting-appearance': makeEl('setting-appearance'),
+  'setting-liquid': makeEl('setting-liquid'),
+  'setting-liquid-row': makeEl('setting-liquid-row'),
+  'setting-text-size': makeEl('setting-text-size'),
+  'setting-location-template': Object.assign(makeEl('setting-location-template'), {
+    options: [
+      {value: ''}, {value: '35.681236, 139.767125'}, {value: '40.7128, -74.0060'},
+      {value: '37.7749, -122.4194'}, {value: '51.5072, -0.1276'}, {value: '48.8566, 2.3522'},
+      {value: '37.5665, 126.9780'}, {value: '1.3521, 103.8198'},
+    ],
+  }),
+  'setting-location': makeEl('setting-location'),
+  'setting-location-clear': makeEl('setting-location-clear'),
 };
 
 // 見た目の切り替え（端末フレーム・横向き・リソース表示）は body のクラスで持つ
@@ -445,6 +459,43 @@ check('iOS では無効', els['btn-back'].disabled === true);
 els.device.value = 'and-1';
 listeners['device:change']();
 check('Android では有効', els['btn-back'].disabled === false);
+
+console.log('\n10a) 端末設定');
+listeners['window:message']({
+  data: {
+    type: 'deviceSettings',
+    appearance: 'dark',
+    textSize: 'extra-large',
+    liquidGlass: true,
+    liquidGlassOpacity: 0.7,
+    location: '35.681236, 139.767125',
+  },
+});
+check('接続後に設定を表示', els['device-settings'].hidden === false);
+check('Appearance を反映', els['setting-appearance'].value === 'dark');
+check('Text Size を反映', els['setting-text-size'].value === '4');
+check('iOS 26 では Liquid Glass を表示', els['setting-liquid-row'].hidden === false);
+check('Location を反映', els['setting-location'].textContent.includes('35.681236'));
+check('都市テンプレートを選択', els['setting-location-template'].value === '35.681236, 139.767125');
+sent.length = 0;
+els['setting-appearance'].value = 'light';
+listeners['setting-appearance:change']();
+check(
+  'Appearance の変更をホストへ送る',
+  sent.some((m) => m.type === 'setDeviceSetting' && m.key === 'appearance' && m.value === 'light')
+);
+sent.length = 0;
+listeners['setting-location:click']();
+check('Location の入力をホストへ依頼', sent.some((m) => m.type === 'pickDeviceLocation'));
+sent.length = 0;
+els['setting-location-template'].value = '40.7128, -74.0060';
+listeners['setting-location-template:change']();
+check(
+  '都市テンプレートの座標をホストへ送る',
+  sent.some((m) => m.type === 'setDeviceLocation' && m.value === '40.7128, -74.0060')
+);
+listeners['window:message']({data: {type: 'deviceSettings', liquidGlass: false}});
+check('Android / iOS 25 以下では Liquid Glass を隠す', els['setting-liquid-row'].hidden === true);
 
 console.log('\n10b) 一覧から消えたデバイスはホスト側も切断する');
 els.device.value = 'ios-1';

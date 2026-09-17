@@ -86,5 +86,20 @@
   "Secondary Simulator: this device needs the mobilecli agent. Without it, screenshots, recordings, and the Home button do not work. Install it now?": "Secondary Simulator: 此设备需要 mobilecli agent。缺少它将无法使用截图、录制和 Home 按钮。现在安装吗？",
   "Secondary Simulator: installing the mobilecli agent…": "Secondary Simulator: 正在安装 mobilecli agent…",
   "Secondary Simulator: could not install the mobilecli agent — {0}": "Secondary Simulator: 无法安装 mobilecli agent — {0}",
-  "Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.": "Secondary Simulator: 已安装 mobilecli agent。请再次按 Shot 进行截图。"
+  "Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.": "Secondary Simulator: 已安装 mobilecli agent。请再次按 Shot 进行截图。",
+  "Device Settings": "设备设置",
+  "Appearance": "外观",
+  "Light": "浅色",
+  "Dark": "深色",
+  "Liquid Glass": "Liquid Glass",
+  "Text Size": "文字大小",
+  "Location": "位置",
+  "Select a city…": "选择城市…",
+  "Major cities": "主要城市",
+  "None": "无",
+  "Clear simulated location": "清除模拟位置",
+  "Secondary Simulator: Simulated location": "Secondary Simulator：模拟位置",
+  "Enter latitude and longitude separated by a comma.": "请输入以逗号分隔的纬度和经度。",
+  "Enter valid coordinates, for example: 35.681236, 139.767125": "请输入有效坐标，例如：35.681236, 139.767125",
+  "Secondary Simulator: Could not change the device setting — {0}": "Secondary Simulator：无法更改设备设置 — {0}"
 }

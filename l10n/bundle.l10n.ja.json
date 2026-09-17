@@ -86,5 +86,20 @@
   "Secondary Simulator: this device needs the mobilecli agent. Without it, screenshots, recordings, and the Home button do not work. Install it now?": "Secondary Simulator: この端末には mobilecli の agent が必要です。無いとスクリーンショット・録画・Home ボタンが動きません。今すぐインストールしますか？",
   "Secondary Simulator: installing the mobilecli agent…": "Secondary Simulator: mobilecli の agent を導入中…",
   "Secondary Simulator: could not install the mobilecli agent — {0}": "Secondary Simulator: mobilecli の agent を導入できませんでした — {0}",
-  "Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.": "Secondary Simulator: mobilecli の agent を導入しました。もう一度 Shot を押すと撮影します。"
+  "Secondary Simulator: the mobilecli agent is ready. Press Shot again to capture.": "Secondary Simulator: mobilecli の agent を導入しました。もう一度 Shot を押すと撮影します。",
+  "Device Settings": "端末設定",
+  "Appearance": "外観",
+  "Light": "ライト",
+  "Dark": "ダーク",
+  "Liquid Glass": "Liquid Glass",
+  "Text Size": "文字サイズ",
+  "Location": "位置情報",
+  "Select a city…": "都市を選択…",
+  "Major cities": "主要都市",
+  "None": "なし",
+  "Clear simulated location": "模擬位置情報を解除",
+  "Secondary Simulator: Simulated location": "Secondary Simulator: 模擬位置情報",
+  "Enter latitude and longitude separated by a comma.": "緯度と経度をカンマ区切りで入力してください。",
+  "Enter valid coordinates, for example: 35.681236, 139.767125": "有効な座標を入力してください。例: 35.681236, 139.767125",
+  "Secondary Simulator: Could not change the device setting — {0}": "Secondary Simulator: 端末設定を変更できませんでした — {0}"
 }

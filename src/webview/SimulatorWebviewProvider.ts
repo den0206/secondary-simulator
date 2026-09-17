@@ -24,6 +24,16 @@ import {
 import {defaultRecordingName} from '../simulator/RecordingName';
 import {verifyRecording} from '../simulator/RecordingFile';
 import {
+  Coordinates,
+  parseCoordinates,
+  readDeviceSettings,
+  setAppearance,
+  setLiquidGlassOpacity,
+  setLocation,
+  setTextSize,
+  TEXT_SIZES,
+} from '../simulator/DeviceSettings';
+import {
   containerExtension,
   ViewRecordingAbort,
   ViewRecordingWriter,
@@ -70,6 +80,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private currentDeviceId: string | null = null;
   private disconnectBusy = false;
   private devices: Device[] = [];
+  /** この拡張から設定した模擬位置。OS側には現在値を読む共通APIがないため表示用に持つ。 */
+  private readonly simulatedLocations = new Map<string, Coordinates>();
   private screenSize: {width: number; height: number} | null = null;
   private messageDisposable?: vscode.Disposable;
   private disposeDisposable?: vscode.Disposable;
@@ -388,6 +400,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         type: 'selectedDevice',
         deviceId: this.currentDeviceId,
       });
+      const device = this.currentDevice();
+      if (device) void this.refreshDeviceSettings(device);
     }
     // 取り込みが止まっているなら張り直す。**畳んで開き直すと webview は作り直される**
     // （`retainContextWhenHidden` を付けていないので、非表示のあいだ iframe は捨てられる）ので、
@@ -609,6 +623,74 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           const deviceId = asText(message.deviceId);
           if (!deviceId) break;
           await this.selectDevice(deviceId);
+          break;
+        }
+
+        case 'getDeviceSettings': {
+          const device = this.currentDevice();
+          if (device) void this.refreshDeviceSettings(device);
+          break;
+        }
+
+        case 'setDeviceSetting': {
+          const device = this.currentDevice();
+          const key = asText(message.key);
+          if (!device || !key) break;
+          this.postMessage({type: 'deviceSettingsBusy', active: true});
+          try {
+            if (key === 'appearance') {
+              const value = asText(message.value);
+              if (value !== 'light' && value !== 'dark') break;
+              await setAppearance(device, value);
+            } else if (key === 'textSize') {
+              const value = asText(message.value);
+              if (!value || !(TEXT_SIZES as readonly string[]).includes(value)) break;
+              await setTextSize(device, value as (typeof TEXT_SIZES)[number]);
+            } else if (key === 'liquidGlassOpacity') {
+              const value = asFiniteNumber(message.value);
+              if (value === null) break;
+              await setLiquidGlassOpacity(device, value);
+            }
+            await this.refreshDeviceSettings(device);
+          } catch (error) {
+            this.deviceSettingFailed(error as Error);
+          } finally {
+            this.postMessage({type: 'deviceSettingsBusy', active: false});
+          }
+          break;
+        }
+
+        case 'pickDeviceLocation': {
+          const device = this.currentDevice();
+          if (!device) break;
+          const current = this.simulatedLocations.get(device.id);
+          const input = await vscode.window.showInputBox({
+            title: vscode.l10n.t('Secondary Simulator: Simulated location'),
+            prompt: vscode.l10n.t('Enter latitude and longitude separated by a comma.'),
+            placeHolder: '35.681236, 139.767125',
+            value: current ? `${current.latitude}, ${current.longitude}` : undefined,
+            validateInput: (value) =>
+              parseCoordinates(value)
+                ? undefined
+                : vscode.l10n.t('Enter valid coordinates, for example: 35.681236, 139.767125'),
+          });
+          if (input === undefined) break;
+          const coordinates = parseCoordinates(input);
+          if (!coordinates) break;
+          await this.applyDeviceLocation(device, coordinates);
+          break;
+        }
+
+        case 'setDeviceLocation': {
+          const device = this.currentDevice();
+          const coordinates = parseCoordinates(asText(message.value) ?? '');
+          if (device && coordinates) await this.applyDeviceLocation(device, coordinates);
+          break;
+        }
+
+        case 'clearDeviceLocation': {
+          const device = this.currentDevice();
+          if (device) await this.applyDeviceLocation(device, null);
           break;
         }
 
@@ -912,6 +994,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private disconnectUnavailableDevice(deviceId: string): void {
     if (this.currentDeviceId !== deviceId) return;
     Logger.info(`デバイスが停止したため接続を終了: ${deviceId}`);
+    // 模擬位置は再起動後に共通APIで読めないため、前回表示を残さない。
+    this.simulatedLocations.delete(deviceId);
     // 手動の切断と同じく録画も止める（止まった画面を上限まで録り続けない）
     if (this.recording) void this.stopRecording();
     this.stopCapture();
@@ -955,6 +1039,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         backend: this.inputController!.backendLabel,
       });
       await this.startDisplayForDevice(deviceId, device);
+      void this.refreshDeviceSettings(device);
       return;
     }
 
@@ -1015,6 +1100,63 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     await this.startDisplayForDevice(deviceId, device);
+    void this.refreshDeviceSettings(device);
+  }
+
+  private currentDevice(): Device | undefined {
+    return this.devices.find((device) => device.id === this.currentDeviceId);
+  }
+
+  private async refreshDeviceSettings(device: Device): Promise<void> {
+    try {
+      const settings = await readDeviceSettings(device);
+      if (this.currentDeviceId !== device.id) return;
+      const location = this.simulatedLocations.get(device.id);
+      this.postMessage({
+        type: 'deviceSettings',
+        ...settings,
+        location: location ? `${location.latitude}, ${location.longitude}` : null,
+      });
+    } catch (error) {
+      Logger.warn(`端末設定を取得できない: ${(error as Error).message}`);
+      if (this.currentDeviceId === device.id) {
+        this.postMessage({
+          type: 'deviceSettings',
+          liquidGlass:
+            device.platform === 'ios' && /(?:iOS\s*)?(?:2[6-9]|[3-9]\d)/i.test(device.runtime ?? ''),
+          location: null,
+        });
+      }
+    }
+  }
+
+  private async applyDeviceLocation(
+    device: Device,
+    coordinates: Coordinates | null
+  ): Promise<void> {
+    this.postMessage({type: 'deviceSettingsBusy', active: true});
+    try {
+      await setLocation(device, coordinates);
+      if (coordinates) this.simulatedLocations.set(device.id, coordinates);
+      else this.simulatedLocations.delete(device.id);
+      if (this.currentDeviceId === device.id) {
+        this.postMessage({
+          type: 'deviceLocation',
+          location: coordinates ? `${coordinates.latitude}, ${coordinates.longitude}` : null,
+        });
+      }
+    } catch (error) {
+      this.deviceSettingFailed(error as Error);
+    } finally {
+      this.postMessage({type: 'deviceSettingsBusy', active: false});
+    }
+  }
+
+  private deviceSettingFailed(error: Error): void {
+    Logger.error('Failed to change device setting', error);
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t('Secondary Simulator: Could not change the device setting — {0}', error.message)
+    );
   }
 
   /**
