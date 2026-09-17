@@ -3,6 +3,7 @@ require('./helpers/vscode-stub').install();
 const {
   iosMajorVersion,
   parseCoordinates,
+  parseDevicectlAppearance,
   TEXT_SIZES,
 } = require('../out/simulator/DeviceSettings');
 
@@ -21,5 +22,11 @@ assert.deepStrictEqual(parseCoordinates('-90, -180'), {
 assert.strictEqual(parseCoordinates('91, 0'), null);
 assert.strictEqual(parseCoordinates('35.6;139.7'), null);
 assert.strictEqual(TEXT_SIZES.length, 7);
+assert.deepStrictEqual(
+  parseDevicectlAppearance({result: {
+    userInterfaceStyle: 'dark', textSize: 'Large', liquidGlassOpacity: 0,
+  }}),
+  {appearance: 'dark', textSize: 'large', liquidGlassOpacity: 0}
+);
 
 console.log('device settings tests passed');
