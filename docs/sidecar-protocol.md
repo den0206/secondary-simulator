@@ -417,7 +417,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `streamUrl` / `frame` | 直結 MJPEG（URL に起動毎トークン必須）/ 個別フレーム（`data` は base64 文字列、`seq` は `frameAck` で返す連番）。どちらも同じ `<img>` に出す（frame は data URL） |
 | `pauseStream` | 非表示時に `<img>` の GET を閉じる |
 | `resources` | 録画中は `recMb` / `recKbps`（書けている量と実効ビットレート）も載る。webview（レンダラ）の RSS はホストから見えないので、ファイルの伸び方が唯一見える数字。RSS / heap / 子プロセス / 拡張ディレクトリ + 受信 fps・帯域（約 30 秒ごと。WDA や npm キャッシュは含まない）。`#stats` を書き換える。webview は自分が描けた fps を並べて出す（差が落としたフレーム）。**直結中は `direct: true` だけを送る** — フレームが拡張ホストを通らないので受信側は測れず、0 と出すと誤解される |
-| `mode` | 入力経路のラベル。文言は表示言語に従う（既定は `Fast mode (HID)` / `Compatible mode (WDA)`）。`null` で隠す。フッターの `#mode` とステータスバーが同じ文字列を使う |
+| `mode` | 入力経路のラベル（`text`）と種別（`backend`: `'hid' \| 'wda' \| 'adb' \| null`）。文言は表示言語に従う（既定は `Fast mode (HID)` / `Compatible mode (WDA)`）。`backend` が `null` なら隠す。ステータス行の `#mode` バッジは `backend` の略称を色分けして出し、`text` はツールチップとステータスバーが使う（§10.5） |
 | `disconnected` | 切断 |
 
 旧メッセージ（`tap` / `swipe` / `longPress`）は webview から送らない。WDA 側の tap/gesture は Controller が `touch*` から作る。
