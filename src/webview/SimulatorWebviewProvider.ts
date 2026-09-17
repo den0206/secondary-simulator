@@ -257,9 +257,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private setStatus(status: DeviceStatus): void {
     this.status = status;
     this.onStatusChange?.(status);
+    const view = renderStatus(status, statusStrings());
     this.postMessage({
       type: 'mode',
-      text: renderStatus(status, statusStrings()).mode,
+      text: view.mode,
+      backend: view.backend,
     });
   }
 
@@ -367,10 +369,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.lastDeviceListError = null;
     this.postAutoConnectState();
     this.postSettings();
-    this.postMessage({
-      type: 'mode',
-      text: renderStatus(this.status, statusStrings()).mode,
-    });
+    {
+      const view = renderStatus(this.status, statusStrings());
+      this.postMessage({
+        type: 'mode',
+        text: view.mode,
+        backend: view.backend,
+      });
+    }
     // 作り直しても録画は続いている。表示だけ復元する（非表示で止めた場合は無い）
     if (this.recording) this.postMessage({type: 'recording', active: true});
     await this.refreshDevices();

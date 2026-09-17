@@ -494,9 +494,11 @@ webview は取り込みが壊れたときと同じエラー表示へ落ちてい
 `captureServe`（loopback 待ち受け。§3.6）だけ。
 
 ### 10.5 降格の可視化 → **控えめに可視化する（確定）**
-HID→WDA へ降格したら、`postMessage({type:'mode', text})` で webview フッターの
-`#mode` に表示し（既定は `Compatible mode (WDA)`。表示言語に従う）、同じ文字列をステータスバー
-（`DeviceStatusBar` / `renderStatus`）にも出す。`Logger` に理由を残す。
+HID→WDA へ降格したら、`postMessage({type:'mode', text, backend})` で webview の
+ステータス行にある `#mode` バッジに表示する。`text` は詳しい文言（既定は
+`Compatible mode (WDA)`。表示言語に従う）でツールチップに、`backend`（`'hid' | 'wda' | 'adb' | null`）
+は `data-backend` に入れて色分岐に使う（HID=moss / WDA=amber / adb=steel-blue）。同じ文字列を
+ステータスバー（`DeviceStatusBar` / `renderStatus`）にも出し、`Logger` に理由を残す。
 常時バナーは出さない。降格は稀かつ「なぜ遅いか」を開発者が知りたい情報なので、状態表示に留める。
 
 ---
