@@ -16,6 +16,8 @@ export interface StatusView {
   tooltip: string;
   /** webview のフッターへ出す短いラベル。null なら出さない。 */
   mode: string | null;
+  /** 入力経路の種別。webview 側でバッジの色分けに使う。null なら未接続。 */
+  backend: InputLabel | null;
 }
 
 /**
@@ -66,6 +68,7 @@ export function renderStatus(
         text: `$(sync~spin) ${status.name}`,
         tooltip: fill(strings.connecting, status.name),
         mode: null,
+        backend: null,
       };
     case 'connected': {
       const label = strings[status.backend];
@@ -79,10 +82,11 @@ export function renderStatus(
         text: `$(device-mobile) ${status.name} · ${status.backend.toUpperCase()}`,
         tooltip: fill(strings.connected, status.name, label) + '\n' + detail,
         mode: label,
+        backend: status.backend,
       };
     }
     case 'disconnected':
-      return {text: null, tooltip: '', mode: null};
+      return {text: null, tooltip: '', mode: null, backend: null};
   }
 }
 
