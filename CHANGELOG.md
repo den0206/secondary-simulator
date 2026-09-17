@@ -10,6 +10,18 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Changed
+
+- The status row above the device is now a single pill that carries the device picker,
+  connection dot, and backend badge together, instead of three separate boxes.
+- The input backend indicator is a color-coded badge — moss for HID (fast, direct),
+  amber for WDA (compat fallback), steel blue for adb (Android). The silent HID→WDA
+  demotion now shows up as a color change instead of only a label swap.
+- When the device view holds keyboard focus, a focus ring appears around the screen so
+  users can see when typing or paste will go to the device instead of the editor.
+- The connection lamp no longer pulses in the steady state; the small dot keeps a soft
+  halo and only animates on state changes.
+
 ## [0.8.1] — 2026-09-16
 
 ### Fixed
