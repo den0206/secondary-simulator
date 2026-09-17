@@ -920,21 +920,33 @@ document.getElementById('btn-retry').addEventListener('click', () => post('retry
 document.getElementById('btn-logs').addEventListener('click', () => post('showLogs'));
 
 // 録画中かどうか。ホストが持つ状態を写すだけで、ここでは決めない。
+// ラベルは子 span に差し替える（SVG アイコンは常時出したまま）。
 let recording = false;
+const btnRecordLabel = document.getElementById('btn-record-label');
 function syncRecordButton() {
   btnRecord.classList.toggle('recording', recording);
-  btnRecord.textContent = recording ? t('recordStop') : t('recordStart');
+  // 既定は '● Rec'/'■ Stop' の l10n だが、SVG がドットを担うので記号を落として付ける。
+  btnRecordLabel.textContent = stripLeadingGlyph(
+    recording ? t('recordStop') : t('recordStart')
+  );
 }
 syncRecordButton();
+
+// 記号（●■◉⌂ など）付き文言の先頭を落とす。翻訳バンドルの原文はそのままにしつつ、
+// SVG アイコンとの重複を避ける。
+function stripLeadingGlyph(text) {
+  return String(text).replace(/^[\s●■◉⌂‹›]+\s*/u, '');
+}
 
 // 自動接続の切替。状態は設定（secondarySimulator.autoConnect）が持つので、
 // 押した直後は仮に反映し、拡張ホストからの autoConnect メッセージで確定させる。
 const btnAuto = document.getElementById('btn-auto');
+const btnAutoLabel = document.getElementById('btn-auto-label');
 let autoConnectEnabled = true;
 
 function syncAutoButton() {
   btnAuto.classList.toggle('on', autoConnectEnabled);
-  btnAuto.textContent = autoConnectEnabled ? t('autoOn') : t('autoOff');
+  btnAutoLabel.textContent = autoConnectEnabled ? t('autoOn') : t('autoOff');
 }
 
 btnAuto.addEventListener('click', () => {
@@ -943,6 +955,10 @@ btnAuto.addEventListener('click', () => {
   vscode.postMessage({type: 'setAutoConnect', enabled: autoConnectEnabled});
 });
 syncAutoButton();
+
+// 端末に打鍵が流れる状態を、コンテナのフォーカスリングだけで見せる（文言は出さない）。
+container.addEventListener('focus', () => container.classList.add('focused'));
+container.addEventListener('blur', () => container.classList.remove('focused'));
 
 // ---- レンダリング -----------------------------------------------------------
 
@@ -1242,11 +1258,20 @@ window.addEventListener('message', (event) => {
       showFrame(message.data);
       break;
 
-    // 入力経路（HID 直接注入 / WDA 経由）。降格すると無音で遅くなるので見えるようにする。
+    // 入力経路（HID 直接注入 / WDA 経由 / adb 直叩き）。降格が無音で起きるので見えるようにする。
     // 文字列は拡張ホスト由来なので textContent で入れる（innerHTML にしない）。
+    // バッジ本文は短い経路名（HID / WDA / ADB）、ツールチップに詳しい文言を出す。
     case 'mode':
-      modeEl.textContent = message.text || '';
-      modeEl.style.display = message.text ? '' : 'none';
+      if (message.backend) {
+        modeEl.textContent = message.backend.toUpperCase();
+        modeEl.setAttribute('data-backend', message.backend);
+        modeEl.title = message.text || '';
+        modeEl.style.display = '';
+      } else {
+        modeEl.textContent = '';
+        modeEl.setAttribute('data-backend', '');
+        modeEl.style.display = 'none';
+      }
       break;
 
     case 'resources': {

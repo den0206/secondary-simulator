@@ -5,6 +5,11 @@
   --ss-lamp-on: #3fb950;
   --ss-soft: rgba(127, 127, 127, 0.16);
   --ss-line: var(--vscode-widget-border, rgba(127, 127, 127, 0.28));
+  /* バックエンドバッジの色。HID = 直結（速い）、WDA = 降格した互換、adb = Android 経路。 */
+  --ss-hid: 76, 155, 111;   /* moss */
+  --ss-wda: 205, 145, 80;   /* amber */
+  --ss-adb: 122, 158, 200;  /* steel blue */
+  --ss-accent: var(--vscode-focusBorder, #2f80ed);
 }
 
 body {
@@ -21,36 +26,51 @@ body {
   font-size: var(--vscode-font-size);
 }
 
-/* .toolbar の margin-bottom:auto と .resources の margin-top:auto が余白を等分し、
-   端末とボタン列（.stage）は塊のまま中央に来る。 */
-.toolbar {
+/* ---- ステータス行（ピル型: ドット + デバイス選択 + バックエンドバッジ）--------
+   3 つの要素を 1 本のピルに畳む。<select> は自前の枠を持たず、ピル自体が枠を担う
+   （狭いサイドバーで「別々の島」に見えないため）。 */
+.status-header {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   margin-bottom: auto;
-  padding: 6px;
+  padding: 6px 8px 6px 12px;
+  background: var(--ss-soft);
   border: 1px solid var(--ss-line);
-  border-radius: 8px;
-  background: var(--vscode-editorWidget-background, var(--ss-soft));
+  border-radius: 999px;
 }
 
-.stage {
-  padding: 10px 0;
+/* 接続ドット: 未接続=赤 / 接続中(.on)=緑。脈打つ演出はやめ、薄い halo だけ残す。 */
+.lamp {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  color: var(--ss-lamp-off);
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.14);
+  transition: color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.lamp.on {
+  color: var(--ss-lamp-on);
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.16);
 }
 
 /* ---- デバイス選択 ---------------------------------------------------------- */
 
+/* select 自体は透明にして、ピル枠を .status-header に一本化する。 */
 .select-wrap {
   position: relative;
   flex: 1;
   min-width: 0;
 }
 
-/* ネイティブの矢印を消して自前の chevron を描く（画像を持ち込まない） */
+/* 自前の chevron。透明化した select 用に右端に薄く出す。 */
 .select-wrap::after {
   content: '';
   position: absolute;
-  right: 11px;
+  right: 8px;
   top: 50%;
   width: 6px;
   height: 6px;
@@ -58,7 +78,7 @@ body {
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(45deg);
-  opacity: 0.6;
+  opacity: 0.5;
   pointer-events: none;
 }
 
@@ -66,84 +86,50 @@ body {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
-  padding: 6px 26px 6px 10px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-input-border, var(--ss-line));
-  border-radius: 6px;
+  padding: 2px 20px 2px 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: none;
   font-family: inherit;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  text-overflow: ellipsis;
 }
 
 .select-wrap select:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
-/* 接続ランプ: 未接続=赤、接続中(.on)=緑。色は currentColor 一本で回す。 */
-.lamp {
-  position: relative;
+/* ---- バックエンドバッジ（HID / WDA / adb） -------------------------------- */
+
+.backend-badge {
   flex: none;
-  margin: 0 8px 0 16px; /* セレクトとの間を空ける */
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  color: var(--ss-lamp-off);
-  background: currentColor;
-  box-shadow: 0 0 8px currentColor;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(var(--sw, 127, 127, 127));
+  background: rgba(var(--sw, 127, 127, 127), 0.12);
+  border: 1px solid rgba(var(--sw, 127, 127, 127), 0.4);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
 }
 
-/* 外周のリング。点灯時だけ脈打たせる。 */
-.lamp::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  opacity: 0.35;
-}
+.backend-badge[data-backend="hid"] { --sw: var(--ss-hid); }
+.backend-badge[data-backend="wda"] { --sw: var(--ss-wda); }
+.backend-badge[data-backend="adb"] { --sw: var(--ss-adb); }
 
-.lamp.on {
-  color: var(--ss-lamp-on);
-}
+/* ---- 端末の筐体（既定 ON。`no-frame` クラスで畳む） ----------------------- */
 
-.lamp.on::after {
-  animation: lamp-pulse 2s ease-out infinite;
+.stage {
+  padding: 10px 0;
 }
-
-@keyframes lamp-pulse {
-  0% { transform: scale(1); opacity: 0.45; }
-  100% { transform: scale(1.7); opacity: 0; }
-}
-
-.icon-btn {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-  border-radius: 50%;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  transition: transform 0.25s ease, background 0.15s ease;
-}
-
-.icon-btn:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-  transform: rotate(90deg);
-}
-
-.icon-btn:active {
-  transform: rotate(180deg) scale(0.92);
-}
-
-/* ---- 端末の筐体 ------------------------------------------------------------ */
 
 .phone-frame {
   position: relative;
@@ -201,22 +187,10 @@ body.book-fold-inner .controls {
   background: linear-gradient(90deg, #4c4c53, #202024);
 }
 
-.side-mute {
-  left: -2px;
-  top: 74px;
-  height: 22px;
-}
-
-.side-vol {
-  left: -2px;
-  top: 104px;
-  height: 46px;
-}
-
+.side-mute { left: -2px; top: 74px; height: 22px; }
+.side-vol  { left: -2px; top: 104px; height: 46px; }
 .side-power {
-  right: -2px;
-  top: 96px;
-  height: 56px;
+  right: -2px; top: 96px; height: 56px;
   background: linear-gradient(270deg, #4c4c53, #202024);
 }
 
@@ -228,6 +202,17 @@ body.book-fold-inner .controls {
   overflow: hidden;
   min-height: 200px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  outline: none;
+  transition: box-shadow 0.15s ease;
+}
+
+/* フォーカスリング: 打鍵と貼り付けが端末へ流れることを見せる。
+   1px の accent 色リング + 3px の薄いハローで、outline 相当だが色を揃える。 */
+.simulator-container.focused {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.9),
+    0 0 0 1px var(--ss-accent),
+    0 0 0 4px rgba(47, 128, 237, 0.18);
 }
 
 #simulator-img {
@@ -235,7 +220,7 @@ body.book-fold-inner .controls {
   height: auto;
   display: block;
   cursor: pointer;
-  touch-action: none; /* ブラウザのスクロール/ズームを無効化し pointer を専有 */
+  touch-action: none;
 }
 
 /* タッチのフィードバック（リップル・軌跡）を表示する透明オーバーレイ */
@@ -245,7 +230,7 @@ body.book-fold-inner .controls {
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none; /* 下の表示要素へ pointer を通す */
+  pointer-events: none;
 }
 
 .touch-ripple {
@@ -267,8 +252,6 @@ body.book-fold-inner .controls {
 
 /* ---- 録画前の秒読み ---------------------------------------------------------- */
 
-/* 画面は隠さない（何が録られるか見えていないと構えられない）ので、
-   数字だけを重ねる。pointer は下へ通す。 */
 .countdown {
   position: absolute;
   top: 0;
@@ -307,19 +290,14 @@ body.book-fold-inner .controls {
   line-height: 1.5;
   text-align: center;
   padding: 20px;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .overlay.hidden {
   display: none;
 }
 
-/* オーバーレイの中身を縦に積む（文言の下に復帰ボタンを置く） */
-.overlay {
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* エラーのときだけ出す復帰導線。待機中に出すと押しても同じ待ちに戻るだけ。 */
 .overlay-actions {
   display: none;
   gap: 6px;
@@ -329,7 +307,6 @@ body.book-fold-inner .controls {
   display: flex;
 }
 
-/* 文言が「…」で終わる間（Connecting…/Searching…）はスピナーを出す */
 .overlay.busy span::before {
   content: '';
   display: block;
@@ -368,7 +345,12 @@ body.book-fold-inner .controls {
 }
 
 .control-btn {
-  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 11px;
+  min-height: 28px;
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   border: none;
@@ -376,8 +358,29 @@ body.book-fold-inner .controls {
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
-  transition: background 0.12s ease, opacity 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
+}
+
+.control-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* アイコン: 一律 13px、strokable な currentColor SVG。テキスト絵文字の代わり。 */
+.control-btn .icon {
+  width: 13px;
+  height: 13px;
+  color: currentColor;
+  flex: none;
+  display: block;
+}
+
+/* Rec のドットは既定でうっすら、押下・録画中で色を上げる。 */
+.control-btn .rec-dot {
+  color: currentColor;
+  opacity: 0.85;
 }
 
 .btn-group .control-btn {
@@ -427,6 +430,10 @@ body.book-fold-inner .controls {
   background: var(--vscode-inputValidation-errorBackground, #a1260d);
 }
 
+.control-btn.recording .rec-dot {
+  opacity: 1;
+}
+
 @keyframes rec-pulse {
   50% { opacity: 0.62; }
 }
@@ -452,7 +459,7 @@ body.no-frame .simulator-container {
   border-radius: 8px;
 }
 
-/* リソースの数値は開発者向け。既定では畳み、入力経路（#mode）だけ残す。 */
+/* リソースの数値は開発者向け。既定では畳み、入力経路（バッジ）だけステータス行に残す。 */
 body.hide-stats #stats {
   display: none;
 }
@@ -468,9 +475,10 @@ body.hide-stats #stats {
   padding-top: 10px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
 }
 
-/* #stats の中の chip も .resources の flex 項目として並べる（gap と折返しを共有）。 */
+/* #stats の中の chip も .resources の flex 項目として並べる。 */
 #stats {
   display: contents;
 }
@@ -480,12 +488,6 @@ body.hide-stats #stats {
   border-radius: 999px;
   background: var(--ss-soft);
   font-variant-numeric: tabular-nums;
-}
-
-/* 入力経路のチップ。数字ではないので少し目立たせる。 */
-.chip.mode {
-  color: var(--vscode-foreground);
-  background: var(--vscode-badge-background, var(--ss-soft));
 }
 
 .chip b {

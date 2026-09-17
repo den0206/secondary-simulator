@@ -94,6 +94,8 @@ const els = {
   'btn-back': makeEl('btn-back'),
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-record': makeEl('btn-record'),
+  'btn-record-label': makeEl('btn-record-label'),
+  'btn-auto-label': makeEl('btn-auto-label'),
   'btn-retry': makeEl('btn-retry'),
   'btn-logs': makeEl('btn-logs'),
   'overlay-actions': makeEl('overlay-actions'),
@@ -408,11 +410,17 @@ check(
   JSON.stringify(sent)
 );
 
-console.log('\n9c) 入力経路のチップ');
-listeners['window:message']({data: {type: 'mode', text: '互換モード (WDA)'}});
-check('mode の文言を出す', els.mode.textContent === '互換モード (WDA)', els.mode.textContent);
+console.log('\n9c) 入力経路のバッジ');
+listeners['window:message']({data: {type: 'mode', text: '互換モード (WDA)', backend: 'wda'}});
+check('バッジは短い経路名を出す（HID/WDA/ADB）',
+  els.mode.textContent === 'WDA', els.mode.textContent);
+check('data-backend で色を分岐する',
+  els.mode.getAttribute('data-backend') === 'wda',
+  els.mode.getAttribute('data-backend'));
+check('ツールチップに詳しい文言を出す',
+  els.mode.title === '互換モード (WDA)', els.mode.title);
 check('表示される', els.mode.style.display === '', els.mode.style.display);
-listeners['window:message']({data: {type: 'mode', text: null}});
+listeners['window:message']({data: {type: 'mode', text: null, backend: null}});
 check('未接続では隠す', els.mode.style.display === 'none', els.mode.style.display);
 listeners['window:message']({
   data: {type: 'resources', rssMb: 1, heapUsedMb: 2, childrenMb: 3, storageMb: 4},
@@ -734,13 +742,17 @@ check('Rec が record を送る', sent.some((m) => m.type === 'record'));
 // 録画中かどうかはホストが持つ。webview は写すだけ
 listeners['window:message']({data: {type: 'recording', active: true}});
 check('録画中は見た目が変わる', els['btn-record'].classList.contains('recording'));
-check('停止のラベルになる', els['btn-record'].textContent === STRINGS.recordStop,
-  els['btn-record'].textContent);
+// ラベルは子 span に入る（SVG のドットは残す）。翻訳原文の先頭記号は SVG と重複するので落とす。
+const stripGlyph = (s) => String(s).replace(/^[\s●■◉⌂‹›]+\s*/u, '');
+check('停止のラベルになる',
+  els['btn-record-label'].textContent === stripGlyph(STRINGS.recordStop),
+  els['btn-record-label'].textContent);
 tones.length = 0;
 listeners['window:message']({data: {type: 'recording', active: false, ok: true}});
 check('停止で戻る', !els['btn-record'].classList.contains('recording'));
-check('開始のラベルに戻る', els['btn-record'].textContent === STRINGS.recordStart,
-  els['btn-record'].textContent);
+check('開始のラベルに戻る',
+  els['btn-record-label'].textContent === stripGlyph(STRINGS.recordStart),
+  els['btn-record-label'].textContent);
 check('書き出せたら停止音が鳴る', tones.length > 0, `tones=${tones.length}`);
 
 // 壊れたファイルで鳴らすと「保存できた」の合図になってしまう。
