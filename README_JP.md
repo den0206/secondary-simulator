@@ -45,6 +45,7 @@ Secondary Simulatorは、XcodeやAndroid Studioのシミュレータウィンド
 - **👆 インタラクティブ操作**: Pointer Events を生配信し、タップ・スワイプ・ドラッグ・ピンチをデバイス側で判定
 - **⚡ 低レイテンシ**: iOS Simulator では HID を直接注入（`native/simhid-server`）、失敗時は WDA へ自動降格
 - **🔄 統一API**: `mobilecli`（JSON-RPC 2.0）による一貫したデバイス制御
+- **⚙️ 端末設定**: iOS/Android の外観・文字サイズ、iOS 26 以降の Liquid Glass、主要都市プリセット付きの模擬位置情報を設定
 - **🎬 記録**: スクリーンショットと画面録画を、指定した保存先へ直接書き出し
 - **💾 メモリ効率**: ストリーム・リスナー・タイマーのクリーンアップでメモリリークを防止
 

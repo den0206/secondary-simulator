@@ -389,6 +389,8 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `viewRecordingError {message}` | ビュー録画: 始められない／続けられない（合成元が無い、canvas の汚染、書き込みが追いつかない） |
 | `deviceChange {deviceId}` | 空文字ならキャプチャ停止。一覧から消えた選択もこれを送る |
 | `bootDevice {deviceId}` | 停止中のデバイスを選んだとき。起動確認のあと `device.boot` して接続（コマンドパレット経由と同じ） |
+| `getDeviceSettings` / `setDeviceSetting {key, value}` | 端末設定の読み取り／外観・文字サイズ・iOS 26 以降の Liquid Glass を変更。値はホスト側で検証する |
+| `pickDeviceLocation` / `setDeviceLocation {value}` / `clearDeviceLocation` | 模擬位置を座標文字列で設定／解除。入力はホスト側で緯度・経度の範囲を検証する |
 | `retry` | エラー表示からの復帰。一覧を取り直し、選択中があれば再接続 |
 | `showLogs` | 出力チャンネル「Secondary Simulator」を開く |
 | `refresh` / `init` | デバイス一覧の再取得。`autoConnect` と見た目の設定も返す。`init` は `viewRecordingMime`（この webview で録れるコンテナ。録れなければ `null`）も載せる — Chromium の版と H.264 エンコーダに依るのでホストからは決められない。**`init` は「webview が作り直された」の合図**でもあり、ホストが一度しか送らないもの（デバイス一覧・`selectedDevice`・`mode`・録画中の表示・直結の `streamUrl`）を全部送り直す。一覧は差分判定（署名）を飛ばす — `resolveWebviewView` が呼ばれない作り直し（レンダラのクラッシュ・リロード・ビューの移動）では、送り直す機会がここしか無いため |
@@ -401,6 +403,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 |---|---|
 | `devices` | 一覧（`platform` / `state` 付き）。webview は iOS / Android で `<optgroup>` に分ける。`platform` で Back の有効/無効を決める |
 | `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない）。起動を見送ったときも選択を戻す |
+| `deviceSettings` / `deviceLocation` / `deviceSettingsBusy` | 端末設定の現在値、模擬位置、設定操作中の表示。位置情報は OS から共通に読み戻せないため、拡張が設定した値だけを接続中に表示する |
 | `settings` | `showDeviceFrame` / `showResourceStats` / `showTouchTrail`（`secondarySimulator.*` の見た目設定）。**webview は写しを持たない** — 軌跡の ON/OFF もこれだけで決まる（既定 OFF） |
 | `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
 | `countdown` | 録画開始前の秒読み（`value: 3→2→1`、`0` で消す）。**進行はホストが持ち**、webview は数字と音を出すだけ |

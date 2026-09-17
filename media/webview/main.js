@@ -18,6 +18,18 @@ const deviceSelect = document.getElementById('device');
 const statsEl = document.getElementById('stats');
 const modeEl = document.getElementById('mode');
 const lamp = document.getElementById('lamp');
+const deviceSettings = document.getElementById('device-settings');
+const appearanceSetting = document.getElementById('setting-appearance');
+const liquidSetting = document.getElementById('setting-liquid');
+const liquidSettingRow = document.getElementById('setting-liquid-row');
+const textSizeSetting = document.getElementById('setting-text-size');
+const locationTemplate = document.getElementById('setting-location-template');
+const locationSetting = document.getElementById('setting-location');
+const locationClear = document.getElementById('setting-location-clear');
+const TEXT_SIZES = [
+  'extra-small', 'small', 'medium', 'large', 'extra-large',
+  'extra-extra-large', 'extra-extra-extra-large',
+];
 
 // 展開したブック型 foldable の内側画面はほぼ正方形。Galaxy Z Fold6 の 1856/2160
 // (= .859) を下限にし、通常端末を横向きにした映像は除く。機種名には依存しない。
@@ -887,6 +899,7 @@ function syncBackButton() {
 }
 
 deviceSelect.addEventListener('change', () => {
+  deviceSettings.hidden = true;
   syncBackButton();
   syncFoldableDevice();
   const id = deviceSelect.value;
@@ -899,6 +912,30 @@ deviceSelect.addEventListener('change', () => {
   }
   vscode.postMessage({type: 'deviceChange', deviceId: id});
 });
+
+deviceSettings.addEventListener('toggle', () => {
+  if (deviceSettings.open) post('getDeviceSettings');
+});
+appearanceSetting.addEventListener('change', () =>
+  post('setDeviceSetting', {key: 'appearance', value: appearanceSetting.value})
+);
+textSizeSetting.addEventListener('change', () =>
+  post('setDeviceSetting', {
+    key: 'textSize',
+    value: TEXT_SIZES[Number(textSizeSetting.value)],
+  })
+);
+liquidSetting.addEventListener('change', () =>
+  post('setDeviceSetting', {
+    key: 'liquidGlassOpacity',
+    value: Number(liquidSetting.value),
+  })
+);
+locationSetting.addEventListener('click', () => post('pickDeviceLocation'));
+locationTemplate.addEventListener('change', () => {
+  if (locationTemplate.value) post('setDeviceLocation', {value: locationTemplate.value});
+});
+locationClear.addEventListener('click', () => post('clearDeviceLocation'));
 document.getElementById('btn-home').addEventListener('click', () => post('home'));
 btnBack.addEventListener('click', () => post('back'));
 document
@@ -1242,6 +1279,37 @@ window.addEventListener('message', (event) => {
       syncFoldableDevice();
       break;
 
+    case 'deviceSettings': {
+      deviceSettings.hidden = false;
+      if (message.appearance === 'light' || message.appearance === 'dark') {
+        appearanceSetting.value = message.appearance;
+      }
+      const textSizeIndex = TEXT_SIZES.indexOf(message.textSize);
+      if (textSizeIndex >= 0) textSizeSetting.value = String(textSizeIndex);
+      liquidSettingRow.hidden = message.liquidGlass !== true;
+      if (typeof message.liquidGlassOpacity === 'number') {
+        liquidSetting.value = String(message.liquidGlassOpacity);
+      }
+      locationSetting.textContent = message.location || t('none');
+      locationTemplate.value = Array.from(locationTemplate.options).some(
+        (option) => option.value === message.location
+      ) ? message.location : '';
+      locationClear.hidden = !message.location;
+      break;
+    }
+
+    case 'deviceLocation':
+      locationSetting.textContent = message.location || t('none');
+      locationTemplate.value = Array.from(locationTemplate.options).some(
+        (option) => option.value === message.location
+      ) ? message.location : '';
+      locationClear.hidden = !message.location;
+      break;
+
+    case 'deviceSettingsBusy':
+      deviceSettings.classList.toggle('busy', message.active === true);
+      break;
+
     case 'streamUrl': {
       // Phase 2: <img> に MJPEG を直結。Chromium が multipart をネイティブ復号する。
       // 初回は WDA 起動待ちで最初のフレームまで数秒かかることがあるため、
@@ -1318,6 +1386,7 @@ window.addEventListener('message', (event) => {
       break;
 
     case 'disconnected':
+      deviceSettings.hidden = true;
       cleanup();
       // 同じデバイスを選び直しても change が飛ぶように選択を空へ戻す（復帰導線）
       deviceSelect.value = '';

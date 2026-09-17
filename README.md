@@ -45,6 +45,7 @@ Secondary Simulator mirrors your device inside the editor, so you never have to 
 - **👆 Interactive control**: raw Pointer Events are streamed through, so tap, swipe, drag, and pinch are recognized on the device itself
 - **⚡ Low latency**: HID injection on the iOS Simulator (`native/simhid-server`), with automatic fallback to WDA
 - **🔄 Unified API**: consistent device control through `mobilecli` (JSON-RPC 2.0)
+- **⚙️ Device settings**: set appearance and text size on iOS/Android, Liquid Glass opacity on iOS 26+, and simulated location with major-city presets
 - **🎬 Capture**: save a screenshot or record the screen straight to a file you choose
 - **💾 Memory friendly**: streams, listeners, and timers are cleaned up to prevent leaks
 

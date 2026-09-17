@@ -139,6 +139,93 @@ body {
   --sw: var(--ss-adb);
 }
 
+/* ---- 端末設定 ------------------------------------------------------------- */
+
+.device-settings {
+  width: 100%;
+  max-width: 450px;
+  margin: 10px auto 0;
+  padding-left: 30px;
+  box-sizing: border-box;
+  flex: none;
+}
+
+.device-settings summary {
+  width: fit-content;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+.settings-card {
+  margin-top: 8px;
+  padding: 0 12px;
+  background: var(--ss-soft);
+  border: 1px solid var(--ss-line);
+  border-radius: 14px;
+}
+
+.setting-row {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--ss-line);
+}
+
+.setting-row:last-child {
+  border-bottom: 0;
+}
+
+.setting-row select,
+.setting-row button {
+  border: 0;
+  color: var(--vscode-foreground);
+  background: transparent;
+  font: inherit;
+}
+
+.setting-row select,
+#setting-location {
+  text-align: right;
+  cursor: pointer;
+}
+
+.setting-slider input {
+  width: min(58%, 220px);
+  accent-color: var(--ss-accent);
+}
+
+.location-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+#setting-location {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#setting-location-template {
+  max-width: 140px;
+}
+
+#setting-location-clear {
+  padding: 4px 2px 4px 8px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.device-settings.busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 /* ---- 端末の筐体（既定 ON。`no-frame` クラスで畳む） ----------------------- */
 
 .stage {
