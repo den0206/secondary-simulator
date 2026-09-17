@@ -179,6 +179,11 @@ body {
   border-bottom: 0;
 }
 
+/* display: flex が UA の [hidden] に勝つので、Liquid Glass 行を隠すために明示する */
+.setting-row[hidden] {
+  display: none;
+}
+
 .setting-row select,
 .setting-row button {
   border: 0;
