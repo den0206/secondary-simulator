@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-09-18
+
 ### Added
 
 - A collapsible device-settings panel below the controls can set and read back light/dark
@@ -568,7 +570,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.8.1...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.0...HEAD
+[0.9.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.8.1...Ver_0.9.0
 [0.8.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.8.0...Ver_0.8.1
 [0.8.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.1...Ver_0.8.0
 [0.7.1]: https://github.com/den0206/secondary-simulator/compare/Ver_0.7.0...Ver_0.7.1
