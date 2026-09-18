@@ -50,19 +50,31 @@ export class MobileCliClient {
   constructor(private readonly jsonRpcClient: JsonRpcClient) {}
 
   // デバイス管理
-  async getDeviceInfo(deviceId: string): Promise<DeviceInfoResponse> {
+  async getDeviceInfo(
+    deviceId: string,
+    timeoutMs = 15_000
+  ): Promise<DeviceInfoResponse> {
     return this.jsonRpcClient.sendJsonRpcRequest<DeviceInfoResponse>(
       'device.info',
-      {deviceId}
+      {deviceId},
+      timeoutMs
     );
   }
 
+  /**
+   * デバイス一覧。**必ずタイムアウトを渡す** — DeviceHub（CoreSimulator daemon）が
+   * 終了中の間、mobilecli の裏で走る `simctl list` は無期限に待たされることがあり、
+   * ここが返らないと `refreshDevices` → `bootAndConnect` の「Booting…」通知が
+   * 止まらなくなる（poll ループも 5 秒間隔の探索も同じ経路を通る）。
+   */
   async listDevices(
-    includeOffline: boolean = false
+    includeOffline: boolean = false,
+    timeoutMs = 10_000
   ): Promise<ListDevicesResponse> {
     return this.jsonRpcClient.sendJsonRpcRequest<ListDevicesResponse>(
       'devices.list',
-      {includeOffline}
+      {includeOffline},
+      timeoutMs
     );
   }
 

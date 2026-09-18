@@ -1541,8 +1541,21 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
             await this.selectDevice(deviceId);
             return;
           }
+          // refreshDevices が listDevices のタイムアウトで失敗すると client は
+          // null に落ちる（RPC 断のため）。ここで null のまま boot を呼ぶと
+          // TypeError で withProgress を突き抜けるので、明示して抜ける。
+          // DeviceHub 終了中にここへ来るケースが多いので、再試行を促す。
+          if (!this.mobileCliClient) {
+            void vscode.window.showErrorMessage(
+              vscode.l10n.t(
+                'Secondary Simulator: Stopped waiting for {0} because mobilecli did not respond. Try booting it again.',
+                name
+              )
+            );
+            return;
+          }
           try {
-            await this.mobileCliClient!.boot(deviceId);
+            await this.mobileCliClient.boot(deviceId);
           } catch (error) {
             // 状態取得と起動要求の間にも起動し得る。エラー文言ではなく状態で判断する。
             await this.refreshDevices();

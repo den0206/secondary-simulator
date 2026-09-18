@@ -43,6 +43,7 @@
   "Child processes": "子进程",
   "Extension": "扩展",
   "Secondary Simulator: Could not initialize mobilecli.": "Secondary Simulator：无法初始化 mobilecli。",
+  "Secondary Simulator: Stopped waiting for {0} because mobilecli did not respond. Try booting it again.": "Secondary Simulator：mobilecli 未响应，已中断启动 {0}。请重新尝试启动。",
   "Secondary Simulator: Booting {0}…": "Secondary Simulator：正在启动 {0}…",
   "Secondary Simulator: Could not boot {0} — {1}": "Secondary Simulator：无法启动 {0} — {1}",
   "Secondary Simulator: Waited for {0} but it never reached Booted. Refresh the list and pick it again.": "Secondary Simulator：等待 {0} 启动，但状态始终未变为 Booted。请刷新列表后重新选择。",

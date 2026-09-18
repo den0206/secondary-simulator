@@ -30,6 +30,12 @@ so **there is no need to move entries by hand**.
 - The connection lamp no longer pulses in the steady state; the small dot keeps a soft
   halo and only animates on state changes.
 
+### Fixed
+
+- Booting a shut-down device no longer leaves the "Booting…" progress hanging when
+  mobilecli stops responding. The device list call now times out (10s), the RPC client is
+  cleaned up, and a clear error asks the user to try again.
+
 ## [0.8.1] — 2026-09-16
 
 ### Fixed

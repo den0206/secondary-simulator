@@ -43,6 +43,7 @@
   "Child processes": "子プロセス",
   "Extension": "拡張",
   "Secondary Simulator: Could not initialize mobilecli.": "Secondary Simulator: mobilecli を初期化できませんでした。",
+  "Secondary Simulator: Stopped waiting for {0} because mobilecli did not respond. Try booting it again.": "Secondary Simulator: mobilecli が応答しないため {0} の起動を中断しました。もう一度起動をお試しください。",
   "Secondary Simulator: Booting {0}…": "Secondary Simulator: {0} を起動しています…",
   "Secondary Simulator: Could not boot {0} — {1}": "Secondary Simulator: {0} を起動できませんでした — {1}",
   "Secondary Simulator: Waited for {0} but it never reached Booted. Refresh the list and pick it again.": "Secondary Simulator: {0} の起動を待ちましたが Booted になりませんでした。一覧を更新して選び直してください。",
