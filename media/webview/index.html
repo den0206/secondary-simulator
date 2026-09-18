@@ -28,6 +28,46 @@
   </div>
 
   <div class="stage">
+    <!-- 端末設定の折りたたみボタンは端末フレームの直上・左端に置く（開くと settings-card が
+         フレームの前に展開する）。 -->
+    <details class="device-settings" id="device-settings" hidden>
+      <summary data-i18n="deviceSettings">Device Settings</summary>
+      <div class="settings-card">
+        <label class="setting-row">
+          <span data-i18n="appearance">Appearance</span>
+          <select id="setting-appearance">
+            <option value="light" data-i18n="light">Light</option>
+            <option value="dark" data-i18n="dark">Dark</option>
+          </select>
+        </label>
+        <label class="setting-row setting-slider" id="setting-liquid-row" hidden>
+          <span data-i18n="liquidGlass">Liquid Glass</span>
+          <input id="setting-liquid" type="range" min="0" max="1" step="0.05" value="0.5">
+        </label>
+        <label class="setting-row setting-slider">
+          <span data-i18n="textSize">Text Size</span>
+          <input id="setting-text-size" type="range" min="0" max="6" step="1" value="3">
+        </label>
+        <div class="setting-row">
+          <span data-i18n="location">Location</span>
+          <div class="location-controls">
+            <select id="setting-location-template" data-i18n-title="locationTemplates" title="Major cities">
+              <option value="" data-i18n="selectCity">Select a city…</option>
+              <option value="35.681236, 139.767125">Tokyo</option>
+              <option value="40.7128, -74.0060">New York</option>
+              <option value="37.7749, -122.4194">San Francisco</option>
+              <option value="51.5072, -0.1276">London</option>
+              <option value="48.8566, 2.3522">Paris</option>
+              <option value="37.5665, 126.9780">Seoul</option>
+              <option value="1.3521, 103.8198">Singapore</option>
+            </select>
+            <button id="setting-location" type="button" data-i18n="none">None</button>
+            <button id="setting-location-clear" type="button" data-i18n-title="clearLocation" title="Clear simulated location">×</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
     <div class="phone-frame">
       <span class="side-btn side-mute"></span>
       <span class="side-btn side-vol"></span>
@@ -75,44 +115,6 @@
       </div>
       <button class="control-btn danger" id="btn-disconnect" data-i18n-title="disconnect" title="Disconnect"><span data-i18n="disconnect">Disconnect</span></button>
     </div>
-
-    <details class="device-settings" id="device-settings" hidden>
-      <summary data-i18n="deviceSettings">Device Settings</summary>
-      <div class="settings-card">
-        <label class="setting-row">
-          <span data-i18n="appearance">Appearance</span>
-          <select id="setting-appearance">
-            <option value="light" data-i18n="light">Light</option>
-            <option value="dark" data-i18n="dark">Dark</option>
-          </select>
-        </label>
-        <label class="setting-row setting-slider" id="setting-liquid-row" hidden>
-          <span data-i18n="liquidGlass">Liquid Glass</span>
-          <input id="setting-liquid" type="range" min="0" max="1" step="0.05" value="0.5">
-        </label>
-        <label class="setting-row setting-slider">
-          <span data-i18n="textSize">Text Size</span>
-          <input id="setting-text-size" type="range" min="0" max="6" step="1" value="3">
-        </label>
-        <div class="setting-row">
-          <span data-i18n="location">Location</span>
-          <div class="location-controls">
-            <select id="setting-location-template" data-i18n-title="locationTemplates" title="Major cities">
-              <option value="" data-i18n="selectCity">Select a city…</option>
-              <option value="35.681236, 139.767125">Tokyo</option>
-              <option value="40.7128, -74.0060">New York</option>
-              <option value="37.7749, -122.4194">San Francisco</option>
-              <option value="51.5072, -0.1276">London</option>
-              <option value="48.8566, 2.3522">Paris</option>
-              <option value="37.5665, 126.9780">Seoul</option>
-              <option value="1.3521, 103.8198">Singapore</option>
-            </select>
-            <button id="setting-location" type="button" data-i18n="none">None</button>
-            <button id="setting-location-clear" type="button" data-i18n-title="clearLocation" title="Clear simulated location">×</button>
-          </div>
-        </div>
-      </div>
-    </details>
   </div>
 
   <div class="resources">

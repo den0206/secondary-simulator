@@ -142,20 +142,39 @@ body {
 /* ---- 端末設定 ------------------------------------------------------------- */
 
 .device-settings {
+  /* 端末フレームと同じ max-width・センタリングで、summary を左端に落とす。
+     開いたときの settings-card もこの幅に合わせる（左寄せ・フレームと縦線を揃える）。 */
   width: 100%;
   max-width: 450px;
-  margin: 10px auto 0;
-  padding-left: 30px;
+  margin: 0 auto 6px;
   box-sizing: border-box;
   flex: none;
 }
 
+/* 折りたたみボタンは端末フレーム直上の左端に置くピル型。UA の disclosure 三角は消す。 */
 .device-settings summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   width: fit-content;
+  padding: 4px 12px;
+  background: var(--ss-soft);
+  border: 1px solid var(--ss-line);
+  border-radius: 999px;
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
   font-size: 12px;
   user-select: none;
+  /* Chromium 系: 三角マーカーは消す */
+  list-style: none;
+}
+
+.device-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.device-settings summary::marker {
+  content: '';
 }
 
 .settings-card {

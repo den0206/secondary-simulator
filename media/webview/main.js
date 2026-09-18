@@ -182,6 +182,8 @@ function activePair() {
 }
 
 function onPointerDown(e) {
+  // 端末フレーム内を触ったら開いたままの端末設定は畳む（画面を隠したままの操作を残さない）。
+  if (deviceSettings.open) deviceSettings.open = false;
   // フォーカスを明示的に取る。**末尾の preventDefault がフォーカス移動も止める**
   // ため（pointerdown の既定動作には mousedown 経由のフォーカス移動が含まれる）、
   // 画面をタップしただけでは webview にフォーカスが入らず、打鍵と Cmd+V が
