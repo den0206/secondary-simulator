@@ -151,6 +151,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   **値はホスト側で検証してから渡す**（`adb shell` は端末側の sh が引数を解釈するため）。
   模擬位置は OS から共通に読み戻せないので、拡張が設定した値だけを provider の Map に持ち、
   端末停止で消す。
+  **ソフトウェアキーボードの表示だけは `DeviceSettings` ではなくサイドカー**
+  （`hardwareKeyboard` コマンド → `SimDevice.setHardwareKeyboardEnabled:`。私有 API なので
+  `native/` の中。Simulator.app の ⌘K と同じ設定で、iOS Simulator の HID 経路限定）。
+  **出している間はキー入力を WDA へ回す** — HID のキー注入は端末を「ハードウェア
+  キーボード接続」に戻し、打鍵した瞬間にキーボードが消えるため（`preferWdaKeys`）。
+  現在値を読む API が無いので、模擬位置と同じく設定した側が Set で覚え、端末停止で消す。
 - **ui**: `DeviceStatusBar` が接続中のデバイスと入力経路（HID / WDA / adb）をステータスバーへ出す。
   **経路の呼び名（`InputBackend.label`）は分岐に使う `kind` と別に持つ** — Android は
   `kind` としては WDA 側だが、経路に WebDriverAgent は登場しない（adb と mobilecli）。

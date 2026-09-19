@@ -285,6 +285,24 @@ HID キー入力とソフトウェアキーボード表示は**原理的に両�
 WDA(`device.io.text`) へ回す。1 文字あたり約 370ms だが、端末側の入力ソース
 （英字/かな）にも左右されなくなる。タッチは HID のまま。
 
+#### 戻す手段は ⌘K だけではない（2026-09-20 実測）
+
+CoreSimulator の `SimDevice` に **`setHardwareKeyboardEnabled:keyboardType:error:`**
+があり、これが ⌘K の実体。サイドカーの `hardwareKeyboard` コマンドから呼ぶので、
+**Simulator.app を開かずに切り替えられる**（端末設定パネルの「Software Keyboard」）。
+実測（iPhone 18 Pro / iOS 27.0）:
+
+| 操作 | 結果 |
+|---|---|
+| `enabled = NO` | ソフトウェアキーボードが出る（即時。フォーカスし直し不要） |
+| `enabled = YES` | 同じ画面のまま消える |
+| その後 HID で `keyDown`/`keyUp` を 1 往復 | 文字は入るが**また消える**（接続扱いに戻る） |
+| もう一度 `NO` | また出る（何度でも切り替えられる） |
+
+3 行目のため、拡張は**この設定が ON の間だけキー入力を WDA へ回す**
+（`SimulatorWebviewProvider` の `preferWdaKeys`）。現在値を読む API は無いので、
+設定した側が覚える（端末が止まったら捨てる — 再起動で既定の接続ありに戻る）。
+
 ### 修飾キー
 
 ```c
