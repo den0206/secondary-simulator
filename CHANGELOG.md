@@ -10,6 +10,14 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- The device-settings panel can now show or hide the on-screen software keyboard on iOS
+  simulators. Injecting a HID key makes iOS treat the simulator as having a hardware
+  keyboard attached, which hides the software keyboard; the toggle flips that attachment
+  through CoreSimulator (the same switch as Simulator.app's ⌘K) and routes key input
+  through WebDriverAgent while it is on, so typing no longer dismisses the keyboard.
+
 ## [0.9.0] — 2026-09-18
 
 ### Added
