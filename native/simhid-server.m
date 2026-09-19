@@ -1249,6 +1249,21 @@ static void handleCommand(NSDictionary *cmd) {
     if ([bn isEqualToString:@"home"]) pressButtonAsync(st, kButtonHome);
     else if ([bn isEqualToString:@"lock"]) pressButtonAsync(st, kButtonLock);
     else { ok = NO; err = @"未知のボタン"; }
+  } else if ([name isEqualToString:@"hardwareKeyboard"]) {
+    // Simulator.app の ⌘K（ハードウェアキーボードを接続）と同じ設定。
+    // NO にすると iOS がソフトウェアキーボードを描く。**キーを 1 つ HID 注入すると
+    // 端末側が接続扱いに戻す**ので、出したままにしたい間はキーを WDA へ回す
+    // （docs/ios-hid-injection.md §6）。
+    SEL sel = sel_registerName("setHardwareKeyboardEnabled:keyboardType:error:");
+    if (![st.simDevice respondsToSelector:sel]) {
+      ok = NO;
+      err = @"CoreSimulator が HW キーボードの切り替えに対応していない";
+    } else {
+      NSError *kerr = nil;
+      ok = ((BOOL (*)(id, SEL, BOOL, unsigned char, NSError **))objc_msgSend)(
+          st.simDevice, sel, [cmd[@"enable"] boolValue], 0, &kerr);
+      if (!ok) err = kerr.localizedDescription ?: @"HW キーボードを切り替えられない";
+    }
   } else if ([name isEqualToString:@"keyDown"]) {
     ok = sendToClient(st, keyMsg((uint64_t)numAt(cmd, @"usage", 0), 1));
   } else if ([name isEqualToString:@"keyUp"]) {
