@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="{{styleUri}}">
 </head>
 <body>
+  <!-- OS/IDE の IME 専用。端末描画ツリーの外に置き、Pointer Events には一切参加させない。 -->
+  <textarea id="ime-capture" aria-hidden="true" tabindex="-1" autocomplete="off" autocapitalize="off" spellcheck="false" style="position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0;pointer-events:none;"></textarea>
   <!--
     文言は拡張ホストが翻訳して埋め込む（vscode.l10n は webview からは触れない）。
     表示前に揃うので、後から差し替えて一瞬英語が見える、が起きない。

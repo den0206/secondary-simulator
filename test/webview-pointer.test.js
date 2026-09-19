@@ -87,6 +87,7 @@ const els = {
   }),
   overlay: makeEl('overlay'),
   'simulator-container': makeEl('simulator-container'),
+  'ime-capture': Object.assign(makeEl('ime-capture'), {value: ''}),
   'touch-overlay': makeEl('touch-overlay'),
   countdown: makeEl('countdown'),
   device: makeEl('device'),
@@ -755,6 +756,38 @@ listeners['document:keydown']({key: 'Enter', target: {tagName: 'DIV'}, preventDe
 check(
   '画面上の Enter は送る',
   sent.some((m) => m.type === 'keypress' && m.key === 'return'),
+  JSON.stringify(sent)
+);
+
+console.log('\n18.1) OS/IDE の入力ソースを確定文字として送る');
+sent.length = 0;
+listeners['ime-capture:compositionstart']({});
+listeners['ime-capture:input']({data: 'に', isComposing: true});
+check('IME 変換途中は送らない', sent.length === 0, JSON.stringify(sent));
+listeners['ime-capture:compositionend']({data: '日本語'});
+check(
+  'IME 確定文字だけ textInput で送る',
+  sent.length === 1 && sent[0].type === 'textInput' && sent[0].text === '日本語',
+  JSON.stringify(sent)
+);
+listeners['ime-capture:input']({data: '日本語', isComposing: false});
+check('compositionend 直後の input は二重送信しない', sent.length === 1, JSON.stringify(sent));
+
+sent.length = 0;
+listeners['ime-capture:beforeinput']({inputType: 'insertText', data: 'カ', isComposing: false});
+check(
+  'カナ直接入力は beforeinput の確定文字を送る',
+  sent.length === 1 && sent[0].type === 'textInput' && sent[0].text === 'カ',
+  JSON.stringify(sent)
+);
+listeners['ime-capture:input']({data: 'カ', isComposing: false});
+check('カナの後続 input は二重送信しない', sent.length === 1, JSON.stringify(sent));
+
+sent.length = 0;
+listeners['ime-capture:beforeinput']({inputType: 'insertText', data: 'a', isComposing: false});
+check(
+  '英字入力も物理キーではなく確定文字として送る',
+  sent.length === 1 && sent[0].type === 'textInput' && sent[0].text === 'a',
   JSON.stringify(sent)
 );
 

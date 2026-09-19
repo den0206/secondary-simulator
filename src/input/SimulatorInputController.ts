@@ -321,6 +321,18 @@ export class SimulatorInputController {
    * テキスト入力。HID が主経路のとき、ASCII 部分は HID、非 ASCII 部分は WDA(inputText) へ委譲する
    * （docs/sidecar-protocol.md §10.3）。WDA が主経路なら全て WDA。
    */
+  /**
+   * IDE/OS の IME で確定済みの文字列をそのまま注入する。
+   *
+   * 通常の text() は HID 設定時に ASCII を物理キーへ変換するため、端末側が日本語
+   * キーボードなら "a" が「あ」になる。IME で確定済みの入力は再解釈させず、
+   * iOS / Android 共通の device.io.text 経路へ直接流す。
+   */
+  async committedText(value: string): Promise<void> {
+    if (!value) return;
+    await this.wdaFallback.text(value);
+  }
+
   async text(value: string): Promise<void> {
     const backend = this.keyBackend();
     if (backend.kind === 'wda') {

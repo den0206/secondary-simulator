@@ -9,6 +9,8 @@ const vscode = acquireVsCodeApi();
 const img = document.getElementById('simulator-img');
 const overlay = document.getElementById('overlay');
 const container = document.getElementById('simulator-container');
+// IME は端末の Pointer Events と分離した body 直下の編集ホストで受ける。
+const imeCapture = document.getElementById('ime-capture');
 const touchOverlay = document.getElementById('touch-overlay');
 const countdown = document.getElementById('countdown');
 const octx = touchOverlay.getContext('2d');
@@ -288,6 +290,9 @@ function onPointerUp(e) {
   }
   pushFadeMark(p);
   container.releasePointerCapture?.(e.pointerId);
+  // Pointer セッションが完全に終わった次のタスクで IME へフォーカスを移す。
+  // pointerdown/move/up の既存経路には触れない。
+  setTimeout(() => imeCapture.focus({preventScroll: true}), 0);
   // 離した瞬間も同じ理由で描き直す（指が消えたことが録画に反映されない）
   scheduleViewDraw();
   e.preventDefault();
@@ -837,6 +842,8 @@ const TEXT_UI = ['SELECT', 'INPUT', 'TEXTAREA', 'OPTION'];
  */
 function isEditingUi(target, key) {
   if (!target || typeof target.tagName !== 'string') return false;
+  // ime-capture はデバイス入力そのものなので UI フォーム扱いしない。
+  if (target === imeCapture) return false;
   if (TEXT_UI.includes(target.tagName)) return true;
   return target.tagName === 'BUTTON' && (key === 'Enter' || key === ' ');
 }
@@ -859,9 +866,62 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key.length === 1) {
+    // IME 用編集ホストではブラウザ/OS に入力を処理させる。確定文字は下の
+    // input/compositionend から textInput として送る。
+    if (e.target === imeCapture && !e.metaKey && !e.ctrlKey && !e.altKey) return;
     post('keypress', {key: e.key, modifiers});
     e.preventDefault();
   }
+});
+
+let composing = false;
+let committedByComposition = '';
+let committedByBeforeInput = '';
+
+function sendCommittedText(text) {
+  if (!text) return;
+  post('textInput', {text});
+}
+
+// 日本語ローマ字入力は composition 系、macOS の「カナ」など直接確定する入力ソースは
+// beforeinput(inputType=insertText) だけで届く場合がある。両方を受け、同じ確定文字は
+// 後続の input で二重送信しない。
+imeCapture.addEventListener('compositionstart', () => {
+  composing = true;
+  committedByComposition = '';
+});
+imeCapture.addEventListener('compositionend', (e) => {
+  composing = false;
+  const text = typeof e.data === 'string' ? e.data : '';
+  committedByComposition = text;
+  if (text) sendCommittedText(text);
+  // ここでは value を消さない。カナ入力では compositionend.data が空で、
+  // 直後の input/value にだけ確定文字が現れるケースを拾うため。
+});
+imeCapture.addEventListener('beforeinput', (e) => {
+  if (composing || e.isComposing) return;
+  if (e.inputType !== 'insertText') return;
+  const text = typeof e.data === 'string' ? e.data : '';
+  if (!text) return;
+  committedByBeforeInput = text;
+  sendCommittedText(text);
+});
+imeCapture.addEventListener('input', (e) => {
+  if (composing || e.isComposing) return;
+  const text = typeof e.data === 'string' && e.data ? e.data : imeCapture.value;
+  if (
+    (committedByComposition && text === committedByComposition) ||
+    (committedByBeforeInput && text === committedByBeforeInput)
+  ) {
+    committedByComposition = '';
+    committedByBeforeInput = '';
+    imeCapture.value = '';
+    return;
+  }
+  committedByComposition = '';
+  committedByBeforeInput = '';
+  if (text) sendCommittedText(text);
+  imeCapture.value = '';
 });
 
 // 貼り付け。1 文字ずつのキー送出では URL の入力が現実的でないため、まとめて送る。

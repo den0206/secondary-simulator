@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+- Device-view typing now uses the IDE/OS input source on both iOS and Android: IME composition is kept in the webview and only committed text is forwarded to the device.
+
 ## [0.9.0] — 2026-09-18
 
 ### Added

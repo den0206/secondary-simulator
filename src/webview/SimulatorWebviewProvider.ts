@@ -746,6 +746,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        // OS/IDE の IME で確定した文字列。iOS / Android とも既存の
+        // InputController.text 経路へ流し、端末側 IME の状態には依存しない。
+        case 'textInput': {
+          const text = asText(message.text);
+          if (text && this.inputController) await this.inputController.committedText(text);
+          break;
+        }
+
         // クリップボードの貼り付け。1 文字ずつのキー送出では URL 入力が現実的でない。
         case 'paste':
           await this.pasteText();

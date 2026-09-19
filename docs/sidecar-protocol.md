@@ -507,3 +507,8 @@ HID→WDA へ降格したら、`postMessage({type:'mode', text, backend})` で w
 ---
 
 これらは確定済み。実装はこの設計に沿って進める。
+
+
+### IDE input source synchronization
+
+The webview keeps a dedicated IME capture element outside the simulator rendering tree. Pointer input keeps the existing `simulator-container` path unchanged; after a pointer session ends, focus moves to the IME capture element. Composition text is not forwarded while conversion is in progress. Only committed text from `compositionend` / `input` is sent as `textInput` and passed to `SimulatorInputController.text()` for both iOS and Android.
