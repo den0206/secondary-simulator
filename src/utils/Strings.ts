@@ -72,6 +72,7 @@ export function webviewStrings(): Record<string, string> {
     dark: vscode.l10n.t('Dark'),
     liquidGlass: vscode.l10n.t('Liquid Glass'),
     textSize: vscode.l10n.t('Text Size'),
+    softwareKeyboard: vscode.l10n.t('Software Keyboard'),
     location: vscode.l10n.t('Location'),
     selectCity: vscode.l10n.t('Select a city…'),
     locationTemplates: vscode.l10n.t('Major cities'),

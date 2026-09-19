@@ -167,6 +167,23 @@ export class SimulatorInputController {
     return this.primary.kind === 'hid' ? this.sidecar : null;
   }
 
+  /**
+   * iOS Simulator のハードウェアキーボード接続（Simulator.app の ⌘K）を切り替える。
+   * OFF にすると端末がソフトウェアキーボードを描く。HID 経路のときだけ使える。
+   *
+   * **HID でキーを 1 つ注入すると端末が接続扱いに戻す**ので、出したままにする間は
+   * キーを WDA へ回すこと（呼び出し側の `preferWdaKeys`）。
+   */
+  async setHardwareKeyboard(enabled: boolean): Promise<void> {
+    const sidecar = this.activeSidecar;
+    if (!sidecar) throw new Error('HID 経路でしか切り替えられない');
+    await sidecar.send({
+      cmd: 'hardwareKeyboard',
+      device: this.opts.deviceId,
+      enable: enabled,
+    });
+  }
+
   /** キー・テキストの送り先。設定が WDA 指定なら HID を使っていても WDA へ回す。 */
   private keyBackend(): InputBackend {
     return this.opts.preferWdaKeys?.() ? this.wdaFallback : this.primary;

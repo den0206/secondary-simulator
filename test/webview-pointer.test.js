@@ -114,6 +114,8 @@ const els = {
       {value: '37.5665, 126.9780'}, {value: '1.3521, 103.8198'},
     ],
   }),
+  'setting-keyboard': makeEl('setting-keyboard'),
+  'setting-keyboard-row': makeEl('setting-keyboard-row'),
   'setting-location': makeEl('setting-location'),
   'setting-location-clear': makeEl('setting-location-clear'),
 };
@@ -468,6 +470,7 @@ listeners['window:message']({
     textSize: 'extra-large',
     liquidGlass: true,
     liquidGlassOpacity: 0.7,
+    softwareKeyboard: false,
     location: '35.681236, 139.767125',
   },
 });
@@ -476,6 +479,8 @@ check('Appearance を反映', els['setting-appearance'].value === 'dark');
 check('Text Size を反映', els['setting-text-size'].value === '4');
 check('iOS 26 では Liquid Glass を表示', els['setting-liquid-row'].hidden === false);
 check('Location を反映', els['setting-location'].textContent.includes('35.681236'));
+check('HID 経路ではソフトウェアキーボードの行を出す', els['setting-keyboard-row'].hidden === false);
+check('ソフトウェアキーボードは OFF', els['setting-keyboard'].checked === false);
 check('都市テンプレートを選択', els['setting-location-template'].value === '35.681236, 139.767125');
 sent.length = 0;
 els['setting-appearance'].value = 'light';
@@ -494,8 +499,21 @@ check(
   '都市テンプレートの座標をホストへ送る',
   sent.some((m) => m.type === 'setDeviceLocation' && m.value === '40.7128, -74.0060')
 );
+sent.length = 0;
+els['setting-keyboard'].checked = true;
+listeners['setting-keyboard:change']();
+check(
+  'ソフトウェアキーボードの切り替えをホストへ送る',
+  sent.some(
+    (m) => m.type === 'setDeviceSetting' && m.key === 'softwareKeyboard' && m.value === true
+  )
+);
 listeners['window:message']({data: {type: 'deviceSettings', liquidGlass: false}});
 check('Android / iOS 25 以下では Liquid Glass を隠す', els['setting-liquid-row'].hidden === true);
+check(
+  'HID 経路でなければソフトウェアキーボードの行を隠す',
+  els['setting-keyboard-row'].hidden === true
+);
 
 console.log('\n10b) 一覧から消えたデバイスはホスト側も切断する');
 els.device.value = 'ios-1';
