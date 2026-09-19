@@ -48,6 +48,11 @@
           <span data-i18n="textSize">Text Size</span>
           <input id="setting-text-size" type="range" min="0" max="6" step="1" value="3">
         </label>
+        <!-- iOS Simulator の HID 経路でだけ出す（ホストが softwareKeyboard を送る） -->
+        <label class="setting-row" id="setting-keyboard-row" hidden>
+          <span data-i18n="softwareKeyboard">Software Keyboard</span>
+          <input id="setting-keyboard" type="checkbox">
+        </label>
         <div class="setting-row">
           <span data-i18n="location">Location</span>
           <div class="location-controls">

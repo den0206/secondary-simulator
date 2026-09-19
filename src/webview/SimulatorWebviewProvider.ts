@@ -82,6 +82,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private devices: Device[] = [];
   /** この拡張から設定した模擬位置。OS側には現在値を読む共通APIがないため表示用に持つ。 */
   private readonly simulatedLocations = new Map<string, Coordinates>();
+  /**
+   * ソフトウェアキーボードを出す設定にした端末（= HW キーボードを切った端末）。
+   * CoreSimulator に現在値を読む API が無いので、設定した側で覚える。
+   * 端末が止まったら消す（再起動で既定の「接続あり」に戻るため）。
+   */
+  private readonly softwareKeyboards = new Set<string>();
   private screenSize: {width: number; height: number} | null = null;
   private messageDisposable?: vscode.Disposable;
   private disposeDisposable?: vscode.Disposable;
@@ -650,6 +656,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
               const value = asFiniteNumber(message.value);
               if (value === null) break;
               await setLiquidGlassOpacity(device, value);
+            } else if (key === 'softwareKeyboard') {
+              const value = asFlag(message.value);
+              if (value === null || !this.inputController) break;
+              // 表示する = ハードウェアキーボードを切る
+              await this.inputController.setHardwareKeyboard(!value);
+              if (value) this.softwareKeyboards.add(device.id);
+              else this.softwareKeyboards.delete(device.id);
             }
             await this.refreshDeviceSettings(device);
           } catch (error) {
@@ -996,6 +1009,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     Logger.info(`デバイスが停止したため接続を終了: ${deviceId}`);
     // 模擬位置は再起動後に共通APIで読めないため、前回表示を残さない。
     this.simulatedLocations.delete(deviceId);
+    // HW キーボードは端末の再起動で既定（接続あり）に戻る。
+    this.softwareKeyboards.delete(deviceId);
     // 手動の切断と同じく録画も止める（止まった画面を上限まで録り続けない）
     if (this.recording) void this.stopRecording();
     this.stopCapture();
@@ -1068,10 +1083,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         getScreenSize: () => this.screenSize,
         sidecarBinaryPath: this.resolveSidecarPath(),
         // 設定を毎回読む（切り替えに再接続を要らなくする）
+        // ソフトウェアキーボードを出している間も WDA へ回す
+        // （HID のキー注入は端末を HW キーボード接続に戻し、キーボードが消える）
         preferWdaKeys: () =>
           vscode.workspace
             .getConfiguration('secondarySimulator')
-            .get<string>('keyInput', 'hid') === 'wda',
+            .get<string>('keyInput', 'hid') === 'wda' ||
+          this.softwareKeyboards.has(deviceId),
         onBackendChange: (label) => {
           this.setStatus({state: 'connected', name: device.name, backend: label});
           // HID が死ぬとサイドカー取り込みも止まる。映像だけ WDA へ切り替える。
@@ -1121,6 +1139,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         type: 'deviceSettings',
         ...settings,
         location: location ? `${location.latitude}, ${location.longitude}` : null,
+        // HID 経路のときだけ切り替えられる（null なら webview は行を出さない）
+        softwareKeyboard: this.inputController?.activeSidecar
+          ? this.softwareKeyboards.has(device.id)
+          : null,
       });
     } catch (error) {
       Logger.warn(`端末設定を取得できない: ${(error as Error).message}`);

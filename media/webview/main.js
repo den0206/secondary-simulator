@@ -24,6 +24,8 @@ const liquidSetting = document.getElementById('setting-liquid');
 const liquidSettingRow = document.getElementById('setting-liquid-row');
 const textSizeSetting = document.getElementById('setting-text-size');
 const locationTemplate = document.getElementById('setting-location-template');
+const keyboardSetting = document.getElementById('setting-keyboard');
+const keyboardSettingRow = document.getElementById('setting-keyboard-row');
 const locationSetting = document.getElementById('setting-location');
 const locationClear = document.getElementById('setting-location-clear');
 const TEXT_SIZES = [
@@ -933,6 +935,9 @@ liquidSetting.addEventListener('change', () =>
     value: Number(liquidSetting.value),
   })
 );
+keyboardSetting.addEventListener('change', () =>
+  post('setDeviceSetting', {key: 'softwareKeyboard', value: keyboardSetting.checked})
+);
 locationSetting.addEventListener('click', () => post('pickDeviceLocation'));
 locationTemplate.addEventListener('change', () => {
   if (locationTemplate.value) post('setDeviceLocation', {value: locationTemplate.value});
@@ -1292,6 +1297,9 @@ window.addEventListener('message', (event) => {
       if (typeof message.liquidGlassOpacity === 'number') {
         liquidSetting.value = String(message.liquidGlassOpacity);
       }
+      // HID 経路でないときはホストが null を送る（切り替えられないので行ごと隠す）
+      keyboardSettingRow.hidden = typeof message.softwareKeyboard !== 'boolean';
+      keyboardSetting.checked = message.softwareKeyboard === true;
       locationSetting.textContent = message.location || t('none');
       locationTemplate.value = Array.from(locationTemplate.options).some(
         (option) => option.value === message.location

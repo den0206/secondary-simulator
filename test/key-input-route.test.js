@@ -93,6 +93,19 @@ async function main() {
   check('旧版は HID の Home',
     JSON.stringify(calls) === JSON.stringify([['hid:button']]), JSON.stringify(calls));
 
+  console.log('\n5) ソフトウェアキーボードの切り替え（HW キーボードの接続を外す）');
+  controller.sidecar = {send: async (c) => calls.push(['sidecar', c.cmd, c.enable])};
+  calls.length = 0;
+  await controller.setHardwareKeyboard(false);
+  check('HID 経路ならサイドカーへ hardwareKeyboard を送る',
+    JSON.stringify(calls) === JSON.stringify([['sidecar', 'hardwareKeyboard', false]]),
+    JSON.stringify(calls));
+
+  controller.sidecar = null;
+  let threw = false;
+  await controller.setHardwareKeyboard(false).catch(() => { threw = true; });
+  check('サイドカーが無ければ失敗する（WDA 経路では切り替えられない）', threw);
+
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
   process.exit(failures === 0 ? 0 : 1);
 }
