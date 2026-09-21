@@ -41,6 +41,11 @@ CI は Node 24 LTS を使い、拡張の `engines.node` は `>=20` を維持す�
   MJPEG 経路が GitHub の macOS ランナーで安定しないため（実測: ローカルは約 27fps
   出るのに CI は 60 秒で 2 枚、`device.screencapture` が 500 を返すこともある）。
   載せるとランナーの調子を測るだけのテストになる。
+- **`packaged-startup.device-test.js` は手元だけ**（`unzip -q vsix/secondary-simulator.vsix -d <dir>`
+  してから `node test/packaged-startup.device-test.js <dir>/extension <UDID>`）。**展開した VSIX の
+  中身だけ**で mobilecli 起動 → 端末一覧 → HID 初期化 → JPEG 1 枚までを通す
+  （`vscode` だけスタブ）。**CI に載せない** — VSIX の作成と展開が要り、
+  開発環境の `node_modules` で欠落を隠さないことが目的なので、パッケージを疑うときに手で回す。
 
 `sh scripts/check-xcode-hid.sh` はインストール済み Xcode すべてに
 `native/simhid-server --check` を当て、HID の私有シンボル（CoreSimulator /
@@ -243,7 +248,7 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 
 ## 注意
 
-- `mobilecli` は VSIX に darwin 版バイナリだけ同梱する（`.vscodeignore`）。
+- `mobilecli` は VSIX に macOS / Linux / Windows の x64 / arm64 バイナリを同梱する（`.vscodeignore`）。
   見つからない場合は `npx` 実行にフォールバックする。**版は必ず固定する**
   （`npxPackageSpec()`。`package.json` も `^` を付けず完全固定）。`@latest` に
   すると、実行の度にネットワークから取ってきたコードを利用者のマシンで走らせる
@@ -251,10 +256,11 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   出すので、CI を通してから利用者へ出す（`.github/dependabot.yml`）。
   **バイナリは 1.0.7 から arch 別パッケージ（`@mobilenext/mobilecli-<os>-<arch>`）に
   分かれた。** npm が入れるのはホストの 1 つだけなので、`npm install` しただけでは
-  Intel 用が揃わない。`vscode:prepublish` の `scripts/prepare-mobilecli.js` が
-  パッケージ時に darwin の arm64/amd64 を両方取り寄せる（**ネットワークが要る**）。
+  他 OS / CPU 用が揃わない。`vscode:prepublish` の `scripts/prepare-mobilecli.js` が
+  パッケージ時に全対応 OS / CPU を取り寄せる（**ネットワークが要る**）。
   `vsce package` を直に叩いても走るよう、`package` ではなく `vscode:prepublish` に
-  置いてある — 片方欠けた VSIX は Intel Mac で黙って npx 経路に落ちるだけで気づけない。
+  置いてある。`npm run package` は `scripts/check-vsix.js` で完成した VSIX 内の
+  全バイナリと版を検査する。欠落を開発環境の node_modules で隠さない。
 - **`mobilecli` は FSL-1.1-ALv2**（ソース公開型。OSI 承認のオープンソースではない）。
   同梱して再配布する以上、全文と著作権表示を `THIRD-PARTY-NOTICES.md` で運ぶ必要が
   あり、`.vscodeignore` はこれを VSIX に入れている。**版を上げたら
