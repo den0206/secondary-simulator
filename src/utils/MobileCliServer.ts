@@ -1,4 +1,5 @@
 import {ChildProcess, spawn} from 'node:child_process';
+import {createConnection} from 'node:net';
 import {Logger} from './Logger';
 
 export class MobileCliServer {
@@ -24,6 +25,7 @@ export class MobileCliServer {
   private serverPort: number = MobileCliServer.DEFAULT_SERVER_PORT;
   private mobilecliServerProcess: ChildProcess | null = null;
   private launchPromise: Promise<void> | null = null;
+  private generation = 0;
   /**
    * 使えるサーバを掴んでいるか。自分で spawn した場合と、既存サーバを再利用した場合の
    * 両方で true になる。プロセスの有無だけで判定すると、再利用時に毎回ポート走査
@@ -92,6 +94,22 @@ export class MobileCliServer {
     }
   }
 
+  private isPortAvailable(port: number): Promise<boolean> {
+    // A failed HTTP health check can still be an occupied TCP port.
+    return new Promise((resolve) => {
+      const socket = createConnection({host: 'localhost', port});
+      const finish = (available: boolean) => {
+        socket.destroy();
+        resolve(available);
+      };
+      socket.once('connect', () => finish(false));
+      socket.once('error', (error: NodeJS.ErrnoException) =>
+        finish(error.code === 'ECONNREFUSED')
+      );
+      socket.setTimeout(1000, () => finish(false));
+    });
+  }
+
   // 0.0.x は `devices`、0.1.x は `devices.list`。名前が通るサーバだけ再利用する。
   private async isRpcCompatible(port: number): Promise<boolean> {
     try {
@@ -146,12 +164,15 @@ export class MobileCliServer {
 
   private async waitForServerReady(
     port: number,
-    timeoutMs: number
+    timeoutMs: number,
+    checkStartup: () => void
   ): Promise<void> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeoutMs) {
+      checkStartup();
       const isHealthy = await this.checkServerHealth(port);
+      checkStartup();
       if (isHealthy) {
         Logger.info(`mobilecli server is ready on port ${port}`);
         return;
@@ -177,21 +198,24 @@ export class MobileCliServer {
   }
 
   private async launchServerImpl(): Promise<void> {
+    const generation = this.generation;
+    const checkStopped = () => {
+      if (generation !== this.generation) throw new Error('mobilecli startup stopped');
+    };
     if (!this.mobilecliPath) {
       throw new Error('mobilecli not found');
     }
 
-    if (this.mobilecliServerProcess) {
-      Logger.info('mobilecli server process already exists');
-      return;
-    }
-
     // 既に掴んだサーバが生きていれば走査ごと省く。ここを飛ばすと、外部サーバを
     // 再利用したときに接続の度へ PORT_RANGE 分の走査が戻ってくる。
-    if (this.serverReady && (await this.checkServerHealth(this.serverPort))) {
+    if ((this.serverReady || this.mobilecliServerProcess) &&
+        (await this.checkServerHealth(this.serverPort))) {
+      checkStopped();
+      this.serverReady = true;
       return;
     }
-    this.serverReady = false;
+    checkStopped();
+    this.stopProcess();
 
     const rangeStart = MobileCliServer.DEFAULT_SERVER_PORT;
     const rangeEnd = MobileCliServer.DEFAULT_SERVER_PORT + MobileCliServer.PORT_RANGE - 1;
@@ -204,12 +228,15 @@ export class MobileCliServer {
         this.checkServerHealth(rangeStart + i)
       )
     );
+    checkStopped();
 
     // 0.0.x は RPC 名が違うので /health だけでは不十分。devices.list が通るものだけ使う。
     for (let i = 0; i < health.length; i++) {
       if (!health[i]) continue;
       const port = rangeStart + i;
-      if (await this.isRpcCompatible(port)) {
+      const compatible = await this.isRpcCompatible(port);
+      checkStopped();
+      if (compatible) {
         Logger.info(`Reusing running mobilecli server on port ${port}`);
         this.serverPort = port;
         this.serverReady = true;
@@ -217,8 +244,11 @@ export class MobileCliServer {
       }
     }
 
-    // 稼働中が無ければ空きポートで起動する（上の /health 結果を再利用する）
-    const freeIndex = health.indexOf(false);
+    const available = await Promise.all(health.map((healthy, i) =>
+      healthy ? false : this.isPortAvailable(rangeStart + i)
+    ));
+    checkStopped();
+    const freeIndex = available.indexOf(true);
     if (freeIndex < 0) {
       throw new Error('No available port found');
     }
@@ -252,40 +282,60 @@ export class MobileCliServer {
             `localhost:${this.serverPort}`,
           ];
 
-    this.mobilecliServerProcess = spawn(this.mobilecliPath, args, {
+    const proc = spawn(this.mobilecliPath, args, {
       detached: false,
       stdio: 'pipe',
+      windowsHide: true,
     });
+    this.mobilecliServerProcess = proc;
+    let startupError: Error | null = null;
+    let tail = '';
 
-    this.mobilecliServerProcess.stdout?.on('data', (data: Buffer) => {
+    proc.stdout?.on('data', (data: Buffer) => {
       Logger.debug(`mobilecli server stdout: ${data.toString().trimEnd()}`);
     });
 
-    this.mobilecliServerProcess.stderr?.on('data', (data: Buffer) => {
+    proc.stderr?.on('data', (data: Buffer) => {
+      tail = (tail + data.toString()).slice(-2000);
       Logger.debug(`mobilecli server stderr: ${data.toString().trimEnd()}`);
     });
 
-    this.mobilecliServerProcess.on('close', (code: number) => {
+    proc.on('close', (code: number | null) => {
       Logger.info(`mobilecli server process exited with code ${code}`);
-      this.mobilecliServerProcess = null;
-      this.serverReady = false;
+      startupError ??= new Error(`mobilecli exited with code ${code}: ${tail.trim()}`);
+      if (this.mobilecliServerProcess === proc) {
+        this.mobilecliServerProcess = null;
+        this.serverReady = false;
+      }
     });
 
-    this.mobilecliServerProcess.on('error', (error: Error) => {
+    proc.on('error', (error: Error) => {
+      startupError = error;
       Logger.error(`mobilecli server error: ${error.message}`);
-      this.mobilecliServerProcess = null;
-      this.serverReady = false;
     });
 
-    // サーバーの準備完了を待つ
-    await this.waitForServerReady(
-      this.serverPort,
-      MobileCliServer.SERVER_STARTUP_TIMEOUT_MS
-    );
-    this.serverReady = true;
+    try {
+      await this.waitForServerReady(
+        this.serverPort,
+        MobileCliServer.SERVER_STARTUP_TIMEOUT_MS,
+        () => {
+          checkStopped();
+          if (startupError) throw startupError;
+        }
+      );
+      this.serverReady = true;
+    } catch (error) {
+      if (this.mobilecliServerProcess === proc) this.stopProcess();
+      throw error;
+    }
   }
 
   public stopServer(): void {
+    this.generation++;
+    this.stopProcess();
+  }
+
+  private stopProcess(): void {
     this.serverReady = false;
     const proc = this.mobilecliServerProcess;
     this.mobilecliServerProcess = null;
