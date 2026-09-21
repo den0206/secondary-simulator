@@ -18,11 +18,11 @@ covered by its own license.
 
 ### What is bundled
 
-Only the prebuilt macOS binaries `@mobilenext/mobilecli-darwin-arm64` /
-`@mobilenext/mobilecli-darwin-amd64` and the `index.js` launcher, unmodified, as
-published to npm. Secondary Simulator runs mobilecli as a **separate process**
-and communicates with it over JSON-RPC 2.0; it neither links against it nor
-modifies it.
+The prebuilt binaries for every platform mobilecli publishes
+(`@mobilenext/mobilecli-{darwin,linux,windows}-{amd64,arm64}`) and the `index.js`
+launcher, unmodified, as published to npm. Secondary Simulator runs mobilecli as
+a **separate process** and communicates with it over JSON-RPC 2.0; it neither
+links against it nor modifies it.
 
 ### Note on the license
 
