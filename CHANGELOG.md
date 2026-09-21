@@ -18,6 +18,16 @@ so **there is no need to move entries by hand**.
   through CoreSimulator (the same switch as Simulator.app's ⌘K) and routes key input
   through WebDriverAgent while it is on, so typing no longer dismisses the keyboard.
 
+### Fixed
+
+- Bundle mobilecli for Windows and Linux (x64 and arm64) as well as macOS, so normal
+  startup does not depend on an external npm installation or a first-run download.
+  Verify all platform binaries in the packaged VSIX before publishing.
+- Skip ports occupied by services without a health endpoint. Report mobilecli startup
+  errors with their actual cause, terminate timed-out children, and health-check existing
+  processes before reuse so Retry can recover. Ignore delayed exits from replaced children
+  and cancel pending startup when the extension stops.
+
 ## [0.9.0] — 2026-09-18
 
 ### Added
