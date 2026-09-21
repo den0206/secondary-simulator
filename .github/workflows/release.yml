@@ -93,7 +93,7 @@ jobs:
       - name: Verify universal binary
         run: lipo -info native/simhid-server | grep -q 'x86_64 arm64'
 
-      # .vscodeignore が node_modules を mobilecli(darwin)以外すべて除外するので
+      # .vscodeignore が node_modules を mobilecli 以外すべて除外するので
       # devDependencies の prune は不要。
       - name: Package VSIX
         run: npm run package
