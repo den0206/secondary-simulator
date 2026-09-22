@@ -189,10 +189,14 @@ export class MobileCliClient {
     });
   }
 
+  /**
+   * 文字入力。**共通の既定（15 秒）では足りない** — WDA の `typeText` は
+   * 1 文字ずつ打つので、貼り付けの上限（1,024 文字）だと分単位になりうる。
+   */
   async inputText(
     deviceId: string,
     text: string,
-    timeoutMs?: number
+    timeoutMs = 120_000
   ): Promise<void> {
     return this.jsonRpcClient.sendJsonRpcRequest(
       'device.io.text',

@@ -101,6 +101,12 @@
         "icon": "$(output)"
       },
       {
+        "command": "simulator.diagnostics",
+        "title": "%command.diagnostics.title%",
+        "category": "%extension.category%",
+        "icon": "$(pulse)"
+      },
+      {
         "command": "simulator.clearLogs",
         "title": "%command.clearLogs.title%",
         "category": "%extension.category%",

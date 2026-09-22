@@ -93,6 +93,17 @@ function unfinalizedMdat(dataLength) {
     JSON.stringify(noMoov)
   );
 
+  // 名前だけ moov でも、宣言された本体が無ければ完成したコンテナではない。
+  const truncatedMoov = Buffer.alloc(8);
+  truncatedMoov.writeUInt32BE(4096, 0);
+  truncatedMoov.write('moov', 4, 'latin1');
+  const truncatedMoovResult = await verifyRecording(write('truncated-moov.mp4', truncatedMoov));
+  check(
+    '本体が欠けた moov を落とす',
+    truncatedMoovResult.ok === false && truncatedMoovResult.reason === 'unfinalized',
+    JSON.stringify(truncatedMoovResult)
+  );
+
   // 「末尾まで伸びる」mdat（size=0）。この後ろに moov は置けない
   const openMdat = Buffer.alloc(8);
   openMdat.writeUInt32BE(0, 0);

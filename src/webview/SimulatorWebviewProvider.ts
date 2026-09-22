@@ -17,6 +17,7 @@ import {
   keyLabel,
   SimulatorInputController,
 } from '../input/SimulatorInputController';
+import {AdbTouch} from '../input/AdbTouch';
 import {
   autoConnectDelayFor,
   pickAutoConnectDevice,
@@ -78,6 +79,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private static readonly PROXY_BASE_PORT = 12200;
   private inputController: SimulatorInputController | null = null;
   private currentDeviceId: string | null = null;
+  /** 新しい接続・切断で増やし、遅い接続結果を無効化する。 */
+  private connectionGeneration = 0;
   private disconnectBusy = false;
   private devices: Device[] = [];
   /** この拡張から設定した模擬位置。OS側には現在値を読む共通APIがないため表示用に持つ。 */
@@ -249,6 +252,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * その間にもう一度押されると**止め終える前に新しい録画を始めて**しまう。
    */
   private recordingBusy = false;
+  /** 開始RPCの応答待ちも録画対象として追跡する。 */
+  private recordingStart: {deviceId: string; client: MobileCliClient; source: RecordingSource; cancelled: boolean} | null = null;
+  private recordingStartedAt: number | null = null;
   /**
    * 1 回の貼り付けで受ける文字数の上限。
    *
@@ -349,6 +355,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           void this.refreshDevices();
         }
       } else {
+        if (this.recordingStart) this.recordingStart.cancelled = true;
         // 非表示のあいだ録画を続けると、止め忘れに気づけない。表示を止める前に止める。
         if (this.recording) {
           void this.stopRecording();
@@ -396,7 +403,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       });
     }
     // 作り直しても録画は続いている。表示だけ復元する（非表示で止めた場合は無い）
-    if (this.recording) this.postMessage({type: 'recording', active: true});
+    if (this.recording) {
+      this.postMessage({
+        type: 'recording', active: true, phase: this.recordingBusy ? 'stopping' : 'recording',
+        startedAt: this.recordingStartedAt, maxMs: SimulatorWebviewProvider.MAX_RECORDING_MS,
+      });
+    }
     await this.refreshDevices();
     // 繋いだままの作り直しでは自動接続が走らないので `selectedDevice` も出ない。
     // <select> は新品なので、送らないと「映像は流れているのに未選択の顔」になる
@@ -439,6 +451,29 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /** ビューが見えているか。未生成・畳んでいるあいだは false。 */
   public isViewVisible(): boolean {
     return this.view?.visible === true;
+  }
+
+  /** 状態を変えずに、接続できない理由を出力チャンネルと通知へ要約する。 */
+  async showDiagnostics(): Promise<void> {
+    const device = this.currentDevice();
+    const input = this.inputController
+      ? `${this.inputController.backendLabel}${this.screenSize ? '' : ' (screen size unavailable)'}`
+      : 'not initialized';
+    const lines = [
+      `mobilecli: ${this.mobileCliServer.isServerRunning() ? 'running' : 'not running'}`,
+      `device: ${device ? `${device.name} (${device.state})` : 'not selected'}`,
+      `input: ${input}`,
+      `capture: ${this.currentCapture ? (this.directStreaming ? 'direct stream' : 'relay stream') : 'not running'}`,
+      `adb: ${AdbTouch.findAdb() ? 'available' : 'not found'}`,
+    ];
+    const text = lines.join('\n');
+    Logger.info(`Connection diagnostics\n${text}`);
+    const showLogs = vscode.l10n.t('Show Logs');
+    const answer = await vscode.window.showInformationMessage(
+      vscode.l10n.t('Secondary Simulator diagnostics — {0}', lines.join(' / ')),
+      showLogs
+    );
+    if (answer === showLogs) Logger.show();
   }
 
   // ---- 自動接続・接続状態の監視（5 秒ごと）------------------------------------
@@ -1007,6 +1042,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private disconnectUnavailableDevice(deviceId: string): void {
     if (this.currentDeviceId !== deviceId) return;
     Logger.info(`デバイスが停止したため接続を終了: ${deviceId}`);
+    this.connectionGeneration++;
+    if (this.recordingStart) this.recordingStart.cancelled = true;
     // 模擬位置は再起動後に共通APIで読めないため、前回表示を残さない。
     this.simulatedLocations.delete(deviceId);
     // HW キーボードは端末の再起動で既定（接続あり）に戻る。
@@ -1024,6 +1061,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     deviceId: string,
     device: Device
   ): Promise<void> {
+    const generation = ++this.connectionGeneration;
+    const current = () => generation === this.connectionGeneration && this.currentDeviceId === deviceId;
     // 再表示・Retry・設定変更もここへ来る。入口で止めないと停止中でも再接続する。
     if (device.state !== 'Booted') {
       this.disconnectUnavailableDevice(deviceId);
@@ -1037,14 +1076,19 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.clearInputReleaseTimer();
 
     // 別の端末へ移るなら、録画中の端末から離れるなら止める（別端末を録り続けることにならない）
+    if (this.recordingStart && this.recordingStart.deviceId !== deviceId) {
+      this.recordingStart.cancelled = true;
+    }
     if (this.recording && this.recording.deviceId !== deviceId) {
       await this.stopRecording();
     }
+    if (generation !== this.connectionGeneration) return;
 
     // WDA 起動待ちで最初のフレームまで数秒かかる。待たせている理由を出す。
     this.postMessage({type: 'connecting', name: device.name});
     this.setStatus({state: 'connecting', name: device.name});
     this.currentDeviceId = deviceId;
+    if (!reuseInput) this.screenSize = null;
 
     if (reuseInput) {
       // 画面サイズも取得済み。device.info の往復（実測 280ms）を省く。
@@ -1061,10 +1105,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // Get device info and send screen size to webview (mobiledeck-style)
     if (this.mobileCliClient) {
       const failure = await this.applyScreenSize(deviceId);
+      if (!current()) return;
       // agent 未導入ならここで入れる。**この 1 箇所で足りる** — 接続で必ず通り、
       // 入れば Shot・Home・`device` 録画・WDA 入力が全部通るようになる。
       if (failure && (await this.ensureAgent(deviceId, failure))) {
         await this.applyScreenSize(deviceId);
+        if (!current()) return;
       }
     }
 
@@ -1108,6 +1154,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           `入力コントローラの初期化に失敗: ${(error as Error).message}`
         );
       }
+      if (!current()) {
+        controller.dispose();
+        return;
+      }
       this.inputController = controller;
       // init が onBackendChange を呼べずに終わっても「接続中」で止めない
       this.setStatus({
@@ -1118,6 +1168,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     await this.startDisplayForDevice(deviceId, device);
+    if (!current()) {
+      this.stopCapture();
+      return;
+    }
     void this.refreshDeviceSettings(device);
   }
 
@@ -1185,16 +1239,30 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private async applyScreenSize(deviceId: string): Promise<Error | null> {
     try {
       const deviceInfo = await this.mobileCliClient!.getDeviceInfo(deviceId);
-      if (deviceInfo?.device?.screenSize) {
+      const size = deviceInfo?.device?.screenSize;
+      if (
+        this.currentDeviceId === deviceId &&
+        size &&
+        Number.isFinite(size.width) && size.width > 0 &&
+        Number.isFinite(size.height) && size.height > 0
+      ) {
         this.screenSize = {
-          width: deviceInfo.device.screenSize.width,
-          height: deviceInfo.device.screenSize.height,
+          width: size.width,
+          height: size.height,
         };
         this.postMessage({
           type: 'screenSize',
           width: this.screenSize.width,
           height: this.screenSize.height,
         });
+      }
+      if (this.currentDeviceId === deviceId && !this.screenSize) {
+        // 座標変換ができない＝タップが効かない。黙ると「映像は出るのに反応しない」
+        // だけが残るので、理由をログに残す（返り値は `ensureAgent` が見るだけ）。
+        Logger.warn(
+          `画面サイズを取得できなかったので入力を送れない: ${deviceId}（${JSON.stringify(size ?? null)}）`
+        );
+        return new Error('Device did not return a valid screen size');
       }
       return null;
     } catch (error) {
@@ -1705,6 +1773,9 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         ? (containerExtension(this.viewRecordingMime) ?? 'webm')
         : 'mp4';
 
+    // 保存ダイアログも開始操作の一部。二重に開かないようここから所有する。
+    this.recordingBusy = true;
+    this.postMessage({type: 'recording', phase: 'starting'});
     const target = await vscode.window.showSaveDialog({
       title: vscode.l10n.t('Save recording to'),
       defaultUri: vscode.Uri.joinPath(
@@ -1713,7 +1784,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       ),
       filters: {[vscode.l10n.t('Videos')]: [ext]},
     });
-    if (!target) return; // キャンセル
+    if (!target) {
+      this.recordingBusy = false;
+      this.postMessage({type: 'recording', phase: 'idle', active: false});
+      return;
+    }
 
     // 画面を整える猶予。保存ダイアログを閉じた直後の画面が必ず頭に写るのを避ける。
     // 待っている間に破棄されうるので、クライアントはここで押さえる。
@@ -1721,7 +1796,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 「隠されたら始めない」を判定するための基準。コマンドパレットから畳んだまま
     // 始める使い方は従来どおり通す（元から見えていなければ比べない）。
     const visibleAtStart = this.view?.visible === true;
-    this.recordingBusy = true;
+    let started = false;
     try {
       // 直結配信のままだと <img> が別オリジンになり canvas を汚染する。
       // 張り直しの数秒は秒読みで吸収される。
@@ -1739,10 +1814,41 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         await this.releaseViewCapture();
         return;
       }
-      if (source === 'view') await this.startViewRecording(target);
-      else await client.startScreenRecord(deviceId, target.fsPath);
+      if (source === 'view') {
+        await this.startViewRecording(target);
+        if (this.currentDeviceId !== deviceId || (visibleAtStart && !this.view?.visible)) {
+          await this.requestViewStop();
+          await this.viewWriter?.close();
+          this.viewWriter = null;
+          await this.releaseViewCapture();
+          return;
+        }
+        started = true;
+      }
+      else {
+        const start = {deviceId, client, source, cancelled: false};
+        this.recordingStart = start;
+        await client.startScreenRecord(deviceId, target.fsPath);
+        // 世代番号は見ない。同じ端末の取り込み張り直し（再表示・設定変更・
+        // `prepareViewCapture`）でも増えるので、始まった録画を巻き込んで止めてしまう。
+        // 切替・切断・破棄はすべて `cancelled` か `currentDeviceId` で捕まる。
+        if (
+          this.recordingStart !== start || start.cancelled ||
+          this.currentDeviceId !== deviceId
+        ) {
+          // RPC の成功は端末側で録画が始まった意味なので、古い開始を放置しない。
+          await client.stopScreenRecord(deviceId).catch((error) =>
+            Logger.error('切替後の録画停止に失敗', error as Error)
+          );
+          await this.releaseViewCapture();
+          return;
+        }
+        this.recordingStart = null;
+        started = true;
+      }
     } catch (error) {
       Logger.error('録画を開始できなかった', error as Error);
+      this.recordingStart = null;
       await this.releaseViewCapture();
       void vscode.window.showErrorMessage(
         vscode.l10n.t(
@@ -1753,11 +1859,18 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     } finally {
       this.recordingBusy = false;
+      // 始められなかった経路（失敗・秒読み中の切替・開始直後の取り消し）は
+      // ここで必ず `starting` を解く。解かないと Rec ボタンが押せないまま残る。
+      if (!started) {
+        this.postMessage({type: 'recording', phase: 'idle', active: false});
+      }
     }
 
+    if (!started) return;
     this.recording = {deviceId, target, source};
+    this.recordingStartedAt = Date.now();
     Logger.info(`録画を開始（${source}）: ${target.fsPath}`);
-    this.postMessage({type: 'recording', active: true});
+    this.postMessage({type: 'recording', active: true, phase: 'recording', startedAt: this.recordingStartedAt, maxMs: SimulatorWebviewProvider.MAX_RECORDING_MS});
 
     // 上限で必ず終わらせる（押し忘れても増え続けない）
     this.recordingTimer = setTimeout(() => {
@@ -1970,20 +2083,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (!this.mobileCliClient) {
       this.clearRecordingTimer();
       this.recording = null;
-      this.postMessage({type: 'recording', active: false});
+      this.recordingStartedAt = null;
+      this.postMessage({type: 'recording', active: false, phase: 'idle'});
       return;
     }
     // 引き上げと変換で数秒かかる。その間に始め直させない
     this.recordingBusy = true;
+    this.postMessage({type: 'recording', phase: 'stopping', active: true});
     try {
       await this.mobileCliClient.stopScreenRecord(session.deviceId);
     } catch (error) {
       Logger.error('録画の停止に失敗', error as Error);
+      this.postMessage({type: 'recording', active: true, phase: 'recording', startedAt: this.recordingStartedAt, maxMs: SimulatorWebviewProvider.MAX_RECORDING_MS});
       // 終了中は聞かない。ダイアログの応答を待つと deactivate が返らない
       if (options?.quiet) {
         this.recordingBusy = false;
         this.clearRecordingTimer();
         this.recording = null;
+        this.recordingStartedAt = null;
         return;
       }
       const retry = vscode.l10n.t('Retry');
@@ -2005,6 +2122,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.clearRecordingTimer();
     this.recording = null;
+    this.recordingStartedAt = null;
     await this.finishRecording(session, undefined, options?.quiet);
   }
 
@@ -2020,6 +2138,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 停止ボタンと打ち切りが重なっても 1 回で終わらせる
     if (this.recordingBusy) return;
     this.recordingBusy = true;
+    this.postMessage({type: 'recording', phase: 'stopping', active: true});
     const writer = this.viewWriter;
     try {
       // webview が消えた（stalled）以外は、出し切らせてから閉じる
@@ -2033,6 +2152,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
     this.clearRecordingTimer();
     this.recording = null;
+    this.recordingStartedAt = null;
     await this.releaseViewCapture();
     // 停止の応答を待っているあいだに打ち切られた（停止と stall が重なった）場合、
     // 呼び手は abort を知らない。**書き込み側の記録を優先する** — 末尾が欠けた
@@ -2065,7 +2185,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 総量の上限は「そこまでは正しく録れている」なので成功として扱う。
     // 欠落・停止・エラーは末尾が落ちているので、成功の合図を出さない。
     const intact = check.ok && (!abort || abort.reason === 'size');
-    this.postMessage({type: 'recording', active: false, ok: intact});
+    this.postMessage({type: 'recording', active: false, phase: 'idle', ok: intact});
 
     if (quiet) {
       if (!check.ok) {
@@ -2354,6 +2474,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private async disconnect(): Promise<void> {
     if (this.disconnectBusy || !this.currentDeviceId) return;
     this.disconnectBusy = true;
+    this.connectionGeneration++;
+    if (this.recordingStart) this.recordingStart.cancelled = true;
     const deviceId = this.currentDeviceId;
     const device = this.devices.find((d) => d.id === deviceId);
     const client = this.mobileCliClient;
@@ -2551,6 +2673,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.stopAutoConnectTimer();
     this.clearRecordingTimer();
     this.clearInputReleaseTimer();
+    this.connectionGeneration++;
+    if (this.recordingStart) this.recordingStart.cancelled = true;
 
     if (this.recording) {
       // 通知は出さない（quiet）。結果はログに残す。

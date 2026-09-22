@@ -966,13 +966,45 @@ document.getElementById('btn-logs').addEventListener('click', () => post('showLo
 // 録画中かどうか。ホストが持つ状態を写すだけで、ここでは決めない。
 // ラベルは子 span に差し替える（SVG アイコンは常時出したまま）。
 let recording = false;
+let recordingPhase = 'idle';
+let recordingStartedAt = 0;
+let recordingMaxMs = 0;
+let recordingClock = null;
 const btnRecordLabel = document.getElementById('btn-record-label');
+function formatRecordingTime(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
 function syncRecordButton() {
   btnRecord.classList.toggle('recording', recording);
+  btnRecord.disabled = recordingPhase === 'starting' || recordingPhase === 'stopping';
+  if (recordingPhase === 'starting') {
+    btnRecordLabel.textContent = t('recordStarting');
+    return;
+  }
+  if (recordingPhase === 'stopping') {
+    btnRecordLabel.textContent = t('recordSaving');
+    return;
+  }
+  if (recording && recordingStartedAt) {
+    // ラベルは時計に使うので、押したら止まることは title に残す。
+    const elapsed = Date.now() - recordingStartedAt;
+    btnRecord.title = stripLeadingGlyph(t('recordStop'));
+    btnRecordLabel.textContent = `${formatRecordingTime(elapsed)} / ${formatRecordingTime(recordingMaxMs)}`;
+    return;
+  }
+  btnRecord.title = t('recordTitle');
   // 既定は '● Rec'/'■ Stop' の l10n だが、SVG がドットを担うので記号を落として付ける。
   btnRecordLabel.textContent = stripLeadingGlyph(
     recording ? t('recordStop') : t('recordStart')
   );
+}
+function syncRecordingClock() {
+  if (recording && !recordingClock) recordingClock = setInterval(syncRecordButton, 1000);
+  if (!recording && recordingClock) {
+    clearInterval(recordingClock);
+    recordingClock = null;
+  }
 }
 syncRecordButton();
 
@@ -1219,7 +1251,11 @@ window.addEventListener('message', (event) => {
     case 'recording': {
       const wasRecording = recording;
       recording = message.active === true;
+      recordingPhase = typeof message.phase === 'string' ? message.phase : (recording ? 'recording' : 'idle');
+      recordingStartedAt = Number(message.startedAt) || 0;
+      recordingMaxMs = Number(message.maxMs) || 0;
       syncRecordButton();
+      syncRecordingClock();
       if (recording && !wasRecording) playUiSound('recordStart');
       // 書き出しに失敗したときは鳴らさない。この音が「保存できた」の合図なので、
       // 壊れたファイルで鳴らすと気づく手がかりが消える（ホストが警告を出す）。

@@ -406,7 +406,7 @@ webview → 拡張ホストは `SimulatorWebviewProvider.handleMessage` が受�
 | `selectedDevice` | 自動接続した UDID を `<select>` に反映（change は発火しない）。起動を見送ったときも選択を戻す |
 | `deviceSettings` / `deviceLocation` / `deviceSettingsBusy` | 端末設定の現在値、模擬位置、設定操作中の表示。位置情報は OS から共通に読み戻せないため、拡張が設定した値だけを接続中に表示する |
 | `settings` | `showDeviceFrame` / `showResourceStats` / `showTouchTrail`（`secondarySimulator.*` の見た目設定）。**webview は写しを持たない** — 軌跡の ON/OFF もこれだけで決まる（既定 OFF） |
-| `recording` | 録画中か（`active: bool`）。Rec ボタンの見た目と効果音。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
+| `recording` | 録画中か（`active: bool`）と進み方（`phase: idle / starting / recording / stopping`）。Rec ボタンの見た目・効果音・押せるかを決める（`starting` / `stopping` は押せない）。`recording` では `startedAt`（ホストの `Date.now()`）と `maxMs` も付き、ボタンが経過時間を出す。**始められなかったときは必ず `idle` を送り直す**（送らないとボタンが押せないまま残る）。停止時は `ok: bool` も付き、**`false` なら停止音を鳴らさない**（書き出せていないので「保存できた」の合図を出さない） |
 | `countdown` | 録画開始前の秒読み（`value: 3→2→1`、`0` で消す）。**進行はホストが持ち**、webview は数字と音を出すだけ |
 | `startViewRecording {mimeType, bitrate, timesliceMs, maxUnacked}` | ビュー録画の開始。`bitrate` は `{perPixel, min, max}` で、**実際の値は webview が canvas の画素数から決める**（幅はサイドバーの広さと録画かどうかで数倍変わるので、固定値だと狭いとき過剰・広いとき不足になる）。`timesliceMs` を必ず渡す（無指定の MediaRecorder は停止まで全部抱える）。`maxUnacked` は webview が抱えてよい未 ack チャンク数 |
 | `stopViewRecording` | ビュー録画の停止。webview は最後の 1 チャンクを出してから `viewRecordingStopped` を返す |

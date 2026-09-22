@@ -87,8 +87,6 @@ export async function verifyRecording(
       // box ヘッダにも足りない = ここで終わり。moov は見つからなかった
       if (bytesRead < 8) return {ok: false, reason: 'no-moov'};
 
-      if (header.toString('latin1', 4, 8) === 'moov') return {ok: true};
-
       let size: number = header.readUInt32BE(0);
       if (size === 1) {
         // 64bit 拡張サイズ。MPEG4Writer が録画中に書く仮の値（"????????"）は
@@ -105,8 +103,11 @@ export async function verifyRecording(
       }
 
       if (size < 8) return {ok: false, reason: 'unfinalized'};
+      // `moov` 名だけでは不十分。宣言した box 全体がファイル内にあることまで
+      // 確認する。これはコンテナ構造の簡易検査で、再生可能性の完全な保証ではない。
+      if (offset + size > fileSize) return {ok: false, reason: 'unfinalized'};
+      if (header.toString('latin1', 4, 8) === 'moov') return {ok: true};
       offset += size;
-      if (offset > fileSize) return {ok: false, reason: 'unfinalized'};
       if (offset === fileSize) return {ok: false, reason: 'no-moov'};
     }
 

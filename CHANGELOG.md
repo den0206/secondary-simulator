@@ -10,6 +10,15 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent late device connection responses from replacing the active input target.
+- Stop or reject stale recording starts, validate truncated MP4 metadata, detect adb input failures, and bound default JSON-RPC waits.
+
+### Added
+
+- Add a connection diagnostics command and recording start/save/elapsed status.
+
 ## [0.9.5] — 2026-09-21
 
 ### Added
