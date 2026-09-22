@@ -68,6 +68,10 @@ export function activate(context: vscode.ExtensionContext): void {
       Logger.show();
     }),
 
+    vscode.commands.registerCommand('simulator.diagnostics', async () => {
+      await provider?.showDiagnostics();
+    }),
+
     vscode.commands.registerCommand('simulator.clearLogs', () => {
       Logger.clear();
       Logger.info('ログを消去しました');

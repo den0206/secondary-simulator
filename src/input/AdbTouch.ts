@@ -44,7 +44,7 @@ export class AdbTouch {
   private proc: ChildProcess | null = null;
   private starting: Promise<boolean> | null = null;
   private buf = '';
-  private pending: Array<() => void> = [];
+  private pending: Array<(ok: boolean) => void> = [];
   private dead = false;
 
   constructor(private readonly deviceId: string) {}
@@ -74,8 +74,10 @@ export class AdbTouch {
       this.kill('adb shell の stdin が閉じている');
       return false;
     }
-    const done = new Promise<void>((resolve) => this.pending.push(resolve));
-    proc.stdin.write(`${commands.join(';')};echo '${AdbTouch.MARK}'\n`);
+    const done = new Promise<boolean>((resolve) => this.pending.push(resolve));
+    // && で繋いで途中の失敗も marker に載せる。stderr の文面は入力内容を
+    // 含みうるためログに出さない。
+    proc.stdin.write(`(${commands.join('&&')});printf '${AdbTouch.MARK}%s\\n' \"$?\"\n`);
     // 返ってこない adb を待ち続けると pump ごと止まり、以後の入力が全部詰まる。
     // 諦めて閉じれば呼び手が mobilecli 経路へ落ちる。
     const timer = setTimeout(
@@ -83,11 +85,10 @@ export class AdbTouch {
       AdbTouch.TIMEOUT_MS
     );
     try {
-      await done;
+      return await done;
     } finally {
       clearTimeout(timer);
     }
-    return !this.dead;
   }
 
   dispose(): void {
@@ -146,8 +147,11 @@ export class AdbTouch {
     for (;;) {
       const i = this.buf.indexOf(AdbTouch.MARK);
       if (i < 0) break;
-      this.buf = this.buf.slice(i + AdbTouch.MARK.length);
-      this.pending.shift()?.();
+      const tail = this.buf.slice(i + AdbTouch.MARK.length);
+      const newline = tail.indexOf('\n');
+      if (newline < 0) break;
+      this.buf = tail.slice(newline + 1);
+      this.pending.shift()?.(tail.slice(0, newline).trim() === '0');
     }
     // 目印を含まない出力（input のエラーなど）で伸び続けさせない
     if (this.buf.length > AdbTouch.MAX_BUF) {
@@ -166,7 +170,7 @@ export class AdbTouch {
     this.buf = '';
     const waiting = this.pending;
     this.pending = [];
-    for (const resolve of waiting) resolve();
+    for (const resolve of waiting) resolve(false);
     proc?.stdin?.end();
     proc?.kill();
   }

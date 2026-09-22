@@ -11,6 +11,7 @@
   "command.back.title": "按下返回键",
   "command.refresh.title": "刷新设备列表",
   "command.showLogs.title": "显示日志",
+  "command.diagnostics.title": "显示连接诊断",
   "command.clearLogs.title": "清除日志",
   "walkthrough.setup.title": "开始使用 Secondary Simulator",
   "walkthrough.setup.description": "把设备预览放到代码旁边，然后连接模拟器。",

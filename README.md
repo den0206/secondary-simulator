@@ -152,6 +152,7 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
 | `Refresh Device List` | Re-fetch the device list (`Cmd+Shift+R`)                         |
 | `Show Logs`           | Open the Secondary Simulator output channel                      |
+| `Show Connection Diagnostics` | Summarize why a connection may be failing (mobilecli, device, input route, capture, adb) without changing anything |
 | `Clear Logs`          | Empty the output channel (VS Code keeps its full text in memory) |
 
 Key bindings apply only while the sidebar view has focus.

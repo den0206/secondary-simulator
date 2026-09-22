@@ -154,6 +154,7 @@ VSCodeの設定で以下のオプションを調整できます：
 | `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
 | `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`）                    |
 | `Show Logs`           | 出力パネルの Secondary Simulator を開く                      |
+| `Show Connection Diagnostics` | 接続できない理由（mobilecli・デバイス・入力経路・取り込み・adb）を、状態を変えずに要約する |
 | `Clear Logs`          | 出力チャンネルを空にする（VS Code が全文をメモリに持つため） |
 
 キーバインドはサイドバーにフォーカスがあるときだけ効きます。

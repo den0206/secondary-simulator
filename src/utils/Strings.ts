@@ -59,6 +59,8 @@ export function webviewStrings(): Record<string, string> {
     shotTitle: vscode.l10n.t('Save a screenshot'),
     recordStart: vscode.l10n.t('● Rec'),
     recordStop: vscode.l10n.t('■ Stop'),
+    recordStarting: vscode.l10n.t('Starting…'),
+    recordSaving: vscode.l10n.t('Saving…'),
     recordTitle: vscode.l10n.t('Record the screen to a video file'),
     autoOn: vscode.l10n.t('Auto ON'),
     autoOff: vscode.l10n.t('Auto OFF'),

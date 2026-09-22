@@ -3,6 +3,7 @@
  * mobilecliサーバーとの通信に使用
  */
 export class JsonRpcClient {
+  static readonly DEFAULT_TIMEOUT_MS = 15_000;
   constructor(private readonly baseUrl: string) {}
 
   async sendJsonRpcRequest<T = any>(
@@ -24,7 +25,7 @@ export class JsonRpcClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
-        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+        signal: AbortSignal.timeout(timeoutMs ?? JsonRpcClient.DEFAULT_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -45,7 +46,7 @@ export class JsonRpcClient {
       return result.result as T;
     } catch (error: any) {
       if (error.name === 'TimeoutError') {
-        throw new Error(`Request timeout after ${timeoutMs}ms for method: ${method}`);
+        throw new Error(`Request timeout after ${timeoutMs ?? JsonRpcClient.DEFAULT_TIMEOUT_MS}ms for method: ${method}`);
       }
       // 診断に要るのはメソッド名と deviceId だけ。params を丸ごと載せると
       // `device.io.text` の貼り付け内容（パスワード等）が例外メッセージに入り、
@@ -59,4 +60,3 @@ export class JsonRpcClient {
     }
   }
 }
-

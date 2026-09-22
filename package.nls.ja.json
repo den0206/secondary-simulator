@@ -11,6 +11,7 @@
   "command.back.title": "戻るボタンを押す",
   "command.refresh.title": "デバイス一覧を更新",
   "command.showLogs.title": "ログを表示",
+  "command.diagnostics.title": "接続診断を表示",
   "command.clearLogs.title": "ログを消去",
   "walkthrough.setup.title": "Secondary Simulator を使い始める",
   "walkthrough.setup.description": "デバイスのプレビューをコードの隣に置き、シミュレータへ接続します。",

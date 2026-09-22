@@ -11,6 +11,7 @@
   "command.back.title": "Press Back",
   "command.refresh.title": "Refresh Device List",
   "command.showLogs.title": "Show Logs",
+  "command.diagnostics.title": "Show Connection Diagnostics",
   "command.clearLogs.title": "Clear Logs",
   "walkthrough.setup.title": "Get Started with Secondary Simulator",
   "walkthrough.setup.description": "Put the device preview beside your code, then connect a simulator.",
