@@ -10,6 +10,10 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Changed
+
+- Update bundled mobilecli to 1.0.13.
+
 ### Fixed
 
 - Prevent late device connection responses from replacing the active input target.

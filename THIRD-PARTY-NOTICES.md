@@ -8,13 +8,13 @@ covered by its own license.
 
 ## mobilecli
 
-- **Version bundled**: 1.0.11
+- **Version bundled**: 1.0.13
 - **Copyright**: Copyright 2025-2026 Mobile Next HQ, Inc.
 - **License**: Functional Source License, Version 1.1, ALv2 Future License
   (FSL-1.1-ALv2), full text below
 - **Homepage**: https://github.com/mobile-next/mobilecli
-- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/210cb1e7b9a0704e7220b98c8083eeadc305a3bf
-  (tag `1.0.11`, tagged 2026-09-16)
+- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/06a4c08dc0517506df5cb69a79b7eefde993632f
+  (tag `1.0.13`, tagged 2026-09-21)
 
 ### What is bundled
 
@@ -26,13 +26,11 @@ links against it nor modifies it.
 
 ### Note on the license
 
-Two things about this component's licensing do not match at first glance, so
-they are recorded here.
-
-**The npm metadata is wrong.** The npm package `mobilecli` declares
-`"license": "MIT"`. That declaration does not match the upstream repository.
-This notice follows the `LICENSE` file that ships with the source of the
-bundled version, not the npm metadata.
+One thing about this component's licensing does not match at first glance, so
+it is recorded here. (Up to `1.0.11` the npm package declared
+`"license": "MIT"`, which did not match the upstream repository; `1.0.12`
+corrected it to `FSL-1.1-ALv2`. This notice follows the `LICENSE` file that
+ships with the source of the bundled version either way.)
 
 **Upstream relicensed mid-history.** Up to and including `0.1.64` the
 `LICENSE` file was AGPL-3.0. From `0.3.75` (2026-05-24) onward it is
