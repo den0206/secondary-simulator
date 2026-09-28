@@ -152,6 +152,7 @@ VSCodeの設定で以下のオプションを調整できます：
 | `Open URL on Device`  | 接続中のデバイスでディープリンク / URL を開く                |
 | `Press Home`          | Home ボタン（`Cmd+Shift+H`）                                 |
 | `Press Back`          | Back ボタン・Android のみ（`Cmd+Shift+B`）                   |
+| `Rotate Device`       | デバイスを縦⇄横に回転（回転ボタンと同じ）。iOS の `Save Screenshot` は縦のまま保存される |
 | `Refresh Device List` | デバイス一覧を再取得する（`Cmd+Shift+R`）                    |
 | `Show Logs`           | 出力パネルの Secondary Simulator を開く                      |
 | `Show Connection Diagnostics` | 接続できない理由（mobilecli・デバイス・入力経路・取り込み・adb）を、状態を変えずに要約する |

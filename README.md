@@ -150,6 +150,7 @@ Refresh and logs (show / clear) are also available as icons in the view title ba
 | `Open URL on Device`  | Open a deep link or URL on the connected device                  |
 | `Press Home`          | Home button (`Cmd+Shift+H`)                                      |
 | `Press Back`          | Back button, Android only (`Cmd+Shift+B`)                        |
+| `Rotate Device`       | Switch the device between portrait and landscape (also the rotate button). Screenshots from `Save Screenshot` on iOS stay in portrait |
 | `Refresh Device List` | Re-fetch the device list (`Cmd+Shift+R`)                         |
 | `Show Logs`           | Open the Secondary Simulator output channel                      |
 | `Show Connection Diagnostics` | Summarize why a connection may be failing (mobilecli, device, input route, capture, adb) without changing anything |
