@@ -10,6 +10,10 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- Rotate the connected device between portrait and landscape (Rotate button or `Rotate Device`). The iOS Simulator view is turned upright by the sidecar, so view recordings are upright too.
+
 ## [0.9.6] — 2026-09-26
 
 ### Changed

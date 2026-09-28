@@ -99,6 +99,12 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   キー・テキスト・ボタンは `WdaBackend` へ委譲する。**矢印キーだけは Android で
   `KEYCODE_DPAD_*`**（`AndroidBackend` → `device.io.button`）。HID usage は元からあったが
   webview が `e.key.length === 1` に載らず捨てられていたので `special` 経路へ載せた。
+- **回転**: `device.io.orientation.set` で端末を回し、向きは provider が持つ（接続時に
+  `get` を待たずに読む）。**表示と端末で座標がずれる経路が 2 つある** — iOS の
+  サイドカー取り込みはフレームバッファが縦のままなのでサイドカーが起こし（`rotate: 90`）、
+  タップは `toDeviceSpace` が縦の座標へ戻す。Android は座標系ごと回るので
+  `inputScreenSize` が縦横を入れ替える。mobilecli の MJPEG は回すとフレームが
+  止まるので張り直す。WDA 映像（実機・`captureSource: wda`）の横向きは未確認。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   **Cmd/Ctrl+V は `paste` でまとめて送る**（`InputBackend.text`。URL 入力用。
