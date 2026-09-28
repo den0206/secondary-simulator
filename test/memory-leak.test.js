@@ -302,7 +302,7 @@ const fakeClient = () => {
     );
 
     const provider = require('fs').readFileSync(
-      require('path').join(__dirname, '..', 'src', 'webview', 'SimulatorWebviewProvider.ts'),
+      require('path').join(__dirname, '..', 'src', 'webview', 'RecordingController.ts'),
       'utf8'
     );
     check(

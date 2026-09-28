@@ -135,8 +135,8 @@ async function main() {
   stopped.currentDeviceId = 'SIM-1';
   stopped.currentCapture = {dispose: () => captureStops++};
   let recordingStops = 0;
-  stopped.recording = {deviceId: 'SIM-1'};
-  stopped.stopRecording = async () => { recordingStops++; stopped.recording = null; };
+  stopped.recorder.session = {deviceId: 'SIM-1'};
+  stopped.recorder.stop = async () => { recordingStops++; stopped.recorder.session = null; };
   stopped.mobileCliClient = {
     listDevices: async () => ({devices: [{
       id: 'SIM-1', name: 'iPhone', platform: 'ios', type: 'simulator', state: 'offline',

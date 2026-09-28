@@ -160,7 +160,7 @@ async function wiring() {
   // 連番・base64 が壊れたチャンクは書かない。**捨てても消えはしない** —
   // 連番が飛ぶので ViewRecordingWriter が gap として録画ごと打ち切る
   const written = [];
-  provider.viewWriter = {
+  provider.recorder.viewWriter = {
     write: async (seq) => {
       written.push(seq);
       return true;
@@ -178,7 +178,7 @@ async function wiring() {
     sent.some((m) => m.type === 'viewRecordingAck' && m.seq === 0),
     JSON.stringify(sent.map((m) => m.type))
   );
-  provider.viewWriter = null;
+  provider.recorder.viewWriter = null;
 
   // 幅 0 で取り込みを張り直させない（例外も投げない）
   await provider.handleMessage({type: 'viewport', width: 0});

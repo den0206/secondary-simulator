@@ -12,7 +12,7 @@ test('a late connection attempt cannot replace the newest input target', async (
   const starts = [];
   Object.assign(p, {
     connectionGeneration: 0, currentDeviceId: null, inputController: null,
-    devices: [a, b], recording: null, recordingStart: null, screenSize: null,
+    devices: [a, b], recorder: {followDevice: async () => {}}, screenSize: null,
     softwareKeyboards: new Set(), mobileCliClient: {}, stopCapture() {},
     clearInputReleaseTimer() {}, postMessage() {}, setStatus() {},
     applyScreenSize: async (id) => { if (id === 'a') await waitA; return null; },

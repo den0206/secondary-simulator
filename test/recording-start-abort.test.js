@@ -11,46 +11,41 @@ const base = stub.install();
 // 保存ダイアログは「選んだ」で返す。ここで止まると本題（中断の後始末）を見られない。
 base.window.showSaveDialog = async () => ({fsPath: '/tmp/rec.mp4'});
 base.Uri = {joinPath: (dir, name) => ({fsPath: `${dir.fsPath}/${name}`})};
-const {
-  SimulatorWebviewProvider,
-} = require('../out/webview/SimulatorWebviewProvider');
+const {RecordingController} = require('../out/webview/RecordingController');
 
-/** 秒読みの途中で端末が変わる provider を組む。 */
-function providerWithSwitchDuringCountdown(source) {
+/** 秒読みの途中で端末が変わる録画を組む。 */
+function recorderWithSwitchDuringCountdown(source) {
   const sent = [];
-  const p = Object.create(SimulatorWebviewProvider.prototype);
-  Object.assign(p, {
-    currentDeviceId: 'a',
-    devices: [{id: 'a', name: 'A', state: 'Booted'}],
-    mobileCliClient: {startScreenRecord: async () => {}},
-    recording: null,
-    recordingBusy: false,
-    recordingStart: null,
-    viewRecordingMime: 'video/webm',
-    view: {visible: true},
-    postMessage: (m) => sent.push(m),
-    recordingSource: () => source,
-    canRecordView: () => true,
+  let deviceId = 'a';
+  const r = new RecordingController({
+    currentDeviceId: () => deviceId,
+    client: () => ({startScreenRecord: async () => {}}),
+    deviceName: () => 'A',
+    hasView: () => true,
+    isVisible: () => true,
+    post: (m) => sent.push(m),
     defaultSaveDir: () => ({fsPath: '/tmp'}),
     prepareViewCapture: async () => {},
     releaseViewCapture: async () => {},
-    // 秒読みのあいだに別の端末へ移る
-    countdownBeforeRecording: async () => {
-      p.currentDeviceId = 'b';
-    },
   });
-  return {p, sent};
+  r.viewMime = 'video/webm';
+  r.source = () => source;
+  // 秒読みのあいだに別の端末へ移る
+  r.countdown = async () => {
+    deviceId = 'b';
+  };
+  return {r, sent};
 }
 
 test('秒読み中に端末が変わったら、録画ボタンを idle に戻す', async () => {
   for (const source of ['device', 'view']) {
-    const {p, sent} = providerWithSwitchDuringCountdown(source);
-    await p.toggleRecording();
+    const {r, sent} = recorderWithSwitchDuringCountdown(source);
+    await r.toggle();
     const phases = sent
       .filter((m) => m.type === 'recording')
       .map((m) => m.phase);
     assert.deepEqual(phases, ['starting', 'idle'], source);
-    assert.equal(p.recording, null, source);
-    assert.equal(p.recordingBusy, false, source);
+    assert.equal(r.active, false, source);
+    assert.equal(r.isBusy, false, source);
   }
 });
