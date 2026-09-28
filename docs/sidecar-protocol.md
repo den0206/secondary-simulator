@@ -92,8 +92,8 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `modifier` | `bit`（16..20）, `down`（bool） | 修飾キー |
 | `hardwareKeyboard` | `enable`（bool） | Simulator.app の ⌘K と同じ設定（`SimDevice.setHardwareKeyboardEnabled:`）。`false` で端末がソフトウェアキーボードを描く。**HID のキー注入は `true` に戻す**ので、出したままにする間はキーを WDA へ回す（`docs/ios-hid-injection.md` §6） |
 | `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解）。**応答は注入し終えてから返る**ので、呼び手は刻んで送り、待ち時間を長さから決める（§10.3） |
-| `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6), `sink?`(`stdout`), `mode?`(`auto`) | 画面バッファの JPEG 配信を開始（§3.5） |
-| `captureConfig` | `fps?`, `maxWidth?`, `quality?` | 配信中の設定を**張り直さずに**変える（§3.5） |
+| `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6), `sink?`(`stdout`), `mode?`(`auto`), `rotate?`(0) | 画面バッファの JPEG 配信を開始（§3.5） |
+| `captureConfig` | `fps?`, `maxWidth?`, `quality?`, `rotate?` | 配信中の設定を**張り直さずに**変える（§3.5）。`rotate: 90` は横向き — **フレームバッファは端末を回しても縦のまま**（UI の上端が面の右辺）なので、面を左へ 90° 回してから JPEG にする。`maxWidth` は回した後の幅に効く |
 | `captureStop` | — | 同 停止 |
 | `captureServe` | `enable`, `port?`, `token?` | フレームの HTTP 直結配信（§3.6）。**`device` を取らない** |
 | `ping` | — | 生存確認 |
