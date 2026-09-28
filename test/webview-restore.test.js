@@ -115,7 +115,7 @@ async function main() {
   check('押したら必ず送る', devicesMessages().length === 1);
 
   console.log('\n5) 録画中に作り直されたら Rec の表示も戻す');
-  provider.recording = {
+  provider.recorder.session = {
     deviceId: 'SIM-1',
     target: {fsPath: '/tmp/rec.mp4'},
     source: 'device',
@@ -127,7 +127,7 @@ async function main() {
     sent.some((m) => m.type === 'recording' && m.active === true),
     JSON.stringify(sent.map((m) => m.type))
   );
-  provider.recording = null;
+  provider.recorder.session = null;
 
   provider.stopAutoConnectTimer();
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);

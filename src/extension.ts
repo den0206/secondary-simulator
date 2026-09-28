@@ -212,7 +212,7 @@ async function pickDevice(p: SimulatorWebviewProvider): Promise<void> {
  *
  * `context.subscriptions` の Disposable は Promise を待てないので、待つ必要がある
  * 後始末はこちらに置く（VS Code は `deactivate` の Thenable を待つ）。
- * 待ちの上限は `SimulatorWebviewProvider.DISPOSE_STOP_BUDGET_MS` が持つ。
+ * 待ちの上限は `RecordingController.DISPOSE_STOP_BUDGET_MS` が持つ。
  */
 export async function deactivate(): Promise<void> {
   if (provider) {

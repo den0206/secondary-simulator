@@ -128,6 +128,8 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   メッセージで受けた値をそのまま反映する（設定画面と食い違ったまま気づけなくなる）。
   スクリーンショット保存・録画の開始/停止は webview 内の Web Audio で短い効果音を鳴らす。
 - **デバイス操作（mobilecli）**: 録画は 2 経路（`secondarySimulator.recordingSource`）。
+  **録画の状態と開始・停止・書き込みは `RecordingController`** が持ち、provider は
+  接続・取り込みの状態を貸すだけ（`RecordingHost`。直結配信をやめる張り替えは provider 側）。
   **既定の `view` は webview が「表示中のフレーム＋操作の表示」を canvas に合成し
   `MediaRecorder` で符号化**して、チャンクをホストが書く。`device` は
   `device.screenrecord` / `.stop`（端末の解像度で録れるが、**カーソルもタップも写らない**

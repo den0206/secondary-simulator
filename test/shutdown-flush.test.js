@@ -44,6 +44,7 @@ const dialogs = [];
 const {
   SimulatorWebviewProvider,
 } = require('../out/webview/SimulatorWebviewProvider');
+const {RecordingController} = require('../out/webview/RecordingController');
 const {ViewRecordingWriter} = require('../out/simulator/ViewRecording');
 const {verifyRecording} = require('../out/simulator/RecordingFile');
 
@@ -113,9 +114,9 @@ async function recordingProvider(fileName, reply) {
       },
     },
   };
-  provider.viewWriter = writer;
-  provider.viewRecordingMime = 'video/mp4';
-  provider.recording = {
+  provider.recorder.viewWriter = writer;
+  provider.recorder.viewMime = 'video/mp4';
+  provider.recorder.session = {
     deviceId: 'SIM-1',
     target: {fsPath: file},
     source: 'view',
@@ -152,8 +153,8 @@ async function main() {
       fs.readFileSync(file).includes('moov'),
       String(fs.statSync(file).size)
     );
-    check('書き込み先を残さない', provider.viewWriter === null);
-    check('録画セッションを畳む', provider.recording === null);
+    check('書き込み先を残さない', provider.recorder.viewWriter === null);
+    check('録画セッションを畳む', provider.recorder.session === null);
     check('ビューの参照を残さない', provider.view === undefined);
     check(
       '終了中はダイアログを出さない（応答を待つと deactivate が返らない）',
@@ -165,8 +166,8 @@ async function main() {
   console.log('\n2) webview が返事をしなくても、待ち切って後始末を続ける');
   {
     // 本番の 5 秒をテストで待たない。上限そのものの働きだけを見る
-    const original = SimulatorWebviewProvider.DISPOSE_STOP_BUDGET_MS;
-    SimulatorWebviewProvider.DISPOSE_STOP_BUDGET_MS = 150;
+    const original = RecordingController.DISPOSE_STOP_BUDGET_MS;
+    RecordingController.DISPOSE_STOP_BUDGET_MS = 150;
     try {
       const {provider, sent} = await recordingProvider('silent.mp4', 'silent');
       const startedAt = Date.now();
@@ -182,14 +183,14 @@ async function main() {
         elapsed < 3_000,
         `${elapsed}ms`
       );
-      check('書き込み先を閉じる', provider.viewWriter === null);
+      check('書き込み先を閉じる', provider.recorder.viewWriter === null);
       check(
         'ダイアログは出さない',
         dialogs.length === 0,
         JSON.stringify(dialogs)
       );
     } finally {
-      SimulatorWebviewProvider.DISPOSE_STOP_BUDGET_MS = original;
+      RecordingController.DISPOSE_STOP_BUDGET_MS = original;
     }
   }
 
@@ -214,7 +215,7 @@ async function main() {
     await provider.dispose();
     await provider.dispose();
     check('2 回目も例外を投げない', true);
-    check('書き込み先は閉じたまま', provider.viewWriter === null);
+    check('書き込み先は閉じたまま', provider.recorder.viewWriter === null);
   }
 }
 

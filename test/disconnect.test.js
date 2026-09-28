@@ -12,7 +12,10 @@ test('disconnect choices, shutdown target, recording safety and repeated clicks'
       Object.assign(p, {
         currentDeviceId: 'target', devices: [{id: 'target', name: 'Phone', type}],
         mobileCliClient: new MobileCliClient({sendJsonRpcRequest: async (...args) => calls.push(args)}),
-        stopRecording: async () => calls.push('recording'),
+        recorder: {
+          active: false, isBusy: false, cancelPendingStart() {},
+          stop: async () => calls.push('recording'),
+        },
         stopCapture: () => calls.push('capture'), disposeProxy() {}, setStatus() {},
         postMessage() {}, syncAutoConnectTimer() {},
         refreshDevices: async () => calls.push('refresh'),
@@ -40,13 +43,13 @@ test('disconnect choices, shutdown target, recording safety and repeated clicks'
 
       if (type === 'real') continue;
       p.currentDeviceId = 'target';
-      p.recording = {};
+      p.recorder.active = true;
       calls.length = 0;
       await p.disconnect();
       assert.equal(p.currentDeviceId, 'target');
       assert.ok(!calls.includes('capture'));
       assert.ok(!calls.some(Array.isArray));
-      p.recording = null;
+      p.recorder.active = false;
       stub.window.showInformationMessage = async () => { p.currentDeviceId = 'other'; return answer; };
       await p.disconnect();
       assert.equal(p.currentDeviceId, 'other');
