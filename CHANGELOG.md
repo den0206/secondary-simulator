@@ -10,6 +10,10 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Changed
+
+- Update bundled mobilecli to 1.0.14.
+
 ### Added
 
 - Rotate the connected device between portrait and landscape (Rotate button or `Rotate Device`). The iOS Simulator view is turned upright by the sidecar, so view recordings are upright too.
