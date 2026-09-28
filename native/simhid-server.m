@@ -16,11 +16,12 @@
 //   keyDown/keyUp { usage }                      USB HID usage code
 //   modifier { bit, down }                       bit は 16..20
 //   text { value }                               ASCII 一括入力
-//   captureStart { fps?, maxWidth?, quality?, sink?, mode? }
+//   captureStart { fps?, maxWidth?, quality?, sink?, mode?, rotate? }
 //                                                画面バッファの JPEG 配信を開始
 //                                                sink: "stdout"(既定) | "http"
 //                                                mode: "auto"(既定・変更通知) | "poll"
-//   captureConfig { fps?, maxWidth?, quality? }  配信中の設定を張り直さずに変える
+//   captureConfig { fps?, maxWidth?, quality?, rotate? }  配信中の設定を張り直さずに変える
+//                                                rotate: 0(既定) | 90（横向き。面を左へ 90° 回して送る）
 //   captureStop                                  同 停止
 //   captureServe { enable, port?, token? }       フレームの HTTP 配信（device 不要）
 //   ping
@@ -109,6 +110,12 @@ static uint64_t nowNs(void) {
 @property(nonatomic, strong) dispatch_source_t captureTimer;
 @property(nonatomic, assign) double jpegQuality;
 @property(nonatomic, assign) double maxWidth;
+/**
+ * 横向きか。**フレームバッファは端末を回しても縦のまま**で、中身だけが横に寝る
+ * （実測: iPhone 18 Pro / iOS 27 で 1206×2622 のまま、UI の上端が面の右辺）。
+ * 表示側で回すと録画の canvas に写らないので、ここで起こしてから JPEG にする。
+ */
+@property(nonatomic, assign) BOOL rotate90;
 /** 設定された上限 fps。ポーリング間隔とプッシュ時のレート制限に使う。 */
 @property(nonatomic, assign) double fps;
 @property(nonatomic, assign) uint32_t lastSeed;      // IOSurface の世代。同じなら送らない
@@ -752,6 +759,8 @@ static void captureFrame(DeviceState *st, NSString *udid) {
     st.hasLastSeed = YES;
 
     CIImage *img = [CIImage imageWithIOSurface:surface];
+    // ponytail: mobilecli の landscape（UI の上端が面の右辺）だけを起こす。逆向きの横は未対応
+    if (st.rotate90) img = [img imageByApplyingCGOrientation:kCGImagePropertyOrientationLeft];
     CGFloat width = img.extent.size.width;
     if (width < 1) return;
     CGFloat scale = (st.maxWidth > 0 && width > st.maxWidth) ? st.maxWidth / width : 1.0;
@@ -978,7 +987,7 @@ static void applyCaptureTimerInterval(DeviceState *st) {
 
 // gQueue 上。二重開始は no-op。
 static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double maxWidth,
-                         double quality, BOOL sinkHttp, NSString **err) {
+                         double quality, BOOL rotate90, BOOL sinkHttp, NSString **err) {
   if (st.captureTimer) return YES;
   if (!st.displayDescriptor) {
     id client = nil;
@@ -993,6 +1002,7 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
   if (!st.ciContext) st.ciContext = [CIContext contextWithOptions:nil];
   st.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
   st.maxWidth = maxWidth;
+  st.rotate90 = rotate90;
   st.fps = fps;
   st.sinkHttp = sinkHttp;
   st.hasLastSeed = NO;
@@ -1028,7 +1038,7 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
  * 読んでいるフィールドを、別のキューから直接触らない）。
  */
 static BOOL configureCapture(DeviceState *st, double fps, double maxWidth, double quality,
-                             NSString **err) {
+                             BOOL rotate90, NSString **err) {
   if (!st.captureTimer) {
     *err = @"取り込みが開始されていない";
     return NO;
@@ -1040,6 +1050,7 @@ static BOOL configureCapture(DeviceState *st, double fps, double maxWidth, doubl
     if (!s || s.captureTimer != timer) return;  // 途中で止まった/張り直された
     s.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
     s.maxWidth = maxWidth;
+    s.rotate90 = rotate90;
     // 幅や品質が変わっても画面が静止していると次のフレームが出ない
     // （seed も JPEG も同じなので捨てられる）。比較対象を落として1枚出させる。
     s.hasLastSeed = NO;
@@ -1279,11 +1290,11 @@ static void handleCommand(NSDictionary *cmd) {
       gPushEnabled = ![modeVal isEqualToString:@"poll"];
     }
     ok = startCapture(st, udid, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
-                      numAt(cmd, @"quality", 0.6),
+                      numAt(cmd, @"quality", 0.6), numAt(cmd, @"rotate", 0) == 90,
                       [cmd[@"sink"] isEqual:@"http"], &err);
   } else if ([name isEqualToString:@"captureConfig"]) {
     ok = configureCapture(st, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
-                          numAt(cmd, @"quality", 0.6), &err);
+                          numAt(cmd, @"quality", 0.6), numAt(cmd, @"rotate", 0) == 90, &err);
   } else if ([name isEqualToString:@"captureStop"]) {
     stopCapture(st);
   } else if ([name isEqualToString:@"text"]) {
