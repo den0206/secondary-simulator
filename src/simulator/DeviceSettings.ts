@@ -206,6 +206,8 @@ export async function setAppearance(device: Device, value: Appearance): Promise<
 
 export async function setTextSize(device: Device, value: TextSize): Promise<void> {
   const index = TEXT_SIZES.indexOf(value);
+  // 表に無い値は font_scale が "undefined" になる。呼び手の検証に頼らずここでも止める
+  if (index < 0) throw new Error(`Unknown text size: ${value}`);
   if (device.platform === 'android') {
     await adbShell(
       device.id,
