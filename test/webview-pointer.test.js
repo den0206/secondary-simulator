@@ -92,6 +92,7 @@ const els = {
   device: makeEl('device'),
   'btn-home': makeEl('btn-home'),
   'btn-back': makeEl('btn-back'),
+  'btn-rotate': makeEl('btn-rotate'),
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-record': makeEl('btn-record'),
   'btn-record-label': makeEl('btn-record-label'),

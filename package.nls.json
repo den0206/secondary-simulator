@@ -9,6 +9,7 @@
   "command.openUrl.title": "Open URL on Device",
   "command.home.title": "Press Home",
   "command.back.title": "Press Back",
+  "command.rotate.title": "Rotate Device",
   "command.refresh.title": "Refresh Device List",
   "command.showLogs.title": "Show Logs",
   "command.diagnostics.title": "Show Connection Diagnostics",

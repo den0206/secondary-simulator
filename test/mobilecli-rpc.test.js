@@ -71,6 +71,8 @@ const METHODS = [
   'device.io.gesture',
   'device.io.text',
   'device.io.button',
+  'device.io.orientation.get',
+  'device.io.orientation.set',
 ];
 
 /**
@@ -88,6 +90,7 @@ const PARAM_KEYS = [
   'text',
   'button',
   'actions',
+  'orientation',
 ];
 
 /** `device.io.button` に渡すボタン名。Android の DPAD は矢印キーで使う。 */

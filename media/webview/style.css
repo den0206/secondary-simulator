@@ -288,6 +288,23 @@ body.book-fold-inner .controls {
   max-width: none;
 }
 
+/* 横向きの画面。幅いっぱいまで使い、縦向き前提の飾り（上下の線・側面ボタン）は出さない。 */
+body.landscape-screen .phone-frame,
+body.landscape-screen .controls {
+  max-width: none;
+}
+
+body.landscape-screen .phone-frame {
+  padding: 11px;
+  border-radius: 24px;
+}
+
+body.landscape-screen .phone-frame::before,
+body.landscape-screen .phone-frame::after,
+body.landscape-screen .side-btn {
+  display: none;
+}
+
 /* スピーカー（上）とホームインジケータ（下）。画面には被せない。
    厚み・色ともに控えめにして、装飾を主張しないよう抑える。 */
 .phone-frame::before,

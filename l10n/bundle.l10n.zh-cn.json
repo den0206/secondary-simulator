@@ -105,5 +105,9 @@
   "Secondary Simulator: Simulated location": "Secondary Simulator：模拟位置",
   "Enter latitude and longitude separated by a comma.": "请输入以逗号分隔的纬度和经度。",
   "Enter valid coordinates, for example: 35.681236, 139.767125": "请输入有效坐标，例如：35.681236, 139.767125",
-  "Secondary Simulator: Could not change the device setting — {0}": "Secondary Simulator：无法更改设备设置 — {0}"
+  "Secondary Simulator: Could not change the device setting — {0}": "Secondary Simulator：无法更改设备设置 — {0}",
+  "Rotate the device": "旋转设备",
+  "Secondary Simulator: Could not rotate the device — {0}": "Secondary Simulator: 无法旋转设备 — {0}",
+  "Rotate": "旋转",
+  "Secondary Simulator: Stop the recording before rotating the device.": "Secondary Simulator: 旋转设备前请先停止录制。"
 }
