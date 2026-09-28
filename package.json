@@ -83,6 +83,11 @@
         "category": "%extension.category%"
       },
       {
+        "command": "simulator.rotate",
+        "title": "%command.rotate.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "simulator.record",
         "title": "%command.record.title%",
         "category": "%extension.category%",

@@ -105,5 +105,9 @@
   "Secondary Simulator: Simulated location": "Secondary Simulator: 模擬位置情報",
   "Enter latitude and longitude separated by a comma.": "緯度と経度をカンマ区切りで入力してください。",
   "Enter valid coordinates, for example: 35.681236, 139.767125": "有効な座標を入力してください。例: 35.681236, 139.767125",
-  "Secondary Simulator: Could not change the device setting — {0}": "Secondary Simulator: 端末設定を変更できませんでした — {0}"
+  "Secondary Simulator: Could not change the device setting — {0}": "Secondary Simulator: 端末設定を変更できませんでした — {0}",
+  "Rotate the device": "デバイスを回転",
+  "Secondary Simulator: Could not rotate the device — {0}": "Secondary Simulator: デバイスを回転できませんでした — {0}",
+  "Rotate": "回転",
+  "Secondary Simulator: Stop the recording before rotating the device.": "Secondary Simulator: デバイスを回転する前に録画を停止してください。"
 }

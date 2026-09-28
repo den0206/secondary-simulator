@@ -9,6 +9,7 @@
   "command.openUrl.title": "デバイスで URL を開く",
   "command.home.title": "ホームボタンを押す",
   "command.back.title": "戻るボタンを押す",
+  "command.rotate.title": "デバイスを回転",
   "command.refresh.title": "デバイス一覧を更新",
   "command.showLogs.title": "ログを表示",
   "command.diagnostics.title": "接続診断を表示",

@@ -76,6 +76,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    */
   private readonly softwareKeyboards = new Set<string>();
   private screenSize: {width: number; height: number} | null = null;
+  /**
+   * 接続中の端末が横向きか。端末を替えたら縦に戻し、接続時に読み直す。
+   * 回したのが拡張の外（アプリの強制回転など）だと、次に接続し直すまで追えない。
+   */
+  private landscape = false;
   private messageDisposable?: vscode.Disposable;
   private disposeDisposable?: vscode.Disposable;
   private visibilityDisposable?: vscode.Disposable;
@@ -652,6 +657,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.pasteText();
           break;
 
+        case 'rotate':
+          await this.rotate();
+          break;
+
         // 表示中の実ピクセル幅。サイドバーの幅に合わせて取り込みの幅を決める。
         case 'viewport': {
           const width = asPositiveNumber(message.width);
@@ -935,7 +944,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.postMessage({type: 'connecting', name: device.name});
     this.setStatus({state: 'connecting', name: device.name});
     this.currentDeviceId = deviceId;
-    if (!reuseInput) this.screenSize = null;
+    if (!reuseInput) {
+      this.screenSize = null;
+      this.landscape = false;
+    }
 
     if (reuseInput) {
       // 画面サイズも取得済み。device.info の往復（実測 280ms）を省く。
@@ -973,7 +985,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         // type 不明は実機扱い → HID を選ばない
         type: device.type ?? 'real',
         mobileCliClient: this.mobileCliClient,
-        getScreenSize: () => this.screenSize,
+        getScreenSize: () => this.inputScreenSize(),
         sidecarBinaryPath: this.resolveSidecarPath(),
         // 設定を毎回読む（切り替えに再接続を要らなくする）
         // ソフトウェアキーボードを出している間も WDA へ回す
@@ -1020,6 +1032,82 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
     void this.refreshDeviceSettings(device);
+    void this.refreshOrientation(deviceId);
+  }
+
+  /**
+   * 接続時に端末の向きを読む。**待たない** — iOS は初回に agent の起動を待つことがあり
+   * （実測で 60 秒超）、表示を遅らせる理由にならない。読めなければ縦のまま。
+   * Android は取り込みを始めた時点の向きで流れてくるので、合わせ直すのはサイドカーだけ。
+   */
+  private async refreshOrientation(deviceId: string): Promise<void> {
+    try {
+      const orientation = await this.mobileCliClient?.getOrientation(deviceId, 5_000);
+      if (this.currentDeviceId !== deviceId || !orientation) return;
+      this.landscape = orientation === 'landscape';
+      if (this.currentCapture instanceof SidecarCapture) {
+        this.currentCapture.setLandscape(this.landscape);
+      }
+    } catch (error) {
+      Logger.debug(`端末の向きを読めない: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 入力の座標変換に使う大きさ。**Android は横にすると座標系ごと回る**
+   * （`motionevent` は論理ディスプレイの座標。`device.info` の screenSize は縦のまま）
+   * ので、横向きのあいだは縦横を入れ替える。iOS は `handleTouch` が縦の座標へ戻す。
+   */
+  private inputScreenSize(): {width: number; height: number} | null {
+    const s = this.screenSize;
+    if (!s || !this.landscape || this.currentDevice()?.platform !== 'android') return s;
+    return {width: s.height, height: s.width};
+  }
+
+  /** 端末を縦⇄横に回す。 */
+  async rotate(): Promise<void> {
+    const deviceId = this.currentDeviceId;
+    const client = this.mobileCliClient;
+    if (!deviceId || !client) {
+      Logger.warn('Cannot rotate: no device selected');
+      return;
+    }
+    // ビュー録画の canvas は開始時の寸法で固定され、横長のフレームが引き伸ばされる
+    if (this.recorder.active || this.recorder.isBusy) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t('Secondary Simulator: Stop the recording before rotating the device.')
+      );
+      return;
+    }
+    const next = this.landscape ? 'portrait' : 'landscape';
+    try {
+      try {
+        await client.setOrientation(deviceId, next);
+      } catch (error) {
+        // iOS は agent 経由。未導入なら入れてから回し直す（Home と同じ）
+        if (!(await this.ensureAgent(deviceId, error as Error, true))) throw error;
+        await client.setOrientation(deviceId, next);
+      }
+    } catch (error) {
+      Logger.error('端末を回せなかった', error as Error);
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: Could not rotate the device — {0}',
+          (error as Error).message
+        )
+      );
+      return;
+    }
+    if (this.currentDeviceId !== deviceId) return;
+    this.landscape = next === 'landscape';
+    Logger.info(`端末の向きを変更: ${next}`);
+    if (this.currentCapture instanceof SidecarCapture) {
+      this.currentCapture.setLandscape(this.landscape);
+    } else {
+      // mobilecli の MJPEG は回した後フレームが来なくなる（Android で実測）。
+      // 張り直すと新しい向きのまま流れる。
+      await this.restartDisplay();
+    }
   }
 
   private currentDevice(): Device | undefined {
@@ -1298,7 +1386,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       : null;
     if (sidecar) {
       const cfg = vscode.workspace.getConfiguration('secondarySimulator');
-      this.currentCapture = new SidecarCapture(
+      const capture = new SidecarCapture(
         sidecar,
         () => {
           const c = vscode.workspace.getConfiguration('secondarySimulator');
@@ -1315,8 +1403,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           mode: cfg.get<string>('captureMode', 'auto') === 'poll' ? 'poll' : 'auto',
         }
       );
-      // 張り直しで新しいインスタンスになるので、録画中の幅を持ち直す
-      this.currentCapture.setRecording?.(this.viewRecordingCapture);
+      // 張り直しで新しいインスタンスになるので、録画中の幅と向きを持ち直す
+      capture.setRecording(this.viewRecordingCapture);
+      capture.setLandscape(this.landscape);
+      this.currentCapture = capture;
       Logger.info('Using sidecar framebuffer capture');
       return;
     }
@@ -1349,6 +1439,18 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * 表示の座標を端末の座標へ。**サイドカー取り込みを横向きで起こしているときだけ**
+   * 回し戻す — HID は縦のフレームバッファの座標で受ける（UI の上端が面の右辺）。
+   * 表示の (u, v) は面の (1 - v, u)。Android と WDA の映像は端末が回したものが
+   * そのまま来るので触らない（Android は `inputScreenSize` が縦横を入れ替える）。
+   */
+  private toDeviceSpace(x: number, y: number): [number, number] {
+    return this.landscape && this.currentCapture instanceof SidecarCapture
+      ? [1 - y, x]
+      : [x, y];
+  }
+
   private clamp01(value: number): number {
     if (Number.isNaN(value)) {
       return 0.5;
@@ -1373,15 +1475,13 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (phase !== 'move' && this.currentCapture instanceof SidecarCapture) {
       this.currentCapture.setInteracting(phase === 'down');
     }
-    const cx = this.clamp01(x);
-    const cy = this.clamp01(y);
+    const [cx, cy] = this.toDeviceSpace(this.clamp01(x), this.clamp01(y));
 
     const x2 = asFiniteNumber(message.x2);
     const y2 = asFiniteNumber(message.y2);
 
     if (x2 !== null && y2 !== null) {
-      const cx2 = this.clamp01(x2);
-      const cy2 = this.clamp01(y2);
+      const [cx2, cy2] = this.toDeviceSpace(this.clamp01(x2), this.clamp01(y2));
       if (phase === 'down') await this.inputController.touch2Down(cx, cy, cx2, cy2);
       else if (phase === 'move') await this.inputController.touch2Move(cx, cy, cx2, cy2);
       else await this.inputController.touch2Up(cx, cy, cx2, cy2);

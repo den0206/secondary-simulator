@@ -9,6 +9,7 @@
   "command.openUrl.title": "在设备上打开 URL",
   "command.home.title": "按下主屏幕键",
   "command.back.title": "按下返回键",
+  "command.rotate.title": "旋转设备",
   "command.refresh.title": "刷新设备列表",
   "command.showLogs.title": "显示日志",
   "command.diagnostics.title": "显示连接诊断",

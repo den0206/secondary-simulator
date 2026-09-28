@@ -15,6 +15,8 @@ export type ButtonType =
   | 'DPAD_LEFT'
   | 'DPAD_RIGHT';
 
+export type Orientation = 'portrait' | 'landscape';
+
 export interface DeviceDescriptor {
   id: string;
   name: string;
@@ -162,6 +164,29 @@ export class MobileCliClient {
       {deviceId, url},
       timeoutMs
     );
+  }
+
+  /**
+   * 画面の向き。mobilecli が扱うのは縦と横（1 種類）だけ。
+   * iOS は初回に端末側 agent の起動を待つことがあるので、呼び手が上限を決める。
+   */
+  async getOrientation(
+    deviceId: string,
+    timeoutMs?: number
+  ): Promise<Orientation> {
+    const result = await this.jsonRpcClient.sendJsonRpcRequest<{orientation?: string}>(
+      'device.io.orientation.get',
+      {deviceId},
+      timeoutMs
+    );
+    return result?.orientation === 'landscape' ? 'landscape' : 'portrait';
+  }
+
+  async setOrientation(deviceId: string, orientation: Orientation): Promise<void> {
+    return this.jsonRpcClient.sendJsonRpcRequest('device.io.orientation.set', {
+      deviceId,
+      orientation,
+    });
   }
 
   // 入力操作

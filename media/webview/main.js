@@ -945,6 +945,7 @@ locationTemplate.addEventListener('change', () => {
 locationClear.addEventListener('click', () => post('clearDeviceLocation'));
 document.getElementById('btn-home').addEventListener('click', () => post('home'));
 btnBack.addEventListener('click', () => post('back'));
+document.getElementById('btn-rotate').addEventListener('click', () => post('rotate'));
 document
   .getElementById('btn-disconnect')
   .addEventListener('click', () => post('disconnect'));
@@ -1070,7 +1071,7 @@ function showFrame(base64) {
 // 属性ごと外す（直結ストリームではこれが GET の切断になる）。
 function clearImage() {
   streamMode = false;
-  document.body.classList.remove('book-fold-inner');
+  document.body.classList.remove('book-fold-inner', 'landscape-screen');
   img.removeAttribute('src');
 }
 
@@ -1081,6 +1082,11 @@ function updateFoldableLayout() {
     selectedBookFold && Number.isFinite(aspect) &&
       aspect >= FOLDABLE_INNER_MIN_ASPECT &&
       aspect <= FOLDABLE_INNER_MAX_ASPECT
+  );
+  // 横向き（Rotate）。縦長の筐体の上限と飾りのままだと小さく、スピーカーが横に来る
+  document.body.classList.toggle(
+    'landscape-screen',
+    Number.isFinite(aspect) && aspect > FOLDABLE_INNER_MAX_ASPECT
   );
 }
 

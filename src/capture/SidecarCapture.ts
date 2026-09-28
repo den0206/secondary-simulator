@@ -63,7 +63,9 @@ export class SidecarCapture implements CaptureStrategy {
    */
   private sawAlive = false;
   /** 直近にサイドカーへ送った設定。同じ値を送り直さない。 */
-  private applied: EffectiveCapture | null = null;
+  private applied: (EffectiveCapture & {rotate: number}) | null = null;
+  /** 横向きなら 90（サイドカーが面を起こしてから JPEG にする）。 */
+  private rotate = 0;
 
   /** 停止とみなすまでの時間。既定は STALL_TIMEOUT_MS（テストから縮められる）。 */
   private readonly stallTimeoutMs: number;
@@ -150,6 +152,7 @@ export class SidecarCapture implements CaptureStrategy {
       fps: config.fps,
       maxWidth: config.maxWidth,
       quality: config.quality,
+      rotate: config.rotate,
       sink,
       mode: this.mode,
     });
@@ -277,13 +280,26 @@ export class SidecarCapture implements CaptureStrategy {
     this.applyConfig();
   }
 
-  /** 実際に送るべき設定。設定値・表示幅・操作状態から決まる。 */
-  private effective(): EffectiveCapture {
-    return effectiveCaptureConfig(this.getConfig(), {
-      viewportWidth: this.viewportWidth,
-      interacting: this.interacting,
-      recording: this.recording,
-    });
+  /**
+   * 端末の向き。**フレームバッファは回しても縦のまま**（中身だけが横に寝る）なので、
+   * 横向きのあいだはサイドカーに起こさせる。表示側で回すとビュー録画の canvas に
+   * 写らない。これも張り直さずに差し替える。
+   */
+  setLandscape(active: boolean): void {
+    this.rotate = active ? 90 : 0;
+    this.applyConfig();
+  }
+
+  /** 実際に送るべき設定。設定値・表示幅・操作状態・向きから決まる。 */
+  private effective(): EffectiveCapture & {rotate: number} {
+    return {
+      ...effectiveCaptureConfig(this.getConfig(), {
+        viewportWidth: this.viewportWidth,
+        interacting: this.interacting,
+        recording: this.recording,
+      }),
+      rotate: this.rotate,
+    };
   }
 
   private applyConfig(): void {
@@ -293,7 +309,8 @@ export class SidecarCapture implements CaptureStrategy {
       this.applied &&
       this.applied.fps === next.fps &&
       this.applied.maxWidth === next.maxWidth &&
-      this.applied.quality === next.quality
+      this.applied.quality === next.quality &&
+      this.applied.rotate === next.rotate
     ) {
       return;
     }
@@ -306,6 +323,7 @@ export class SidecarCapture implements CaptureStrategy {
         fps: next.fps,
         maxWidth: next.maxWidth,
         quality: next.quality,
+        rotate: next.rotate,
       })
       .catch((error) =>
         // 古いサイドカーには captureConfig が無い。取り込み自体は続くので警告だけ。
