@@ -104,6 +104,28 @@ function unfinalizedMdat(dataLength) {
     JSON.stringify(truncatedMoovResult)
   );
 
+  // 拡張サイズ（size=1）なのに 64bit の長さが途中で切れている
+  const shortLarge = Buffer.alloc(12);
+  shortLarge.writeUInt32BE(1, 0);
+  shortLarge.write('moov', 4, 'latin1');
+  const shortLargeResult = await verifyRecording(write('short-large.mp4', shortLarge));
+  check(
+    '拡張サイズのヘッダが足りないものを落とす',
+    shortLargeResult.ok === false && shortLargeResult.reason === 'unfinalized',
+    JSON.stringify(shortLargeResult)
+  );
+
+  // ヘッダ（8 バイト）より小さいサイズは box として成り立たない
+  const tiny = Buffer.alloc(16);
+  tiny.writeUInt32BE(4, 0);
+  tiny.write('moov', 4, 'latin1');
+  const tinyResult = await verifyRecording(write('tiny-box.mp4', tiny));
+  check(
+    'ヘッダ未満のサイズを落とす',
+    tinyResult.ok === false && tinyResult.reason === 'unfinalized',
+    JSON.stringify(tinyResult)
+  );
+
   // 「末尾まで伸びる」mdat（size=0）。この後ろに moov は置けない
   const openMdat = Buffer.alloc(8);
   openMdat.writeUInt32BE(0, 0);
