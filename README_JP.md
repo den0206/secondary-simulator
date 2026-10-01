@@ -333,7 +333,7 @@ npm run clean      # 生成物の削除
 
 [MIT](LICENSE.md)
 
-VSIX には `mobilecli` 1.0.14 を同梱しており、こちらは **FSL-1.1-ALv2** です。
+VSIX には `mobilecli` 1.0.16 を同梱しており、こちらは **FSL-1.1-ALv2** です。
 FSL は OSI 承認のオープンソースではなく、*Competing Use*（同様の機能を持つ
 **商用の**製品・サービスとして他者へ提供すること）だけを禁じるソース公開型の
 ライセンスです。この拡張は無償で、mobilecli を別プロセスとして起動するだけで、

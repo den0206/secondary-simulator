@@ -12,7 +12,7 @@ so **there is no need to move entries by hand**.
 
 ### Changed
 
-- Update bundled mobilecli to 1.0.14.
+- Update bundled mobilecli to 1.0.16.
 
 ### Added
 
