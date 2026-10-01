@@ -374,7 +374,7 @@
     "clean": "rm -rf out native/simhid-server"
   },
   "devDependencies": {
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.3",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^4.0.0",
     "typescript": "^7.0.2"
