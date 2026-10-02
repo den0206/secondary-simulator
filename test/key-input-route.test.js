@@ -80,12 +80,12 @@ async function main() {
       JSON.stringify([['hid:touchDown'], ['hid:touchMove'], ['hid:touchUp']]),
     JSON.stringify(calls));
 
-  console.log('\n4) DeviceHub の Home は agent 経由にする');
+  console.log('\n4) DeviceHub の Home も選択済み入力経路を使う');
   controller.opts.version = '27.0';
   calls.length = 0;
   await controller.home();
-  check('iOS 27 は WDA の HOME',
-    JSON.stringify(calls) === JSON.stringify([['wda:button', 'HOME']]), JSON.stringify(calls));
+  check('iOS 27 はサイドカーの Home（agent 不要）',
+    JSON.stringify(calls) === JSON.stringify([['hid:button']]), JSON.stringify(calls));
 
   controller.opts.version = '26.0';
   calls.length = 0;

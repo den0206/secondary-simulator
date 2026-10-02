@@ -1514,8 +1514,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     try {
       await this.inputController.home();
     } catch (error) {
-      // iOS 27 の Home は agent 経由（HID の Home は届かない）。未導入なら
-      // 導入を促し、入ったら**そのまま押し直す** — Home は押せば済むので、
+      // WDA 入力経路で agent が未導入なら導入を促し、入ったら押し直す。
+      // Home は押せば済むので、
       // ユーザーにもう一度押させる理由がない。
       if (!(await this.ensureAgent(deviceId, error as Error, true))) throw error;
       await this.inputController.home();
