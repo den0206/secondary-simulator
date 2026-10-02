@@ -46,6 +46,11 @@ CI は Node 24 LTS を使い、拡張の `engines.node` は `>=20` を維持す�
   中身だけ**で mobilecli 起動 → 端末一覧 → HID 初期化 → JPEG 1 枚までを通す
   （`vscode` だけスタブ）。**CI に載せない** — VSIX の作成と展開が要り、
   開発環境の `node_modules` で欠落を隠さないことが目的なので、パッケージを疑うときに手で回す。
+- **`remote-input.device-test.js` は手元だけ**（`node test/remote-input.device-test.js [UDID]`。
+  Device Hub に端末を表示したまま回す）。一時的な UIKit アプリを入れて、テキスト・Shift・
+  Cmd+A・2 本指ピンチが **WDA 無しで実際にアプリへ届いたか**をアプリ自身の記録で見る
+  （Xcode 27 の CoreDevice 入力経路の確認。`docs/ios-hid-injection.md` §1）。
+  **CI に載せない** — アプリのビルドとインストールが要り、Device Hub との共存は手元でしか再現できない。
 
 `sh scripts/check-xcode-hid.sh` はインストール済み Xcode すべてに
 `native/simhid-server --check` を当て、HID の私有シンボル（CoreSimulator /

@@ -292,8 +292,8 @@ interface InputBackend {
 - `SimulatorInputController` が起動時にバックエンドを選ぶ:
   iOS Simulator かつ HID 注入が使える → HidBackend、Android → AndroidBackend、
   それ以外（iOS 実機・降格時）→ WdaBackend
-- iOS Simulator の runtime 27 以降の Home は、DeviceHub が旧 Indigo Home を受けないため
-  WdaBackend（mobilecli agent）へ送る。agent が使えない場合だけ従来の HID を試す
+- The sidecar uses the CoreDevice digitizer XPC service when the simulator exposes
+  it, including for Home. Older runtimes without that service use legacy Indigo.
 
 ### 7.1 Android のタッチを貯めない理由
 
