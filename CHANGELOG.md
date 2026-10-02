@@ -18,6 +18,12 @@ so **there is no need to move entries by hand**.
 
 - Rotate the connected device between portrait and landscape (Rotate button or `Rotate Device`). The iOS Simulator view is turned upright by the sidecar, so view recordings are upright too.
 
+### Fixed
+
+- Use the simulator's CoreDevice input service when available so taps, drags,
+  pinches and keyboard input continue working alongside Xcode 27's Device Hub.
+- Deliver Home through the native sidecar without requiring an agent on iOS 27.
+
 ## [0.9.6] — 2026-09-26
 
 ### Changed

@@ -47,6 +47,43 @@ iPhone 17 Simulator (iOS 26.5), Cursor 3.16.17 / VS Code 1.131.0
 
 ## 1. 全体の仕組み
 
+### Xcode 27: CoreDevice input service
+
+The sidecar now looks up `com.apple.coredevice.feature.remote.hid.digitizer`
+through `SimDevice.lookup:error:`. When this service is available, input uses
+its simulator XPC endpoint instead of `SimDeviceLegacyHIDClient`. Older runtimes
+without the service continue using the legacy path documented below.
+
+Device Hub activates the guest's `dtuhidd`, which suppresses legacy HID services.
+Legacy sends can still complete without an error even though touches do not
+reach the application. This was reproduced on Xcode 27.0 (27A266a), iOS 27.0,
+iPhone 18 Pro; Home, swipe and tap all failed with the old route and passed with
+the new route while Device Hub was connected.
+
+Input messages have `messageType`, `featureIdentifier`, `isBarrier` and `payload`.
+Touches use `IndigoDigitizerEvent` with normalized points, phases 0/1/2, edge 0
+and target 0 (default display). Keys use `IndigoKeyboardButtonEvent`, states 1/2.
+Buttons use `IndigoButtonEvent`, Consumer page 0x0c, Home 0x40 and Lock 0x30.
+Modifiers are ordinary keyboard usages on this route.
+
+**Barrier messages acknowledge the queue without executing their payload.**
+The sidecar sends real events with `isBarrier=false`, followed by a harmless
+usage-0 key-release barrier to detect connection errors and timeouts. It never
+falls back to suppressed legacy input after discovering a remote service whose
+activation failed. Protocol reference: [OpenDeviceHub PanelInputSession](https://github.com/Mastersam07/OpenDeviceHub/blob/dev/engine/Sources/OpenDeviceHubEngine/Adapter/PanelInputSession.swift).
+
+To verify actual delivery, keep the device displayed in Device Hub and run
+`npm run build && node test/tap-effect.device-test.js`. This test compares
+screenshots; merely resolving symbols or receiving a successful reply cannot
+prove that the device processed the input.
+
+`node test/remote-input.device-test.js` installs and removes a temporary UIKit
+app to verify received ASCII text, Shift, Command+A and two-finger pinch without
+WDA. On the same iOS 27 device all passed, including a recorded pinch scale of
+2.19. The text field requests ASCII input so Japanese IME conversion does not
+confound key delivery. Older runtime fallback is retained but was not exercised
+on this host, which has only an iOS 27 runtime installed.
+
 ```
 自プロセス
   ├ dlopen CoreSimulator.framework   → SimDevice を取得（ObjC）
@@ -237,9 +274,8 @@ void *IndigoHIDMessageForButton(uint32_t keyCode, uint32_t op, uint32_t target);
 `IndigoHIDTargetForScreen` の実体は `w0 | 0x40000000` を返すだけの 2 命令。
 ボタンにこれを使うと壊れる。正しくは `SimDeviceScreen.buttonTarget` = **`0x33`**。
 
-Xcode 27 の DeviceHub ではこの legacy Indigo Home が反応しない。拡張は iOS runtime 27
-以降の Home だけ `mobilecli` の agent（WDA）経由にし、agent が使えない場合に限りこの
-legacy 経路を試す。タッチ・キー・ロックは引き続き HID を使う。
+Xcode 27 の DeviceHub ではこの legacy Indigo Home が反応しない。
+新しい CoreDevice 入力経路では Consumer page 0x0c / usage 0x40 を送る（§1）。
 
 ---
 
