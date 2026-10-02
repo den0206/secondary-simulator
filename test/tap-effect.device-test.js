@@ -8,7 +8,10 @@
 //   node test/tap-effect.device-test.js [UDID]
 //
 // UDID 省略時は起動中のシミュレータを使う。npm run build が済んでいること。
-require('./helpers/vscode-stub').installVerbose();
+const vscode = require('./helpers/vscode-stub').installVerbose();
+vscode.workspace.getConfiguration = () => ({
+  get: (key, fallback) => key === 'logLevel' ? 'debug' : fallback,
+});
 const {execFile} = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -251,6 +254,7 @@ function wdaTrap() {
     deviceId: udid,
     platform: 'ios',
     type: 'simulator',
+    version: '27.0', // Home must use the native sidecar even for Device Hub runtimes.
     // HID 経路では触られない。素の {} だと、降格後の呼び出しが
     // `pressButton is not a function` になって「降格した」が読めなくなるので、
     // 何を呼ばれたかを言って落ちるスタブを渡す
