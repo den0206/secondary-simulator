@@ -1,7 +1,7 @@
 # Third-Party Notices
 
 Secondary Simulator itself is distributed under the [MIT License](LICENSE.md).
-The VSIX additionally bundles the third-party component listed below, which is
+The VSIX additionally bundles the third-party components listed below, each
 covered by its own license.
 
 ---
@@ -107,3 +107,33 @@ Except for displaying the License Details and identifying us as the origin of th
 Grant of Future License
 An additional Apache License, Version 2.0 becomes effective on the second anniversary of the Software's initial availability. After that date, users may alternatively use the Software under the Apache License, Version 2.0.
 ```
+
+---
+
+## OpenDeviceHub input protocol
+
+The CoreDevice digitizer XPC connection and input message protocol in
+`native/simhid-server.m` are adapted from OpenDeviceHub’s `PanelInputSession.swift`.
+Source: https://github.com/Mastersam07/OpenDeviceHub/blob/dev/engine/Sources/OpenDeviceHubEngine/Adapter/PanelInputSession.swift
+
+MIT License
+
+Copyright (c) 2026 Samuel Abada
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -51,6 +51,7 @@
 #import <sys/socket.h>
 #import <time.h>
 #import <unistd.h>
+#import <xpc/xpc.h>
 
 #pragma mark - 復元した private API（docs/ios-hid-injection.md 参照）
 
@@ -96,6 +97,7 @@ static uint64_t nowNs(void) {
 @interface DeviceState : NSObject
 @property(nonatomic, strong) id simDevice;
 @property(nonatomic, strong) id hidClient;
+@property(nonatomic, strong) xpc_connection_t remoteInput;
 @property(nonatomic, assign) uint64_t lastDragNs;
 // drag coalescing 用の保留座標
 @property(nonatomic, assign) BOOL pendingValid;
@@ -575,6 +577,129 @@ static BOOL startServe(int port, NSString *token, NSString **err) {
 
 #pragma mark - HID クライアント
 
+// Xcode 27's guest input service, also used by Device Hub. The legacy Indigo
+// services are suppressed while dtuhidd is active. Wire protocol verified in
+// OpenDeviceHub's PanelInputSession (MIT; see THIRD-PARTY-NOTICES.md).
+static const char *kRemoteInputService = "com.apple.coredevice.feature.remote.hid.digitizer";
+
+static xpc_object_t inputMessage(const char *type, xpc_object_t payload, BOOL barrier) {
+  xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+  xpc_dictionary_set_string(message, "messageType", type);
+  xpc_dictionary_set_string(message, "featureIdentifier", kRemoteInputService);
+  xpc_dictionary_set_bool(message, "isBarrier", barrier);
+  xpc_dictionary_set_value(message, "payload", payload);
+  return message;
+}
+
+static BOOL sendRemoteMessage(xpc_connection_t connection, const char *type,
+                              xpc_object_t payload) {
+  dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+  __block BOOL answered = NO;
+  xpc_connection_send_message_with_reply(connection, inputMessage(type, payload, YES),
+      dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^(xpc_object_t reply) {
+        answered = xpc_get_type(reply) != XPC_TYPE_ERROR;
+        if (!answered) fprintf(stderr, "[simhid] remote input error: %s\n",
+            xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION));
+        dispatch_semaphore_signal(sem);
+      });
+  if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC))) {
+    fprintf(stderr, "[simhid] remote input reply timed out: %s\n", type);
+    return NO;
+  }
+  return answered;
+}
+
+static xpc_connection_t remoteInputForDevice(id device, BOOL *available) {
+  *available = NO;
+  SEL lookup = sel_registerName("lookup:error:");
+  if (![device respondsToSelector:lookup]) return nil;
+  mach_port_t port = ((mach_port_t (*)(id, SEL, id, NSError **))objc_msgSend)(
+      device, lookup, @(kRemoteInputService), NULL);
+  if (!port) return nil;
+  *available = YES;
+  xpc_object_t (*endpointForPort)(mach_port_t, uint64_t, uint64_t) =
+      dlsym(RTLD_DEFAULT, "xpc_endpoint_create_mach_port_4sim");
+  void (*enableSimToHost)(xpc_connection_t) =
+      dlsym(RTLD_DEFAULT, "xpc_connection_enable_sim2host_4sim");
+  if (!endpointForPort || !enableSimToHost) {
+    mach_port_deallocate(mach_task_self(), port);
+    return nil;
+  }
+  xpc_object_t endpoint = endpointForPort(port, 0, 0);
+  // lookup returns an owned send right; the endpoint retains its own reference.
+  mach_port_deallocate(mach_task_self(), port);
+  if (!endpoint) return nil;
+  xpc_connection_t connection = xpc_connection_create_from_endpoint(endpoint);
+  if (!connection) return nil;
+  enableSimToHost(connection);
+  xpc_connection_set_target_queue(connection, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
+  xpc_connection_set_event_handler(connection, ^(xpc_object_t event) {
+    if (xpc_get_type(event) == XPC_TYPE_ERROR)
+      fprintf(stderr, "[simhid] remote input connection: %s\n",
+              xpc_dictionary_get_string(event, XPC_ERROR_KEY_DESCRIPTION));
+  });
+  xpc_connection_resume(connection);
+
+  xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+  xpc_dictionary_set_uint64(payload, "usageCode", 0);
+  xpc_dictionary_set_uint64(payload, "state", 2);
+  if (!sendRemoteMessage(connection, "IndigoKeyboardButtonEvent", payload)) {
+    xpc_connection_cancel(connection);
+    return nil;
+  }
+  usleep(150000); // Guest services need to attach before the first report.
+  fprintf(stderr, "[simhid] input: CoreDevice digitizer service\n");
+  return connection;
+}
+
+static BOOL sendRemoteInput(DeviceState *st, const char *type, xpc_object_t payload) {
+  // A barrier acknowledges the queue but does not execute its payload. Send the
+  // input as a normal message, then acknowledge it with a harmless key release.
+  xpc_object_t barrier = xpc_dictionary_create(NULL, NULL, 0);
+  xpc_dictionary_set_uint64(barrier, "usageCode", 0);
+  xpc_dictionary_set_uint64(barrier, "state", 2);
+  for (int attempt = 0; attempt < 2; attempt++) {
+    xpc_connection_send_message(st.remoteInput, inputMessage(type, payload, NO));
+    if (sendRemoteMessage(st.remoteInput, "IndigoKeyboardButtonEvent", barrier)) return YES;
+    if (attempt) break;
+    // legacy の sendToClient と同じく、接続を張り直して 1 回だけ再試行する
+    NSUUID *u = ((id (*)(id, SEL))objc_msgSend)(st.simDevice, sel_registerName("UDID"));
+    emitEvent(@"portLost", @{@"device": u.UUIDString});
+    BOOL available = NO;
+    xpc_connection_t fresh = remoteInputForDevice(st.simDevice, &available);
+    if (!fresh) break;
+    xpc_connection_cancel(st.remoteInput);
+    st.remoteInput = fresh;
+  }
+  return NO;
+}
+
+static BOOL sendKey(DeviceState *st, uint64_t usage, BOOL down) {
+  if (!st.remoteInput) return sendToClient(st, keyMsg(usage, down ? 1 : 2));
+  xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+  xpc_dictionary_set_uint64(payload, "usageCode", usage);
+  xpc_dictionary_set_uint64(payload, "state", down ? 1 : 2);
+  return sendRemoteInput(st, "IndigoKeyboardButtonEvent", payload);
+}
+
+static BOOL sendModifier(DeviceState *st, uint32_t bit, BOOL down) {
+  if (!st.remoteInput) return sendToClient(st, modMsg(bit, down ? 1 : 0));
+  static const uint64_t usages[] = {0x39, 0xe1, 0xe0, 0xe2, 0xe3};
+  if (bit < 16 || bit > 20) return NO;
+  return sendKey(st, usages[bit - 16], down);
+}
+
+static BOOL sendButton(DeviceState *st, uint32_t code, BOOL down) {
+  if (!st.remoteInput) return sendToClient(st, buttonMsg(code, down ? 1 : 2, kButtonTarget));
+  xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+  xpc_dictionary_set_uint64(payload, "usagePage", 0x0c);
+  xpc_dictionary_set_uint64(payload, "usageCode", code == kButtonHome ? 0x40 : 0x30);
+  xpc_dictionary_set_uint64(payload, "state", down ? 1 : 2);
+  return sendRemoteInput(st, "IndigoButtonEvent", payload);
+}
+
+static BOOL injectTouch(DeviceState *st, CGPoint p1, const CGPoint *p2, uint64_t nsEventType);
+
 static id makeClient(id simDevice) {
   NSError *err = nil;
   id client = ((id (*)(id, SEL, id, NSError **))objc_msgSend)(
@@ -601,8 +726,15 @@ static DeviceState *stateForDevice(NSString *udid) {
 
   st = [DeviceState new];
   st.simDevice = found;
-  st.hidClient = makeClient(found);
-  if (!st.hidClient) return nil;
+  BOOL remoteAvailable = NO;
+  st.remoteInput = remoteInputForDevice(found, &remoteAvailable);
+  // A failed new connection must not silently select the suppressed legacy path.
+  if (remoteAvailable && !st.remoteInput) return nil;
+  if (!st.remoteInput) {
+    fprintf(stderr, "[simhid] input: legacy Indigo\n");
+    st.hidClient = makeClient(found);
+    if (!st.hidClient) return nil;
+  }
 
   // drag flush 用のワンショットタイマ（gQueue で発火）。初期は FOREVER で無効
   st.flushTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gQueue);
@@ -611,10 +743,8 @@ static DeviceState *stateForDevice(NSString *udid) {
     DeviceState *s = weakSt;
     if (!s || !s.pendingValid) return;
     CGPoint p1 = s.pendingP1, p2 = s.pendingP2;
-    void *msg = mouseMsg(&p1, s.pendingHasP2 ? &p2 : NULL,
-                         kTouchTarget, kMouseDragged, 0, 1.0, 1.0);
     s.pendingValid = NO;
-    if (msg && sendToClient(s, msg)) s.lastDragNs = nowNs();
+    if (injectTouch(s, p1, s.pendingHasP2 ? &p2 : NULL, kMouseDragged)) s.lastDragNs = nowNs();
   });
   dispatch_source_set_timer(st.flushTimer, DISPATCH_TIME_FOREVER, DISPATCH_TIME_FOREVER, 0);
   dispatch_resume(st.flushTimer);
@@ -1079,13 +1209,29 @@ static void flushPending(DeviceState *st) {
   dispatch_source_set_timer(st.flushTimer, DISPATCH_TIME_FOREVER, DISPATCH_TIME_FOREVER, 0);
   if (!st.pendingValid) return;
   CGPoint p1 = st.pendingP1, p2 = st.pendingP2;
-  void *msg = mouseMsg(&p1, st.pendingHasP2 ? &p2 : NULL,
-                       kTouchTarget, kMouseDragged, 0, 1.0, 1.0);
   st.pendingValid = NO;
-  if (msg && sendToClient(st, msg)) st.lastDragNs = nowNs();
+  if (injectTouch(st, p1, st.pendingHasP2 ? &p2 : NULL, kMouseDragged)) st.lastDragNs = nowNs();
 }
 
 static BOOL injectTouch(DeviceState *st, CGPoint p1, const CGPoint *p2, uint64_t nsEventType) {
+  if (st.remoteInput) {
+    xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_object_t first = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_double(first, "x", p1.x);
+    xpc_dictionary_set_double(first, "y", p1.y);
+    xpc_dictionary_set_value(payload, "pointOne", first);
+    if (p2) {
+      xpc_object_t second = xpc_dictionary_create(NULL, NULL, 0);
+      xpc_dictionary_set_double(second, "x", p2->x);
+      xpc_dictionary_set_double(second, "y", p2->y);
+      xpc_dictionary_set_value(payload, "pointTwo", second);
+    }
+    xpc_dictionary_set_uint64(payload, "eventType",
+        nsEventType == kMouseDown ? 0 : nsEventType == kMouseUp ? 2 : 1);
+    xpc_dictionary_set_uint64(payload, "edge", 0);
+    xpc_dictionary_set_uint64(payload, "target", 0);
+    return sendRemoteInput(st, "IndigoDigitizerEvent", payload);
+  }
   void *msg = mouseMsg(&p1, p2, kTouchTarget, nsEventType, 0, 1.0, 1.0);
   return sendToClient(st, msg);
 }
@@ -1109,11 +1255,12 @@ static void coalesceMove(DeviceState *st, CGPoint p1, const CGPoint *p2) {
   }
 }
 
-static void pressButtonAsync(DeviceState *st, uint32_t code) {
-  sendToClient(st, buttonMsg(code, 1, kButtonTarget));
+static BOOL pressButtonAsync(DeviceState *st, uint32_t code) {
+  if (!sendButton(st, code, YES)) return NO;
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_MSEC), gQueue, ^{
-    sendToClient(st, buttonMsg(code, 2, kButtonTarget));
+    sendButton(st, code, NO);
   });
+  return YES;
 }
 
 // ASCII → USB HID Keyboard usage code（0 なら未対応）。shift が要るなら *shift に YES
@@ -1168,25 +1315,27 @@ static uint8_t usageForChar(unichar c, BOOL *shift) {
 }
 
 // ASCII 文字列を1文字ずつ注入。非 ASCII はスキップ（拡張ホストが WDA へ委譲する前提）
-static void injectText(DeviceState *st, NSString *value, int *sent, int *skipped) {
+static BOOL injectText(DeviceState *st, NSString *value, int *sent, int *skipped) {
   *sent = *skipped = 0;
   // ウォームアップ: バースト先頭の HID イベントが稀に取りこぼされる（先頭大文字の Shift が落ちる）。
   // 文字を生まない Shift down→up を捨てイベントとして先に送り、本文を確実に通す。
-  sendToClient(st, modMsg(kModShift, 1));
-  sendToClient(st, modMsg(kModShift, 0));
+  if (!sendModifier(st, kModShift, YES)) return NO;
+  if (!sendModifier(st, kModShift, NO)) return NO;
   usleep(10000);
   for (NSUInteger i = 0; i < value.length; i++) {
     BOOL shift = NO;
     uint8_t u = usageForChar([value characterAtIndex:i], &shift);
     if (!u) { (*skipped)++; continue; }
-    if (shift) { sendToClient(st, modMsg(kModShift, 1)); usleep(8000); }
-    sendToClient(st, keyMsg(u, 1));
+    if (shift) { if (!sendModifier(st, kModShift, YES)) return NO; usleep(8000); }
+    BOOL ok = sendKey(st, u, YES);
     usleep(12000);
-    sendToClient(st, keyMsg(u, 2));
-    if (shift) { usleep(8000); sendToClient(st, modMsg(kModShift, 0)); }
+    if (!sendKey(st, u, NO)) ok = NO;
+    if (shift) { usleep(8000); if (!sendModifier(st, kModShift, NO)) ok = NO; }
+    if (!ok) return NO;
     usleep(20000);
     (*sent)++;
   }
+  return YES;
 }
 
 #pragma mark - コマンド処理（gQueue 上）
@@ -1257,8 +1406,8 @@ static void handleCommand(NSDictionary *cmd) {
     });
   } else if ([name isEqualToString:@"button"]) {
     NSString *bn = cmd[@"name"];
-    if ([bn isEqualToString:@"home"]) pressButtonAsync(st, kButtonHome);
-    else if ([bn isEqualToString:@"lock"]) pressButtonAsync(st, kButtonLock);
+    if ([bn isEqualToString:@"home"]) ok = pressButtonAsync(st, kButtonHome);
+    else if ([bn isEqualToString:@"lock"]) ok = pressButtonAsync(st, kButtonLock);
     else { ok = NO; err = @"未知のボタン"; }
   } else if ([name isEqualToString:@"hardwareKeyboard"]) {
     // Simulator.app の ⌘K（ハードウェアキーボードを接続）と同じ設定。
@@ -1276,13 +1425,13 @@ static void handleCommand(NSDictionary *cmd) {
       if (!ok) err = kerr.localizedDescription ?: @"HW キーボードを切り替えられない";
     }
   } else if ([name isEqualToString:@"keyDown"]) {
-    ok = sendToClient(st, keyMsg((uint64_t)numAt(cmd, @"usage", 0), 1));
+    ok = sendKey(st, (uint64_t)numAt(cmd, @"usage", 0), YES);
   } else if ([name isEqualToString:@"keyUp"]) {
-    ok = sendToClient(st, keyMsg((uint64_t)numAt(cmd, @"usage", 0), 2));
+    ok = sendKey(st, (uint64_t)numAt(cmd, @"usage", 0), NO);
   } else if ([name isEqualToString:@"modifier"]) {
     uint32_t bit = (uint32_t)numAt(cmd, @"bit", 0);
     BOOL down = [cmd[@"down"] boolValue];
-    ok = sendToClient(st, modMsg(bit, down ? 1 : 0));
+    ok = sendModifier(st, bit, down);
   } else if ([name isEqualToString:@"captureStart"]) {
     // mode: "auto"（既定・変更通知を試す）/ "poll"（ポーリングに固定）
     id modeVal = cmd[@"mode"];
@@ -1300,12 +1449,13 @@ static void handleCommand(NSDictionary *cmd) {
   } else if ([name isEqualToString:@"text"]) {
     NSString *value = cmd[@"value"];
     if (![value isKindOfClass:NSString.class]) { ok = NO; err = @"value がない"; }
-    else { int s = 0, k = 0; injectText(st, value, &s, &k); }
+    else { int s = 0, k = 0; ok = injectText(st, value, &s, &k); }
   } else {
     ok = NO;
     err = [NSString stringWithFormat:@"未知のコマンド: %@", name];
   }
 
+  if (!ok && !err) err = @"HID 入力の送信に失敗（サイドカーログを確認してください）";
   respond(reqId, ok, err, (double)(nowNs() - t0) / 1e6);
 }
 
