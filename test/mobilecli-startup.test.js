@@ -91,10 +91,13 @@ test('invalidated live child is health checked and replaced when unresponsive', 
 
 test('concurrent callers share startup and stop cancels pending startup', async (t) => {
   const {server, children} = setup(t);
+  // Stop during readiness checking, before the startup deadline can race us.
+  server.checkServerHealth = async () => {
+    if (children.length) server.stopServer();
+    return false;
+  };
   const launch = server.launchServer();
   assert.equal(server.launchServer(), launch);
-  await new Promise(setImmediate);
-  server.stopServer();
   await assert.rejects(launch, /stopped/);
   assert.equal(children.length, 1);
   assert.equal(server.isServerRunning(), false);
