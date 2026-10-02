@@ -324,7 +324,7 @@ Notes:
 
 [MIT](LICENSE.md)
 
-The VSIX bundles `mobilecli` 1.0.16, which is licensed under **FSL-1.1-ALv2**.
+The VSIX bundles `mobilecli` 1.0.17, which is licensed under **FSL-1.1-ALv2**.
 FSL is a source-available licence, not an OSI-approved open source one: it
 permits any use except a *Competing Use*, meaning making the software available
 to others in a commercial product or service with substantially similar
