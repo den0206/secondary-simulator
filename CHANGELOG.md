@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-10-03
+
 ### Changed
 
 - Update bundled mobilecli to 1.0.17.
@@ -619,7 +621,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.6...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.7...HEAD
+[0.9.7]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.6...Ver_0.9.7
 [0.9.6]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.5...Ver_0.9.6
 [0.9.5]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.0...Ver_0.9.5
 [0.9.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.8.1...Ver_0.9.0
