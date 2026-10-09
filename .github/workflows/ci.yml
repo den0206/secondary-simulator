@@ -6,9 +6,15 @@ on:
       - main
       - 'feature/**'
       - 'fix/**'
+    paths-ignore:
+      - 'site/**'
+      - '.github/workflows/nademo-pages.yml'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - 'site/**'
+      - '.github/workflows/nademo-pages.yml'
   # push が無い週でも Xcode 更新の破壊に気づくため（xcode-canary 用）
   schedule:
     - cron: '0 0 * * 1'
