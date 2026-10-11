@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["4KJFNVZ8R6.com.yuukisakai.nademo"],
+        "components": [{"/": "/nademo/p/*"}]
+      }
+    ]
+  }
+}
