@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サポート — tana</title>
+<meta name="description" content="tanaの使い方、フォルダへのアクセス、整理と復元、お問い合わせ。">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="icon.png" type="image/png">
+<link rel="alternate" hreflang="ja" href="https://nademo-site.web.app/tana/support.html">
+<link rel="alternate" hreflang="en" href="https://nademo-site.web.app/tana/en/support.html">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+<header><a class="brand" href="./">tana</a><nav aria-label="ページと言語"><a href="support.html" aria-current="page">サポート</a><a href="privacy.html">プライバシー</a><a href="terms.html">利用規約</a><a href="en/support.html" lang="en" hreflang="en">English</a></nav></header>
+<main id="main">
+<h1>サポート</h1>
+<h2>お問い合わせ</h2><p><a href="mailto:mac.pop@icloud.com?subject=tanaのお問い合わせ">mac.pop@icloud.com</a>へご連絡ください。tanaのバージョン、macOSのバージョン、Macの機種、対象Agentとそのバージョン、問題が起きた操作・日時を添えていただくと確認しやすくなります。</p><p>スクリーンショットでは、会話内容、ユーザー名、ファイルパスなど共有したくない情報を隠してください。パスワード、APIキー、認証情報や会話ファイル全体は送らないでください。</p>
+<h2>初めて使うとき</h2><ol><li>「フォルダ設定」で、調査するAgentのデータフォルダを選びます。通常はClaude Codeが <code>~/.claude</code>、Codexが <code>~/.codex</code> です。フォルダ選択画面では ⌘⇧G でパスを指定できます。</li><li>スキャンを実行し、概要や会話・ファイルの詳細を確認します。</li><li>整理する対象を選び、確認画面で内訳を確認してゴミ箱へ移動します。</li></ol>
+<h2>フォルダを追加できない・読み取れない</h2><p>ホーム全体ではなく、Agentのデータフォルダそのものを選択してください。内蔵ディスク上の実フォルダが対象で、シンボリックリンクやクラウド同期フォルダには対応していません。フォルダを移動した場合やアクセス許可が失効した場合は、フォルダ設定から選び直してください。</p>
+<h2>移動できない項目がある</h2><p>使用中・確認不能の項目や保護対象は移動しません。Agentを終了してから再スキャンしてください。未検証の項目は、用途と影響を自分で確認したうえで選択してください。一部で失敗した場合は結果を確認し、再スキャンしてから残りを判断してください。</p>
+<h2>ゴミ箱へ移動した項目を戻したい</h2><p>まず対象Agentを終了し、tanaの「最近移動した項目」から復元します。対象は直近20回の整理・30日以内の復元記録があり、ゴミ箱に項目が残っているものです。元の場所に同名の項目がある場合は上書きしません。復元できない場合はFinderのゴミ箱を確認してください。</p><p>ゴミ箱を空にした場合や、項目を完全に削除した場合は、tanaから復元できません。復元しても、Agentの会話一覧への再表示や再開を保証するものではありません。</p>
+<h2>空き容量が増えない</h2><p>tanaは対象をゴミ箱へ移動します。完全削除は行いません。表示容量は論理サイズで、実際の空き容量とは異なる場合があります。ゴミ箱を空にすると復元できなくなるため、必要な項目がないか先に確認してください。</p>
+<h2>アクセス許可や記録を削除したい</h2><p>フォルダ設定で対象フォルダを削除すると、tanaに保存したそのフォルダのアクセス許可を取り消せます。Agentの元データは削除しません。「整理履歴」の履歴消去と「最近移動した項目」の記録消去は別の操作です。復元記録を消去してもゴミ箱の項目は残りますが、tanaからは復元できなくなります。</p>
+</main>
+<footer><a href="./">紹介ページへ戻る</a><p>提供者：tanaの開発者 · <a href="mailto:mac.pop@icloud.com">mac.pop@icloud.com</a></p></footer>
+</body>
+</html>

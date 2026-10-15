@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support — tana</title>
+<meta name="description" content="Help with tana folder access, cleanup, restore records, and contacting the developer.">
+<link rel="stylesheet" href="../style.css">
+<link rel="icon" href="../icon.png" type="image/png">
+<link rel="alternate" hreflang="ja" href="https://nademo-site.web.app/tana/support.html">
+<link rel="alternate" hreflang="en" href="https://nademo-site.web.app/tana/en/support.html">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header><a class="brand" href="./">tana</a><nav aria-label="Pages and language"><a href="support.html" aria-current="page">Support</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="../support.html" lang="ja" hreflang="ja">日本語</a></nav></header>
+<main id="main">
+<h1>Support</h1>
+<h2>Contact</h2><p>Email <a href="mailto:mac.pop@icloud.com?subject=tana%20support">mac.pop@icloud.com</a>. Include your tana version, macOS version, Mac model, agent and its version, and the steps and time of the issue.</p><p>Hide conversation text, usernames, file paths, and other private information in screenshots. Do not send passwords, API keys, credentials, or entire conversation files.</p>
+<h2>Getting started</h2><ol><li>Open Folder Settings and choose the data folder for your agent. The usual folders are <code>~/.claude</code> for Claude Code and <code>~/.codex</code> for Codex. Press ⌘⇧G in the folder picker to enter a path.</li><li>Run a scan and inspect the overview, conversations, and file details.</li><li>Select items to clean up, review the details, and move them to the Trash.</li></ol>
+<h2>A folder cannot be added or read</h2><p>Select the agent data folder itself, rather than your entire home folder. tana supports real folders on the internal disk; symbolic links and cloud-synced folders are not supported. If a folder moved or its permission expired, select it again in Folder Settings.</p>
+<h2>Some items cannot be moved</h2><p>Protected items, in-use items, and items whose use cannot be checked are excluded. Quit the agent and scan again. Select unverified items only after checking their purpose and the effect of removing them. If a cleanup partly fails, review the result and scan again before deciding what to do with the remaining items.</p>
+<h2>Restoring items from the Trash</h2><p>Quit the agent first, then open Recently moved in tana. Restore records cover the latest 20 cleanups within 30 days, and the items must still be in the Trash. tana will not overwrite an item already at the original location. If restoration fails, check the Trash in Finder.</p><p>tana cannot restore items after the Trash is emptied or the items are permanently deleted. Restoring a file does not guarantee that the agent will list or resume the conversation.</p>
+<h2>Free disk space has not increased</h2><p>tana moves items to the Trash; it does not permanently delete them. Sizes shown are logical sizes and may differ from the actual space freed. Emptying the Trash prevents restoration, so check its contents first.</p>
+<h2>Removing permissions or records</h2><p>Remove a folder in Folder Settings to revoke tana's saved access to it. This does not delete the agent's original data. Cleanup History and Recently moved have separate controls for clearing their records. Clearing restore records leaves the items in the Trash, but tana can no longer restore them.</p>
+</main>
+<footer><a href="./">About tana</a><p>Provider: the developer of tana · <a href="mailto:mac.pop@icloud.com">mac.pop@icloud.com</a></p></footer>
+</body>
+</html>
