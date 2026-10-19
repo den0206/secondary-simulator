@@ -10,6 +10,8 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-19
+
 ### Added
 
 - Fold and unfold foldable iOS Simulators (iPhone Duo) with a new button next to Rotate. It appears only for devices with two built-in screens. Rotate is disabled on these devices for now, because the simulator overrides their orientation.
@@ -633,7 +635,8 @@ First release.
 - Removed the unused input API (`tap` / `swipe` / `gesture`, …) and the `ScreenInfo` type
 - Stopped emitting `.d.ts` files (they were being bundled into the VSIX)
 
-[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.7...HEAD
+[Unreleased]: https://github.com/den0206/secondary-simulator/compare/Ver_1.0.0...HEAD
+[1.0.0]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.7...Ver_1.0.0
 [0.9.7]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.6...Ver_0.9.7
 [0.9.6]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.5...Ver_0.9.6
 [0.9.5]: https://github.com/den0206/secondary-simulator/compare/Ver_0.9.0...Ver_0.9.5
