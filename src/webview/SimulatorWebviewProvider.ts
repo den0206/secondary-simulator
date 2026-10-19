@@ -24,8 +24,10 @@ import {
 } from '../simulator/autoConnect';
 import {
   Coordinates,
+  FoldState,
   parseCoordinates,
   readDeviceSettings,
+  readFoldState,
   setAppearance,
   setLiquidGlassOpacity,
   setLocation,
@@ -81,6 +83,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    * 回したのが拡張の外（アプリの強制回転など）だと、次に接続し直すまで追えない。
    */
   private landscape = false;
+  /**
+   * 折りたたみ端末で点いているパネル。画面が 1 枚なら null。端末側の開閉
+   * （Device Hub など）にも追従するよう、5 秒ごとのデバイス一覧の取得で読み直す。
+   */
+  private fold: FoldState | null = null;
   private messageDisposable?: vscode.Disposable;
   private disposeDisposable?: vscode.Disposable;
   private visibilityDisposable?: vscode.Disposable;
@@ -133,6 +140,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private lastDeviceListError: string | null = null;
   /** 失敗を記録し続ける回数。これを超えたら黙る（出力チャンネルは消えない）。 */
   private static readonly MAX_DEVICE_LIST_ERROR_LOGS = 3;
+  /** 開閉の後、点いているパネルが変わるまで読み直す回数（500ms 間隔）。 */
+  private static readonly FOLD_SETTLE_READS = 6;
   // device.boot 後に Booted を待つ上限（2 秒 × 45 = 90 秒）
   private static readonly BOOT_POLL_TRIES = 45;
   private static readonly BOOT_POLL_INTERVAL_MS = 2_000;
@@ -339,6 +348,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       });
       const device = this.currentDevice();
       if (device) void this.refreshDeviceSettings(device);
+      this.postFold();
     }
     // 取り込みが止まっているなら張り直す。**畳んで開き直すと webview は作り直される**
     // （`retainContextWhenHidden` を付けていないので、非表示のあいだ iframe は捨てられる）ので、
@@ -661,6 +671,10 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
           await this.rotate();
           break;
 
+        case 'toggleFold':
+          await this.toggleFold();
+          break;
+
         // 表示中の実ピクセル幅。サイドバーの幅に合わせて取り込みの幅を決める。
         case 'viewport': {
           const width = asPositiveNumber(message.width);
@@ -831,6 +845,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.deviceListFailures = 0;
       this.lastDeviceListError = null;
       await this.autoConnect();
+      if (this.fold && current?.state === 'Booted') void this.refreshFold(current);
     } catch (error) {
       this.onDeviceListFailure(
         'Failed to list devices via mobilecli',
@@ -947,7 +962,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     if (!reuseInput) {
       this.screenSize = null;
       this.landscape = false;
+      this.fold = null;
     }
+    // 取り込みの開始前に要る（最初のフレームから点いているパネルを映す）。
+    // 約 0.2 秒なので、画面サイズの取得と並べて待つ
+    const foldRead = reuseInput ? null : this.readFold(device);
 
     if (reuseInput) {
       // 画面サイズも取得済み。device.info の往復（実測 280ms）を省く。
@@ -1026,6 +1045,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       });
     }
 
+    if (foldRead) await this.applyFold(deviceId, await foldRead);
     await this.startDisplayForDevice(deviceId, device);
     if (!current()) {
       this.stopCapture();
@@ -1033,6 +1053,89 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     }
     void this.refreshDeviceSettings(device);
     void this.refreshOrientation(deviceId);
+  }
+
+  /** 読めなければ null（画面が 1 枚の端末と同じ扱い）。使うのは iOS Simulator の HID 経路だけ。 */
+  private async readFold(device: Device): Promise<FoldState | null> {
+    if (device.platform !== 'ios' || device.type !== 'simulator') return null;
+    try {
+      return await readFoldState(device);
+    } catch (error) {
+      Logger.debug(`パネル情報を読めない: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /** 点いているパネルへ取り込み・タッチ・回転・ボタンを合わせる。 */
+  private async applyFold(deviceId: string, fold: FoldState | null): Promise<void> {
+    if (this.currentDeviceId !== deviceId) return;
+    this.fold = fold;
+    if (fold) {
+      try {
+        await this.inputController?.setPanel(fold.displayId);
+      } catch (error) {
+        Logger.warn(`タッチの宛先パネルを切り替えられない: ${(error as Error).message}`);
+      }
+    }
+    if (this.currentCapture instanceof SidecarCapture) {
+      this.currentCapture.setPanelRotation(fold?.rotate ?? null);
+    }
+    this.postFold();
+  }
+
+  /** 変わっていれば合わせる。5 秒ごとに来るので、同じ値なら何もしない。 */
+  private async refreshFold(device: Device): Promise<void> {
+    const next = await this.readFold(device);
+    if (JSON.stringify(next) === JSON.stringify(this.fold)) return;
+    Logger.info(`折りたたみのパネルが変わった: ${JSON.stringify(next)}`);
+    await this.applyFold(device.id, next);
+  }
+
+  private postFold(): void {
+    this.postMessage({type: 'fold', open: this.fold ? this.fold.open : null});
+  }
+
+  /** 折りたたみ端末を開く⇄閉じる。 */
+  async toggleFold(): Promise<void> {
+    const device = this.currentDevice();
+    const fold = this.fold;
+    if (!device || !fold || !this.inputController) return;
+    // 開閉でフレームの縦横比が変わる。ビュー録画の canvas は開始時の寸法で固定される
+    if (this.recorder.active || this.recorder.isBusy) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t('Secondary Simulator: Stop the recording before opening or closing the device.')
+      );
+      return;
+    }
+    try {
+      await this.inputController.moveHinge(fold.open ? 180 : 0, fold.open ? 0 : 180);
+    } catch (error) {
+      Logger.error('端末を開閉できなかった', error as Error);
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          'Secondary Simulator: Could not open or close the device — {0}',
+          (error as Error).message
+        )
+      );
+      return;
+    }
+    // パネルの切り替えは角度より遅れて報告される（実測で約 0.5 秒）
+    for (let i = 0; i < SimulatorWebviewProvider.FOLD_SETTLE_READS; i++) {
+      const next = await this.readFold(device);
+      if (this.currentDeviceId !== device.id) return;
+      if (next && next.open !== fold.open) {
+        Logger.info(`端末を${next.open ? '開いた' : '閉じた'}`);
+        await this.applyFold(device.id, next);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    // スリープ中はヒンジ角を受け取ってもパネルが切り替わらない（実測）
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        'Secondary Simulator: The device did not switch screens. If it is asleep, wake it with the side button and try again.'
+      )
+    );
   }
 
   /**
@@ -1070,6 +1173,14 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     const client = this.mobileCliClient;
     if (!deviceId || !client) {
       Logger.warn('Cannot rotate: no device selected');
+      return;
+    }
+    // 折りたたみは端末の向きをゲストの locationd が握っていて、mobilecli の回転は上書きされる。
+    // 同じ経路（orientation-picker-control）で送っても狙った向きにならなかった（iPhone Duo / iOS 27.1）
+    if (this.fold) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t('Secondary Simulator: Rotation is not supported on foldable devices yet.')
+      );
       return;
     }
     // ビュー録画の canvas は開始時の寸法で固定され、横長のフレームが引き伸ばされる
@@ -1406,6 +1517,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       // 張り直しで新しいインスタンスになるので、録画中の幅と向きを持ち直す
       capture.setRecording(this.viewRecordingCapture);
       capture.setLandscape(this.landscape);
+      capture.setPanelRotation(this.fold?.rotate ?? null);
       this.currentCapture = capture;
       Logger.info('Using sidecar framebuffer capture');
       return;
@@ -1440,15 +1552,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 表示の座標を端末の座標へ。**サイドカー取り込みを横向きで起こしているときだけ**
-   * 回し戻す — HID は縦のフレームバッファの座標で受ける（UI の上端が面の右辺）。
-   * 表示の (u, v) は面の (1 - v, u)。Android と WDA の映像は端末が回したものが
-   * そのまま来るので触らない（Android は `inputScreenSize` が縦横を入れ替える）。
+   * 表示の座標を端末の座標へ。**サイドカー取り込みで面を起こしているときだけ**
+   * 回し戻す — HID は縦のフレームバッファの座標で受ける。横向きは UI の上端が面の右辺
+   * （90。表示の (u, v) は面の (1 - v, u)）、折りたたみの内側パネルは左辺（270）。
+   * Android と WDA の映像は端末が回したものがそのまま来るので触らない
+   * （Android は `inputScreenSize` が縦横を入れ替える）。
    */
   private toDeviceSpace(x: number, y: number): [number, number] {
-    return this.landscape && this.currentCapture instanceof SidecarCapture
-      ? [1 - y, x]
-      : [x, y];
+    if (!(this.currentCapture instanceof SidecarCapture)) return [x, y];
+    switch (this.fold?.rotate ?? (this.landscape ? 90 : 0)) {
+      case 90:
+        return [1 - y, x];
+      case 180:
+        return [1 - x, 1 - y];
+      case 270:
+        return [y, 1 - x];
+      default:
+        return [x, y];
+    }
   }
 
   private clamp01(value: number): number {

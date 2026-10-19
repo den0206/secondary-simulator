@@ -109,5 +109,13 @@
   "Rotate the device": "デバイスを回転",
   "Secondary Simulator: Could not rotate the device — {0}": "Secondary Simulator: デバイスを回転できませんでした — {0}",
   "Rotate": "回転",
-  "Secondary Simulator: Stop the recording before rotating the device.": "Secondary Simulator: デバイスを回転する前に録画を停止してください。"
+  "Secondary Simulator: Stop the recording before rotating the device.": "Secondary Simulator: デバイスを回転する前に録画を停止してください。",
+  "Unfold": "開く",
+  "Fold": "閉じる",
+  "Open or close the foldable device": "折りたたみデバイスを開閉",
+  "Secondary Simulator: Stop the recording before opening or closing the device.": "Secondary Simulator: デバイスを開閉する前に録画を停止してください。",
+  "Secondary Simulator: Could not open or close the device — {0}": "Secondary Simulator: デバイスを開閉できませんでした — {0}",
+  "Secondary Simulator: The device did not switch screens. If it is asleep, wake it with the side button and try again.": "Secondary Simulator: デバイスの画面が切り替わりませんでした。スリープ中ならサイドボタンで起こしてから、もう一度お試しください。",
+  "Rotation is not supported on foldable devices yet": "折りたたみデバイスの回転にはまだ対応していません",
+  "Secondary Simulator: Rotation is not supported on foldable devices yet.": "Secondary Simulator: 折りたたみデバイスの回転にはまだ対応していません。"
 }

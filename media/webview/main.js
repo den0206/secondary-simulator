@@ -945,7 +945,11 @@ locationTemplate.addEventListener('change', () => {
 locationClear.addEventListener('click', () => post('clearDeviceLocation'));
 document.getElementById('btn-home').addEventListener('click', () => post('home'));
 btnBack.addEventListener('click', () => post('back'));
-document.getElementById('btn-rotate').addEventListener('click', () => post('rotate'));
+const btnRotate = document.getElementById('btn-rotate');
+btnRotate.addEventListener('click', () => post('rotate'));
+const btnFold = document.getElementById('btn-fold');
+const btnFoldLabel = document.getElementById('btn-fold-label');
+btnFold.addEventListener('click', () => post('toggleFold'));
 document
   .getElementById('btn-disconnect')
   .addEventListener('click', () => post('disconnect'));
@@ -1437,8 +1441,20 @@ window.addEventListener('message', (event) => {
       setOverlayVisible(true, message.text, false, true);
       break;
 
+    // 折りたたみ端末の開閉状態。null は画面が 1 枚の端末（ボタンを出さない）
+    case 'fold':
+      btnFold.hidden = typeof message.open !== 'boolean';
+      if (!btnFold.hidden) btnFoldLabel.textContent = message.open ? t('foldClose') : t('foldOpen');
+      // 折りたたみは端末の向きをゲストが握っていて、mobilecli の回転が上書きされる
+      btnRotate.disabled = !btnFold.hidden;
+      btnRotate.title = btnFold.hidden ? t('rotateTitle') : t('rotateFoldUnsupported');
+      break;
+
     case 'disconnected':
       deviceSettings.hidden = true;
+      btnFold.hidden = true;
+      btnRotate.disabled = false;
+      btnRotate.title = t('rotateTitle');
       cleanup();
       // 同じデバイスを選び直しても change が飛ぶように選択を空へ戻す（復帰導線）
       deviceSelect.value = '';

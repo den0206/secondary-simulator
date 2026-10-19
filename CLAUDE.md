@@ -110,6 +110,13 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
   タップは `toDeviceSpace` が縦の座標へ戻す。Android は座標系ごと回るので
   `inputScreenSize` が縦横を入れ替える。mobilecli の MJPEG は回すとフレームが
   止まるので張り直す。WDA 映像（実機・`captureSource: wda`）の横向きは未確認。
+- **折りたたみ（iPhone Duo）**: 画面が 2 枚あり、**点いている方はサイドカーからは判定できない**。
+  provider が `devicectl device info displays` を読み（`readFoldState`）、`panel` でサイドカーへ
+  渡す（取り込みとタッチの `target` の両方）。接続時と 5 秒ごとの一覧取得で読み直すので、
+  Device Hub 側の開閉にも追従する。内側パネルは UI が横に寝ているので `rotate: 270` で起こし、
+  `toDeviceSpace` は端末の向きよりパネルの向きを優先する。開閉ボタンは `hinge` で約 1 秒かけて
+  畳む（一度に飛ばすと閉じそこねる）。**スリープ中はパネルが切り替わらない**
+  （`docs/sidecar-protocol.md` §3.8）。
 - **webview**: `media/webview/main.js` が Pointer Events を間引きなしで
   `touchDown/Move/Up` に変換して送る。ジェスチャー判定はデバイス側の責務。
   **Cmd/Ctrl+V は `paste` でまとめて送る**（`InputBackend.text`。URL 入力用。
