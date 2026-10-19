@@ -8,13 +8,13 @@ covered by its own license.
 
 ## mobilecli
 
-- **Version bundled**: 1.0.17
+- **Version bundled**: 1.0.21
 - **Copyright**: Copyright 2025-2026 Mobile Next HQ, Inc.
 - **License**: Functional Source License, Version 1.1, ALv2 Future License
   (FSL-1.1-ALv2), full text below
 - **Homepage**: https://github.com/mobile-next/mobilecli
-- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/4123c6aa2c2fdb10e06f5e452285603429b5066a
-  (tag `1.0.17`, published 2026-10-01)
+- **Corresponding Source**: https://github.com/mobile-next/mobilecli/tree/8d1203d5dd5049665c22e9bc4cfed43e9024c600
+  (tag `1.0.21`, published 2026-10-17)
 
 ### What is bundled
 
