@@ -66,6 +66,8 @@ export class SidecarCapture implements CaptureStrategy {
   private applied: (EffectiveCapture & {rotate: number}) | null = null;
   /** 横向きなら 90（サイドカーが面を起こしてから JPEG にする）。 */
   private rotate = 0;
+  /** 折りたたみのパネルが求める角度。null でなければ `rotate` より優先する。 */
+  private panelRotate: number | null = null;
 
   /** 停止とみなすまでの時間。既定は STALL_TIMEOUT_MS（テストから縮められる）。 */
   private readonly stallTimeoutMs: number;
@@ -290,6 +292,16 @@ export class SidecarCapture implements CaptureStrategy {
     this.applyConfig();
   }
 
+  /**
+   * 折りたたみで点いているパネルの向き（`FoldState.rotate`）。内側パネルは端末を
+   * 回していなくても UI が横に寝ているので、mobilecli の向き（`setLandscape`）では
+   * 起こせない。null で `setLandscape` の値へ戻る。
+   */
+  setPanelRotation(degrees: number | null): void {
+    this.panelRotate = degrees;
+    this.applyConfig();
+  }
+
   /** 実際に送るべき設定。設定値・表示幅・操作状態・向きから決まる。 */
   private effective(): EffectiveCapture & {rotate: number} {
     return {
@@ -298,7 +310,7 @@ export class SidecarCapture implements CaptureStrategy {
         interacting: this.interacting,
         recording: this.recording,
       }),
-      rotate: this.rotate,
+      rotate: this.panelRotate ?? this.rotate,
     };
   }
 

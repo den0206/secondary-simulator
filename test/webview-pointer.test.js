@@ -93,6 +93,8 @@ const els = {
   'btn-home': makeEl('btn-home'),
   'btn-back': makeEl('btn-back'),
   'btn-rotate': makeEl('btn-rotate'),
+  'btn-fold': makeEl('btn-fold'),
+  'btn-fold-label': makeEl('btn-fold-label'),
   'btn-disconnect': makeEl('btn-disconnect'),
   'btn-record': makeEl('btn-record'),
   'btn-record-label': makeEl('btn-record-label'),
@@ -928,6 +930,24 @@ els['simulator-container'].focus = () => focused++;
 fire('simulator-container', 'pointerdown', {clientX: 150, clientY: 300});
 fire('simulator-container', 'pointerup', {clientX: 150, clientY: 300});
 check('pointerdown でコンテナに focus する', focused === 1, `回数=${focused}`);
+
+console.log('\n22b) 折りたたみの開閉ボタン');
+listeners['window:message']({data: {type: 'fold', open: false}});
+check('閉じた折りたたみでは「開く」を出す',
+  els['btn-fold'].hidden === false && els['btn-fold-label'].textContent === 'Unfold',
+  els['btn-fold-label'].textContent);
+listeners['window:message']({data: {type: 'fold', open: true}});
+check('開いていれば「閉じる」', els['btn-fold-label'].textContent === 'Fold');
+check('折りたたみでは回転ボタンを無効にする', els['btn-rotate'].disabled === true);
+sent.length = 0;
+listeners['btn-fold:click']();
+check('押すと toggleFold を送る', sent.some((m) => m.type === 'toggleFold'));
+listeners['window:message']({data: {type: 'fold', open: null}});
+check('画面が 1 枚の端末では出さない', els['btn-fold'].hidden === true);
+check('画面が 1 枚なら回転ボタンを戻す', els['btn-rotate'].disabled === false);
+listeners['window:message']({data: {type: 'fold', open: true}});
+listeners['window:message']({data: {type: 'disconnected'}});
+check('切断で隠す', els['btn-fold'].hidden === true && els['btn-rotate'].disabled === false);
 
 // ---- ここから先は非同期（チャンクの送信が FileReader を挟む）------------------
 // 送信は Promise の鎖 + FileReader（setTimeout）を経由するので、数回まわす

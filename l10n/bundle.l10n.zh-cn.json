@@ -109,5 +109,13 @@
   "Rotate the device": "旋转设备",
   "Secondary Simulator: Could not rotate the device — {0}": "Secondary Simulator: 无法旋转设备 — {0}",
   "Rotate": "旋转",
-  "Secondary Simulator: Stop the recording before rotating the device.": "Secondary Simulator: 旋转设备前请先停止录制。"
+  "Secondary Simulator: Stop the recording before rotating the device.": "Secondary Simulator: 旋转设备前请先停止录制。",
+  "Unfold": "展开",
+  "Fold": "合上",
+  "Open or close the foldable device": "展开或合上折叠设备",
+  "Secondary Simulator: Stop the recording before opening or closing the device.": "Secondary Simulator: 展开或合上设备前请先停止录制。",
+  "Secondary Simulator: Could not open or close the device — {0}": "Secondary Simulator: 无法展开或合上设备 — {0}",
+  "Secondary Simulator: The device did not switch screens. If it is asleep, wake it with the side button and try again.": "Secondary Simulator: 设备未切换屏幕。如果设备处于睡眠状态，请用侧边按钮唤醒后重试。",
+  "Rotation is not supported on foldable devices yet": "暂不支持旋转折叠设备",
+  "Secondary Simulator: Rotation is not supported on foldable devices yet.": "Secondary Simulator: 暂不支持旋转折叠设备。"
 }

@@ -546,6 +546,11 @@ body.landscape-screen .side-btn {
     transform 0.08s ease;
 }
 
+/* display: inline-flex が UA の [hidden] に勝つので明示する（開閉ボタン） */
+.control-btn[hidden] {
+  display: none;
+}
+
 .control-btn:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;

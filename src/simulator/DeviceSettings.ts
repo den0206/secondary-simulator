@@ -296,3 +296,70 @@ export async function setLocation(
     `${value.latitude},${value.longitude}`
   );
 }
+
+/**
+ * 折りたたみ端末で点いているパネル。画面が 1 枚の端末では null。
+ *
+ * - `displayId`: サイドカーの `panel` に渡す screenID（devicectl の displayId と同じ値）
+ * - `rotate`: サイドカーが面を起こす角度。**内側パネルは開いた既定で UI が横に寝ている**
+ *   （iPhone Duo: 2007×2853 の面に `rot90`、UI の上端が面の左辺）
+ * - `open`: 点いているのが一番大きいパネルか（＝開いている）
+ */
+export interface FoldState {
+  displayId: number;
+  rotate: number;
+  open: boolean;
+}
+
+// devicectl の向き → サイドカーの rotate（面を回す向きが逆になる）。rot90 だけ実測
+const PANEL_ROTATION: Record<string, number> = {rot90: 270, rot180: 180, rot270: 90};
+
+export function parseFoldState(json: unknown): FoldState | null {
+  const displays = (json as {result?: {displays?: unknown}})?.result?.displays;
+  if (!Array.isArray(displays)) return null;
+  type Panel = {
+    displayId: number;
+    active: boolean;
+    primary: boolean;
+    area: number;
+    orientation: string;
+  };
+  const panels: Panel[] = [];
+  for (const d of displays as Record<string, unknown>[]) {
+    // TV 出力・CarPlay・可変サイズの画面は数えない
+    if (!d || typeof d !== 'object' || !(d.type as Record<string, unknown>)?.integrated) continue;
+    const size = Array.isArray(d.nativeSize) ? d.nativeSize.map(Number) : [];
+    if (typeof d.displayId !== 'number' || size.length !== 2) continue;
+    panels.push({
+      displayId: d.displayId,
+      active: d.active === true,
+      primary: d.primary === true,
+      area: size[0] * size[1],
+      orientation: String(d.currentOrientation ?? ''),
+    });
+  }
+  if (panels.length < 2) return null;
+  const lit = panels.find((p) => p.active) ?? panels.find((p) => p.primary) ?? panels[0];
+  return {
+    displayId: lit.displayId,
+    rotate: PANEL_ROTATION[lit.orientation] ?? 0,
+    open: panels.every((p) => p.area <= lit.area),
+  };
+}
+
+/** iOS だけ。devicectl が使えない（Xcode 26 以前など）ときは null。 */
+export async function readFoldState(device: Device): Promise<FoldState | null> {
+  if (device.platform !== 'ios') return null;
+  const text = await run('xcrun', [
+    'devicectl',
+    'device',
+    'info',
+    'displays',
+    '--device',
+    device.id,
+    '--json-output',
+    '-',
+    '--quiet',
+  ]);
+  return parseFoldState(JSON.parse(text) as unknown);
+}

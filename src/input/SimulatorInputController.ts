@@ -184,6 +184,23 @@ export class SimulatorInputController {
     });
   }
 
+  /**
+   * 折りたたみ端末のタッチと取り込みの宛先パネル（screenID）。HID 経路のときだけ。
+   * **0 のままだと開いた端末の内側パネルにタッチが届かない**（既定画面＝外側へ行く）。
+   */
+  async setPanel(displayId: number): Promise<void> {
+    const sidecar = this.activeSidecar;
+    if (!sidecar) return;
+    await sidecar.send({cmd: 'panel', device: this.opts.deviceId, display: displayId});
+  }
+
+  /** 折りたたみのヒンジを動かす（0=閉 〜 180=全開）。約 1 秒かけて畳むので待ちは長めに取る。 */
+  async moveHinge(from: number, to: number): Promise<void> {
+    const sidecar = this.activeSidecar;
+    if (!sidecar) throw new Error('HID 経路でしか開閉できない');
+    await sidecar.send({cmd: 'hinge', device: this.opts.deviceId, from, to}, 10_000);
+  }
+
   /** キー・テキストの送り先。設定が WDA 指定なら HID を使っていても WDA へ回す。 */
   private keyBackend(): InputBackend {
     return this.opts.preferWdaKeys?.() ? this.wdaFallback : this.primary;

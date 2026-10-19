@@ -10,9 +10,17 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Added
+
+- Fold and unfold foldable iOS Simulators (iPhone Duo) with a new button next to Rotate. It appears only for devices with two built-in screens. Rotate is disabled on these devices for now, because the simulator overrides their orientation.
+
 ### Changed
 
 - Update bundled mobilecli to 1.0.21.
+
+### Fixed
+
+- iPhone Duo showed a black screen: the sidecar captured whichever screen it found first (often the dark inner panel). It now captures the screen the device is using, follows folds made elsewhere (such as Device Hub), turns the inner panel upright, and sends touches to that panel.
 
 ## [0.9.7] — 2026-10-03
 
