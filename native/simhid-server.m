@@ -21,7 +21,10 @@
 //                                                sink: "stdout"(既定) | "http"
 //                                                mode: "auto"(既定・変更通知) | "poll"
 //   captureConfig { fps?, maxWidth?, quality?, rotate? }  配信中の設定を張り直さずに変える
-//                                                rotate: 0(既定) | 90（横向き。面を左へ 90° 回して送る）
+//                                                rotate: 0(既定) | 90（面を左へ 90° 回す）
+//                                                        | 180 | 270（面を右へ 90° 回す）
+//   panel { display }                            取り込みとタッチの宛先パネル（screenID。0=既定）
+//   hinge { from, to }                           折りたたみのヒンジ角（0=閉 〜 180=全開）
 //   captureStop                                  同 停止
 //   captureServe { enable, port?, token? }       フレームの HTTP 配信（device 不要）
 //   ping
@@ -98,6 +101,14 @@ static uint64_t nowNs(void) {
 @property(nonatomic, strong) id simDevice;
 @property(nonatomic, strong) id hidClient;
 @property(nonatomic, strong) xpc_connection_t remoteInput;
+/** 折りたたみのヒンジ用（vendordefined サービス）。`hinge` の初回に開く。 */
+@property(nonatomic, strong) xpc_connection_t vendorInput;
+/**
+ * 取り込みとタッチの宛先パネル（SimScreen の screenID）。0 は端末の既定画面。
+ * **折りたたみは画面が 2 枚ある**（iPhone Duo: 外側 1、内側 3）。どちらが点いているかは
+ * ここでは判定できない（backlight は開閉に追従しない）ので、親が devicectl で読んで渡す。
+ */
+@property(nonatomic, assign) uint32_t displayID;
 @property(nonatomic, assign) uint64_t lastDragNs;
 // drag coalescing 用の保留座標
 @property(nonatomic, assign) BOOL pendingValid;
@@ -113,11 +124,12 @@ static uint64_t nowNs(void) {
 @property(nonatomic, assign) double jpegQuality;
 @property(nonatomic, assign) double maxWidth;
 /**
- * 横向きか。**フレームバッファは端末を回しても縦のまま**で、中身だけが横に寝る
- * （実測: iPhone 18 Pro / iOS 27 で 1206×2622 のまま、UI の上端が面の右辺）。
- * 表示側で回すと録画の canvas に写らないので、ここで起こしてから JPEG にする。
+ * 面を起こす角度（0 / 90 / 180 / 270）。**フレームバッファは端末を回しても縦のまま**で、
+ * 中身だけが横に寝る（実測: iPhone 18 Pro / iOS 27 で 1206×2622 のまま、横向きでは
+ * UI の上端が面の右辺 = 90。iPhone Duo の内側パネルは開いた既定で UI の上端が面の
+ * 左辺 = 270）。表示側で回すと録画の canvas に写らないので、ここで起こしてから JPEG にする。
  */
-@property(nonatomic, assign) BOOL rotate90;
+@property(nonatomic, assign) int rotate;
 /** 設定された上限 fps。ポーリング間隔とプッシュ時のレート制限に使う。 */
 @property(nonatomic, assign) double fps;
 @property(nonatomic, assign) uint32_t lastSeed;      // IOSurface の世代。同じなら送らない
@@ -582,20 +594,25 @@ static BOOL startServe(int port, NSString *token, NSString **err) {
 // OpenDeviceHub's PanelInputSession (MIT; see THIRD-PARTY-NOTICES.md).
 static const char *kRemoteInputService = "com.apple.coredevice.feature.remote.hid.digitizer";
 
-static xpc_object_t inputMessage(const char *type, xpc_object_t payload, BOOL barrier) {
+// Hinge reports go through the vendor defined service; the guest's locationd applies them.
+// Wire format verified in OpenDeviceHub's FoldableControl (MIT; see THIRD-PARTY-NOTICES.md).
+static const char *kRemoteVendorService = "com.apple.coredevice.feature.remote.hid.vendordefined";
+
+static xpc_object_t inputMessage(const char *feature, const char *type, xpc_object_t payload,
+                                 BOOL barrier) {
   xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
   xpc_dictionary_set_string(message, "messageType", type);
-  xpc_dictionary_set_string(message, "featureIdentifier", kRemoteInputService);
+  xpc_dictionary_set_string(message, "featureIdentifier", feature);
   xpc_dictionary_set_bool(message, "isBarrier", barrier);
   xpc_dictionary_set_value(message, "payload", payload);
   return message;
 }
 
-static BOOL sendRemoteMessage(xpc_connection_t connection, const char *type,
-                              xpc_object_t payload) {
+static BOOL sendRemoteMessage(xpc_connection_t connection, const char *feature,
+                              const char *type, xpc_object_t payload) {
   dispatch_semaphore_t sem = dispatch_semaphore_create(0);
   __block BOOL answered = NO;
-  xpc_connection_send_message_with_reply(connection, inputMessage(type, payload, YES),
+  xpc_connection_send_message_with_reply(connection, inputMessage(feature, type, payload, YES),
       dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^(xpc_object_t reply) {
         answered = xpc_get_type(reply) != XPC_TYPE_ERROR;
         if (!answered) fprintf(stderr, "[simhid] remote input error: %s\n",
@@ -609,12 +626,12 @@ static BOOL sendRemoteMessage(xpc_connection_t connection, const char *type,
   return answered;
 }
 
-static xpc_connection_t remoteInputForDevice(id device, BOOL *available) {
+static xpc_connection_t openRemoteService(id device, const char *service, BOOL *available) {
   *available = NO;
   SEL lookup = sel_registerName("lookup:error:");
   if (![device respondsToSelector:lookup]) return nil;
   mach_port_t port = ((mach_port_t (*)(id, SEL, id, NSError **))objc_msgSend)(
-      device, lookup, @(kRemoteInputService), NULL);
+      device, lookup, @(service), NULL);
   if (!port) return nil;
   *available = YES;
   xpc_object_t (*endpointForPort)(mach_port_t, uint64_t, uint64_t) =
@@ -643,13 +660,17 @@ static xpc_connection_t remoteInputForDevice(id device, BOOL *available) {
   xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
   xpc_dictionary_set_uint64(payload, "usageCode", 0);
   xpc_dictionary_set_uint64(payload, "state", 2);
-  if (!sendRemoteMessage(connection, "IndigoKeyboardButtonEvent", payload)) {
+  if (!sendRemoteMessage(connection, service, "IndigoKeyboardButtonEvent", payload)) {
     xpc_connection_cancel(connection);
     return nil;
   }
   usleep(150000); // Guest services need to attach before the first report.
-  fprintf(stderr, "[simhid] input: CoreDevice digitizer service\n");
+  fprintf(stderr, "[simhid] input: CoreDevice %s\n", service);
   return connection;
+}
+
+static xpc_connection_t remoteInputForDevice(id device, BOOL *available) {
+  return openRemoteService(device, kRemoteInputService, available);
 }
 
 static BOOL sendRemoteInput(DeviceState *st, const char *type, xpc_object_t payload) {
@@ -659,8 +680,10 @@ static BOOL sendRemoteInput(DeviceState *st, const char *type, xpc_object_t payl
   xpc_dictionary_set_uint64(barrier, "usageCode", 0);
   xpc_dictionary_set_uint64(barrier, "state", 2);
   for (int attempt = 0; attempt < 2; attempt++) {
-    xpc_connection_send_message(st.remoteInput, inputMessage(type, payload, NO));
-    if (sendRemoteMessage(st.remoteInput, "IndigoKeyboardButtonEvent", barrier)) return YES;
+    xpc_connection_send_message(st.remoteInput, inputMessage(kRemoteInputService, type, payload, NO));
+    if (sendRemoteMessage(st.remoteInput, kRemoteInputService, "IndigoKeyboardButtonEvent", barrier)) {
+      return YES;
+    }
     if (attempt) break;
     // legacy の sendToClient と同じく、接続を張り直して 1 回だけ再試行する
     NSUUID *u = ((id (*)(id, SEL))objc_msgSend)(st.simDevice, sel_registerName("UDID"));
@@ -803,7 +826,19 @@ static id surfaceForDescriptor(id descriptor) {
   return ((id (*)(id, SEL))objc_msgSend)(descriptor, sel_registerName("framebufferSurface"));
 }
 
-static id displayDescriptorForDevice(id simDevice, id *ioClientOut) {
+// SimScreenProperties.screenID。ROCK のプロキシ越しでも素の値で返る（iPhone Duo / Xcode 27.1 で実測）
+static uint32_t screenIDForDescriptor(id descriptor) {
+  id props = ((id (*)(id, SEL))objc_msgSend)(descriptor, sel_registerName("screenProperties"));
+  if (!props) return 0;
+  return ((uint32_t (*)(id, SEL))objc_msgSend)(props, sel_registerName("screenID"));
+}
+
+/**
+ * displayID が 0 なら面を返す最初の descriptor、それ以外はその screenID の descriptor。
+ * **ポートの並びは起動ごとに変わる**（iPhone Duo で内側と外側が入れ替わった）ので、
+ * 画面が 2 枚ある端末で「最初」に頼ると消灯側を映し続ける。
+ */
+static id displayDescriptorForDevice(id simDevice, uint32_t displayID, id *ioClientOut) {
   Class ioCls = objc_lookUpClass("SimDeviceIOClient");
   if (!ioCls) return nil;
   id client = ((id (*)(id, SEL, id, dispatch_queue_t, void (^)(NSError *)))objc_msgSend)(
@@ -822,6 +857,7 @@ static id displayDescriptorForDevice(id simDevice, id *ioClientOut) {
     }
     // 該当 descriptor は複数ある（外部ディスプレイ等）。実際に面を返すものだけ使う。
     if (!surfaceForDescriptor(desc)) continue;
+    if (displayID && screenIDForDescriptor(desc) != displayID) continue;
     *ioClientOut = client;
     return desc;
   }
@@ -889,8 +925,9 @@ static void captureFrame(DeviceState *st, NSString *udid) {
     st.hasLastSeed = YES;
 
     CIImage *img = [CIImage imageWithIOSurface:surface];
-    // ponytail: mobilecli の landscape（UI の上端が面の右辺）だけを起こす。逆向きの横は未対応
-    if (st.rotate90) img = [img imageByApplyingCGOrientation:kCGImagePropertyOrientationLeft];
+    if (st.rotate == 90) img = [img imageByApplyingCGOrientation:kCGImagePropertyOrientationLeft];
+    else if (st.rotate == 180) img = [img imageByApplyingCGOrientation:kCGImagePropertyOrientationDown];
+    else if (st.rotate == 270) img = [img imageByApplyingCGOrientation:kCGImagePropertyOrientationRight];
     CGFloat width = img.extent.size.width;
     if (width < 1) return;
     CGFloat scale = (st.maxWidth > 0 && width > st.maxWidth) ? st.maxWidth / width : 1.0;
@@ -951,7 +988,7 @@ static void captureTick(DeviceState *st, NSString *udid) {
       if (++st.noSurfaceTicks < kReacquireAfterTicks) return;
       st.noSurfaceTicks = 0;
       id client = nil;
-      id desc = displayDescriptorForDevice(st.simDevice, &client);
+      id desc = displayDescriptorForDevice(st.simDevice, st.displayID, &client);
       if (!desc) return;  // まだ駄目。次の周期でまた試す
       fprintf(stderr, "[simhid] display descriptor を取り直した\n");
       unregisterPush(st);
@@ -1117,11 +1154,11 @@ static void applyCaptureTimerInterval(DeviceState *st) {
 
 // gQueue 上。二重開始は no-op。
 static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double maxWidth,
-                         double quality, BOOL rotate90, BOOL sinkHttp, NSString **err) {
+                         double quality, int rotate, BOOL sinkHttp, NSString **err) {
   if (st.captureTimer) return YES;
   if (!st.displayDescriptor) {
     id client = nil;
-    id desc = displayDescriptorForDevice(st.simDevice, &client);
+    id desc = displayDescriptorForDevice(st.simDevice, st.displayID, &client);
     if (!desc) {
       *err = @"ディスプレイの descriptor が見つからない";
       return NO;
@@ -1132,7 +1169,7 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
   if (!st.ciContext) st.ciContext = [CIContext contextWithOptions:nil];
   st.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
   st.maxWidth = maxWidth;
-  st.rotate90 = rotate90;
+  st.rotate = rotate;
   st.fps = fps;
   st.sinkHttp = sinkHttp;
   st.hasLastSeed = NO;
@@ -1168,7 +1205,7 @@ static BOOL startCapture(DeviceState *st, NSString *udid, double fps, double max
  * 読んでいるフィールドを、別のキューから直接触らない）。
  */
 static BOOL configureCapture(DeviceState *st, double fps, double maxWidth, double quality,
-                             BOOL rotate90, NSString **err) {
+                             int rotate, NSString **err) {
   if (!st.captureTimer) {
     *err = @"取り込みが開始されていない";
     return NO;
@@ -1180,7 +1217,7 @@ static BOOL configureCapture(DeviceState *st, double fps, double maxWidth, doubl
     if (!s || s.captureTimer != timer) return;  // 途中で止まった/張り直された
     s.jpegQuality = MIN(MAX(quality, 0.1), 1.0);
     s.maxWidth = maxWidth;
-    s.rotate90 = rotate90;
+    s.rotate = rotate;
     // 幅や品質が変わっても画面が静止していると次のフレームが出ない
     // （seed も JPEG も同じなので捨てられる）。比較対象を落として1枚出させる。
     s.hasLastSeed = NO;
@@ -1229,7 +1266,8 @@ static BOOL injectTouch(DeviceState *st, CGPoint p1, const CGPoint *p2, uint64_t
     xpc_dictionary_set_uint64(payload, "eventType",
         nsEventType == kMouseDown ? 0 : nsEventType == kMouseUp ? 2 : 1);
     xpc_dictionary_set_uint64(payload, "edge", 0);
-    xpc_dictionary_set_uint64(payload, "target", 0);
+    // 0 は端末の既定画面。折りたたみを開いている間は内側パネルを名指ししないと届かない
+    xpc_dictionary_set_uint64(payload, "target", st.displayID);
     return sendRemoteInput(st, "IndigoDigitizerEvent", payload);
   }
   void *msg = mouseMsg(&p1, p2, kTouchTarget, nsEventType, 0, 1.0, 1.0);
@@ -1338,11 +1376,112 @@ static BOOL injectText(DeviceState *st, NSString *value, int *sent, int *skipped
   return YES;
 }
 
+#pragma mark - 折りたたみ（パネルとヒンジ）
+
+/**
+ * 取り込みとタッチの宛先パネルを替える（gQueue 上）。取り込み中なら descriptor も
+ * 取り込みキュー上で張り替える（captureTick の取り直しと同じ手順）。
+ */
+static void setPanel(DeviceState *st, NSString *udid, uint32_t displayID) {
+  if (st.displayID == displayID) return;
+  st.displayID = displayID;
+  if (!st.displayDescriptor) return;  // 次の captureStart が選ぶ
+  __weak DeviceState *weakSt = st;
+  dispatch_async(gCaptureQueue, ^{
+    DeviceState *s = weakSt;
+    if (!s || s.displayID != displayID) return;
+    id client = nil;
+    id desc = displayDescriptorForDevice(s.simDevice, displayID, &client);
+    if (!desc) return;  // 面がまだ無い。captureTick の取り直しに任せる
+    unregisterPush(s);
+    s.ioClient = client;
+    s.displayDescriptor = desc;
+    s.hasLastSeed = NO;
+    s.lastJpeg = nil;
+    if (s.captureTimer) {
+      registerPush(s, udid);
+      applyCaptureTimerInterval(s);
+    }
+  });
+}
+
+static dispatch_queue_t gHingeQueue;
+
+/**
+ * ヒンジを from から to へ動かす（gHingeQueue 上）。
+ *
+ * **一度に飛ばすと閉じそこねる**（iPhone Duo / iOS 27.1 で 180→0 の一発送信が 4 回中 2 回、
+ * 外側パネルへ切り替わらなかった。掃引は 8 回中 8 回）。Device Hub と同じく手で畳む
+ * ように 16ms おきに送る。時間と緩急は OpenDeviceHub の HingeMove に合わせた。
+ * 端末がスリープしている間はゲストが角度を受け取ってもパネルを切り替えない。
+ */
+static BOOL sweepHinge(DeviceState *st, double from, double to, NSString **err) {
+  from = MIN(MAX(from, 0), 180);
+  to = MIN(MAX(to, 0), 180);
+  if (!st.vendorInput) {
+    BOOL available = NO;
+    st.vendorInput = openRemoteService(st.simDevice, kRemoteVendorService, &available);
+    if (!st.vendorInput) {
+      *err = available ? @"ヒンジのサービスに接続できない" : @"この端末はヒンジを持たない";
+      return NO;
+    }
+  }
+  static CFDataRef (*serialize)(CFTypeRef, CFOptionFlags);
+  if (!serialize) {
+    serialize = dlsym(dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW),
+                      "IOCFSerialize");
+    if (!serialize) { *err = @"IOCFSerialize を解決できない"; return NO; }
+  }
+  double duration = MAX(0.35, MIN(1.0, fabs(to - from) / 180));
+  // 進みは経過時間で決める。1 回の送信が約 70ms かかる（実測）ので、回数で刻むと 4 秒を超える
+  uint64_t start = nowNs();
+  for (double t = 0; t < 1;) {
+    t = MIN(1.0, (double)(nowNs() - start) / 1e9 / duration);
+    double angle = from + (to - from) * t * t * t * (t * (6 * t - 15) + 10);
+    // ゲストは本文を JSON でも plist でもなく、IOKit の直列化として読む
+    NSDictionary *report = @{
+      @"provider": @"com.apple.Virtualization.VirtualMachines",
+      @"source": @"hinge-slider-control",
+      @"type": @"range",
+      @"value": @(angle),
+    };
+    CFDataRef body = serialize((__bridge CFTypeRef)report, 1);
+    if (!body) { *err = @"ヒンジのレポートを作れない"; return NO; }
+    xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_uint64(payload, "usagePage", 0xff61);
+    xpc_dictionary_set_uint64(payload, "usage", 0x5b);
+    xpc_dictionary_set_uint64(payload, "version", 0);
+    xpc_dictionary_set_data(payload, "data", CFDataGetBytePtr(body), CFDataGetLength(body));
+    CFRelease(body);
+    xpc_connection_send_message(st.vendorInput,
+        inputMessage(kRemoteVendorService, "IndigoVendorDefinedEvent", payload, NO));
+    if (t < 1) usleep(16000);
+  }
+  // 届いたことだけ確かめる（barrier は中身を実行しない。sendRemoteInput と同じ）
+  xpc_object_t barrier = xpc_dictionary_create(NULL, NULL, 0);
+  xpc_dictionary_set_uint64(barrier, "usageCode", 0);
+  xpc_dictionary_set_uint64(barrier, "state", 2);
+  if (!sendRemoteMessage(st.vendorInput, kRemoteVendorService, "IndigoKeyboardButtonEvent",
+                         barrier)) {
+    xpc_connection_cancel(st.vendorInput);
+    st.vendorInput = nil;  // 次の hinge で開き直す
+    *err = @"ヒンジのサービスが応答しない";
+    return NO;
+  }
+  return YES;
+}
+
 #pragma mark - コマンド処理（gQueue 上）
 
 static double numAt(NSDictionary *d, NSString *k, double dflt) {
   id v = d[k];
   return [v isKindOfClass:NSNumber.class] ? [v doubleValue] : dflt;
+}
+
+// 0 / 90 / 180 / 270 以外は 0（起こさない）
+static int rotationAt(NSDictionary *cmd) {
+  int r = (int)numAt(cmd, @"rotate", 0);
+  return (r == 90 || r == 180 || r == 270) ? r : 0;
 }
 
 static void handleCommand(NSDictionary *cmd) {
@@ -1439,13 +1578,25 @@ static void handleCommand(NSDictionary *cmd) {
       gPushEnabled = ![modeVal isEqualToString:@"poll"];
     }
     ok = startCapture(st, udid, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
-                      numAt(cmd, @"quality", 0.6), numAt(cmd, @"rotate", 0) == 90,
+                      numAt(cmd, @"quality", 0.6), rotationAt(cmd),
                       [cmd[@"sink"] isEqual:@"http"], &err);
   } else if ([name isEqualToString:@"captureConfig"]) {
     ok = configureCapture(st, numAt(cmd, @"fps", 30), numAt(cmd, @"maxWidth", 640),
-                          numAt(cmd, @"quality", 0.6), numAt(cmd, @"rotate", 0) == 90, &err);
+                          numAt(cmd, @"quality", 0.6), rotationAt(cmd), &err);
   } else if ([name isEqualToString:@"captureStop"]) {
     stopCapture(st);
+  } else if ([name isEqualToString:@"panel"]) {
+    flushPending(st);
+    setPanel(st, udid, (uint32_t)MAX(numAt(cmd, @"display", 0), 0));
+  } else if ([name isEqualToString:@"hinge"]) {
+    // 掃引に約 1 秒かかる。入力のキューを塞がないよう別キューで送り、終わってから応答する
+    double from = numAt(cmd, @"from", 0), to = numAt(cmd, @"to", 0);
+    dispatch_async(gHingeQueue, ^{
+      NSString *herr = nil;
+      BOOL hok = sweepHinge(st, from, to, &herr);
+      respond(reqId, hok, herr, (double)(nowNs() - t0) / 1e6);
+    });
+    return;
   } else if ([name isEqualToString:@"text"]) {
     NSString *value = cmd[@"value"];
     if (![value isKindOfClass:NSString.class]) { ok = NO; err = @"value がない"; }
@@ -1587,6 +1738,8 @@ int main(int argc, const char *argv[]) {
     gQueue = dispatch_queue_create("com.secondary-simulator.simhid", DISPATCH_QUEUE_SERIAL);
     gCaptureQueue =
         dispatch_queue_create("com.secondary-simulator.simhid.capture", DISPATCH_QUEUE_SERIAL);
+    gHingeQueue =
+        dispatch_queue_create("com.secondary-simulator.simhid.hinge", DISPATCH_QUEUE_SERIAL);
 
     NSString *reason = nil;
     if (!setup(&reason)) {
