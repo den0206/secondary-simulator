@@ -93,7 +93,9 @@ B 案の複雑さに見合う利得がないため **A 案を採用**する。�
 | `hardwareKeyboard` | `enable`（bool） | Simulator.app の ⌘K と同じ設定（`SimDevice.setHardwareKeyboardEnabled:`）。`false` で端末がソフトウェアキーボードを描く。**HID のキー注入は `true` に戻す**ので、出したままにする間はキーを WDA へ回す（`docs/ios-hid-injection.md` §6） |
 | `text` | `value`（文字列） | ASCII 一括入力（サイドカーが分解）。**応答は注入し終えてから返る**ので、呼び手は刻んで送り、待ち時間を長さから決める（§10.3） |
 | `captureStart` | `fps?`(30), `maxWidth?`(640), `quality?`(0.6), `sink?`(`stdout`), `mode?`(`auto`), `rotate?`(0) | 画面バッファの JPEG 配信を開始（§3.5） |
-| `captureConfig` | `fps?`, `maxWidth?`, `quality?`, `rotate?` | 配信中の設定を**張り直さずに**変える（§3.5）。`rotate: 90` は横向き — **フレームバッファは端末を回しても縦のまま**（UI の上端が面の右辺）なので、面を左へ 90° 回してから JPEG にする。`maxWidth` は回した後の幅に効く |
+| `captureConfig` | `fps?`, `maxWidth?`, `quality?`, `rotate?` | 配信中の設定を**張り直さずに**変える（§3.5）。`rotate: 90` は横向き — **フレームバッファは端末を回しても縦のまま**（UI の上端が面の右辺）なので、面を左へ 90° 回してから JPEG にする。`270` は右へ 90°（折りたたみの内側パネル。§3.8）、`180` は上下逆。`maxWidth` は回した後の幅に効く |
+| `panel` | `display` | 取り込みとタッチの宛先パネル（SimScreen の `screenID`。0 は既定画面）。折りたたみ端末用（§3.8） |
+| `hinge` | `from`, `to` | 折りたたみのヒンジ角（0=閉〜180=全開）を約 1 秒かけて動かす。応答は動かし終えてから（§3.8） |
 | `captureStop` | — | 同 停止 |
 | `captureServe` | `enable`, `port?`, `token?` | フレームの HTTP 直結配信（§3.6）。**`device` を取らない** |
 | `ping` | — | 生存確認 |
@@ -213,6 +215,28 @@ glass-to-glass で一番削れる。
 
 ---
 
+### 3.8 折りたたみ端末（iPhone Duo）
+
+画面が 2 枚ある（外側 `LCD` = screenID 1、1398×2034 / 内側 `LCD-1` = 3、2007×2853）。
+Xcode 27.1 / iOS 27.1 で実測した事実:
+
+- **どちらの descriptor も面を返す**。消灯側は黒（または最後の絵）のまま。**ポートの並びは
+  起動ごとに変わる**ので、「面を返す最初の descriptor」では消灯側を映すことがある。
+- **点いているパネルはサイドカーからは判定できない**。`screenProperties.backlight.state` は
+  開閉に追従しない。`xcrun devicectl device info displays` の `active` が正しく（約 0.2 秒）、
+  その `displayId` が `screenID` と一致する。拡張が読んで `panel` で渡す。
+- **内側パネルは開いた既定で UI が横に寝ている**（`currentOrientation: rot90`、UI の上端が
+  面の左辺）。`rotate: 270` で起こす。
+- **タッチはパネルを名指しする**（`IndigoDigitizerEvent` の `target` = screenID）。0 は既定画面
+  （外側）宛てで、開いている間は内側に届かない。座標は宛先パネルの面の正規化座標。
+- **ヒンジは vendordefined サービスへの `IndigoVendorDefinedEvent`**（usagePage `0xff61` /
+  usage `0x5b`、本文は `{provider, source: "hinge-slider-control", type: "range", value}` を
+  `IOCFSerialize` したもの）。ゲストの `locationd` が受ける。**一度に飛ばすと閉じそこねる**
+  （180→0 の一発送信は 4 回中 2 回失敗、16ms おきの掃引は 8 回中 8 回成功）。1 回の送信に
+  約 70ms かかるので、進みは経過時間で決める。
+- **スリープ中はパネルが切り替わらない**（ゲストは角度を受け取るが、内側に古い絵が残る）。
+  Device Hub でも同じく外側が黒いまま残る。
+
 ## 4. 座標系
 
 - webview・拡張ホスト・サイドカーの**全経路で正規化座標 `[0.0, 1.0]` を使う**
@@ -220,7 +244,8 @@ glass-to-glass で一番削れる。
 - ピクセルが要るのはバックエンドの内側だけ。`WdaBackend` は `touchUp` 時に、
   `AndroidBackend` は送る直前に、`getScreenSize()` で直す
   （`screenSize` 未取得だとここで例外になる。HID 経路にはこの制約はない）
-- 画面回転は将来対応。当面は縦向き前提で正規化する
+- 座標は**縦の面**の正規化座標。面を起こして見せているとき（`rotate`）は拡張ホストが
+  `toDeviceSpace` で戻してから送る
 
 ---
 

@@ -116,6 +116,13 @@ The CoreDevice digitizer XPC connection and input message protocol in
 `native/simhid-server.m` are adapted from OpenDeviceHub’s `PanelInputSession.swift`.
 Source: https://github.com/Mastersam07/OpenDeviceHub/blob/dev/engine/Sources/OpenDeviceHubEngine/Adapter/PanelInputSession.swift
 
+The foldable hinge report (vendor defined HID event) and the hinge sweep timing in
+`native/simhid-server.m` are adapted from OpenDeviceHub’s `FoldableControl.swift` and
+`HingeMove.swift` (whose duration and easing OpenDeviceHub credits to Siniulator by
+Krzysztof Magiera, MIT).
+Sources: https://github.com/Mastersam07/OpenDeviceHub/blob/dev/engine/Sources/OpenDeviceHubEngine/Adapter/FoldableControl.swift
+https://github.com/Mastersam07/OpenDeviceHub/blob/dev/engine/Sources/OpenDeviceHubEngine/Input/HingeMove.swift
+
 MIT License
 
 Copyright (c) 2026 Samuel Abada
