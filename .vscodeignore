@@ -10,6 +10,11 @@ test/**
 vsix/**
 src/**
 native/*.m
+# Firebase Hosting の公開サイト。拡張の実行には使わない。
+site/**
+.firebase/**
+.firebaserc
+firebase.json
 .gitignore
 .vscodeignore
 # ローカルの .env（OVSX トークン等）。git 管理外だが VSIX には入りうるので明示的に外す。
@@ -31,6 +36,8 @@ node_modules/**
 media/demo.gif
 media/recomend-layout.png
 media/walkthrough/move.png
+# package.json の icon は PNG。SVG は元絵で、実行時に読まれない。
+media/icon.svg
 
 *.md
 !README.md

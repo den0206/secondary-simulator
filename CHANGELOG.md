@@ -13,6 +13,7 @@ so **there is no need to move entries by hand**.
 ### Changed
 
 - Update bundled mobilecli to 1.0.22.
+- Stop packaging the project website and Firebase config files in the VSIX, reducing the package size.
 
 ## [1.0.0] — 2026-10-19
 

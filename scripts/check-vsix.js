@@ -21,4 +21,5 @@ for (const [name, version] of Object.entries(mobilecli.optionalDependencies)) {
   assert.equal(JSON.parse(read(`${dir}/package.json`)).version, version);
 }
 assert.ok(![...files].some((file) => /(^|\/)\.env(?:\.|$)/.test(file)), 'Packaged .env');
+assert.ok(![...files].some((file) => /^extension\/(site\/|\.firebase|firebase\.json)/.test(file)), 'Packaged Firebase site');
 console.log(`VSIX verified: ${mobilecli.version}, all ${Object.keys(mobilecli.optionalDependencies).length} platform binaries`);
