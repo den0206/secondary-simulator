@@ -62,7 +62,7 @@ async function main() {
     provider.mobileCliClient = failingClient;
     await provider.refreshDevices();
   }
-  check('8 回失敗した', provider.deviceListFailures === 8, String(provider.deviceListFailures));
+  check('8 回失敗した', provider.poller.failures === 8, String(provider.poller.failures));
   check(
     '記録は最初の 3 回まで',
     errorLines().length === 3,
@@ -82,13 +82,13 @@ async function main() {
   console.log('\n3) 探索の間隔が伸びている');
   check(
     `${AUTO_CONNECT_BASE_MS}ms より長い`,
-    provider.autoConnectDelayMs > AUTO_CONNECT_BASE_MS,
-    `${provider.autoConnectDelayMs}ms`
+    provider.poller.delayMs > AUTO_CONNECT_BASE_MS,
+    `${provider.poller.delayMs}ms`
   );
   check(
     '上限で頭打ち',
-    provider.autoConnectDelayMs === AUTO_CONNECT_MAX_MS,
-    `${provider.autoConnectDelayMs}ms`
+    provider.poller.delayMs === AUTO_CONNECT_MAX_MS,
+    `${provider.poller.delayMs}ms`
   );
 
   console.log('\n4) 1 回でも取れたら元に戻る');
@@ -97,11 +97,11 @@ async function main() {
     listDevices: async () => ({devices: []}),
   };
   await provider.refreshDevices();
-  check('失敗数が 0', provider.deviceListFailures === 0);
+  check('失敗数が 0', provider.poller.failures === 0);
   check(
     '間隔が基本値へ戻る',
-    provider.autoConnectDelayMs === AUTO_CONNECT_BASE_MS,
-    `${provider.autoConnectDelayMs}ms`
+    provider.poller.delayMs === AUTO_CONNECT_BASE_MS,
+    `${provider.poller.delayMs}ms`
   );
 
   console.log('\n5) 復帰したあとの失敗はまた出す（黙ったままにしない）');

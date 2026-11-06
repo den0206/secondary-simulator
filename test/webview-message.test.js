@@ -187,20 +187,28 @@ async function wiring() {
 
   console.log('\n8) 映像は描画待ち 1 枚と最新 1 枚だけに畳む');
   sent.length = 0;
-  provider.pendingFrame = 'old';
-  provider.sendPendingFrame();
+  provider.frames.push('old');
   const firstSeq = sent[0].seq;
-  provider.pendingFrame = 'new';
-  provider.sendPendingFrame();
+  provider.frames.push('mid');
+  provider.frames.push('new');
   check('ack 前は 1 枚しか送らない', sent.length === 1, JSON.stringify(sent));
   await provider.handleMessage({type: 'frameAck', seq: firstSeq});
   check('ack 後は最新だけ送る',
     sent.length === 2 && sent[1].data === 'new', JSON.stringify(sent));
-  provider.pendingFrame = 'late';
-  provider.frameSentAtMs = Date.now() - 5000;
-  provider.sendPendingFrame();
+  provider.frames.sentAtMs = Date.now() - 5000;
+  provider.frames.push('late');
   check('ack が返らなくても時間切れで次を送る',
     sent.length === 3 && sent[2].data === 'late', JSON.stringify(sent));
+  const lateSeq = sent[2].seq;
+  provider.frames.reset();
+  provider.frames.push('fresh');
+  await provider.handleMessage({type: 'frameAck', seq: lateSeq});
+  provider.frames.push('after');
+  check('止めた後は古い ack で次を送らない',
+    sent.length === 4 && sent[3].data === 'fresh', JSON.stringify(sent));
+  const {rate} = provider.frames.takeRate(Date.now() + 1000);
+  check('受け取った枚数を数える', rate.fps > 0, JSON.stringify(rate));
+  check('読んだら 0 に戻す', provider.frames.takeRate().rate.fps === 0);
 
   await provider.dispose();
 }

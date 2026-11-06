@@ -129,7 +129,7 @@ async function main() {
   );
   provider.recorder.session = null;
 
-  provider.stopAutoConnectTimer();
+  provider.poller.stop();
   console.log(failures === 0 ? '\n全て成功' : `\n${failures} 件失敗`);
   process.exit(failures === 0 ? 0 : 1);
 }

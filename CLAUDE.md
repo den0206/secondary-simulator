@@ -308,7 +308,7 @@ extension.ts → SimulatorWebviewProvider ─┬─ capture（画面）
 - **実行時の文言**は `vscode.l10n.t('英語の原文')`。**原文がキー**なので、
   呼び出し側に英語がそのまま見える。訳は `l10n/bundle.l10n.<locale>.json`。
 - **webview は `vscode.l10n` を触れない**（別プロセス）。`src/utils/Strings.ts` が
-  翻訳済みの辞書を作り、`getHtmlContent` が `<script type="application/json">` で
+  翻訳済みの辞書を作り、`buildWebviewHtml`（`WebviewHtml.ts`）が `<script type="application/json">` で
   埋め込む。webview 側は `t('key')` と `data-i18n` / `data-i18n-title` /
   `data-i18n-icon` で引く。**表示前に揃うので、後から差し替えて一瞬英語が見える、が起きない。**
 - **`renderStatus` は純粋関数のまま保つ**。翻訳は `StatusStrings` として引数で渡す
