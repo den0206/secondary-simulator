@@ -17,6 +17,8 @@ import {Logger} from '../utils/Logger';
  * 起動毎に生成するトークンを URL に載せ、一致しないリクエストは 404 で落とす。
  */
 export class MjpegProxy {
+  /** 直結プロキシが最初に試すポート。webview の CSP もここから範囲を許可する。 */
+  static readonly BASE_PORT = 12200;
   static readonly MAX_PORT_TRIES = 20;
 
   private server: http.Server | null = null;

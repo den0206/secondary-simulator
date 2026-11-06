@@ -1,8 +1,6 @@
-import {randomUUID} from 'node:crypto';
 import * as os from 'node:os';
-import * as fs from 'fs';
 import * as vscode from 'vscode';
-import {captureConfigAction, captureRate} from '../capture/CaptureStats';
+import {captureConfigAction} from '../capture/CaptureStats';
 import {CaptureStrategy} from '../capture/CaptureStrategy';
 import {MjpegCapture} from '../capture/MjpegCapture';
 import {MjpegProxy} from '../capture/MjpegProxy';
@@ -18,10 +16,7 @@ import {
   SimulatorInputController,
 } from '../input/SimulatorInputController';
 import {AdbTouch} from '../input/AdbTouch';
-import {
-  autoConnectDelayFor,
-  pickAutoConnectDevice,
-} from '../simulator/autoConnect';
+import {pickAutoConnectDevice} from '../simulator/autoConnect';
 import {
   Coordinates,
   FoldState,
@@ -42,7 +37,7 @@ import {Logger} from '../utils/Logger';
 import {MobileCliClient} from '../utils/MobileCliClient';
 import {MobileCliServer} from '../utils/MobileCliServer';
 import {collectResourceStats} from '../utils/ResourceStats';
-import {statusStrings, webviewStrings} from '../utils/Strings';
+import {statusStrings} from '../utils/Strings';
 import {
   asFiniteNumber,
   asFlag,
@@ -51,7 +46,10 @@ import {
   asText,
   asTextArray,
 } from './WebviewMessage';
+import {DevicePoller} from './DevicePoller';
+import {FrameRelay} from './FrameRelay';
 import {RecordingController} from './RecordingController';
+import {buildWebviewHtml} from './WebviewHtml';
 
 export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'simulatorView';
@@ -62,7 +60,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private mobileCliServer: MobileCliServer;
   private mobileCliClient: MobileCliClient | null = null;
   private mjpegProxy: MjpegProxy | null = null;
-  private static readonly PROXY_BASE_PORT = 12200;
   private inputController: SimulatorInputController | null = null;
   private currentDeviceId: string | null = null;
   /** 新しい接続・切断で増やし、遅い接続結果を無効化する。 */
@@ -93,25 +90,12 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   private visibilityDisposable?: vscode.Disposable;
   private statsTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly STATS_INTERVAL_MS = 30_000;
-  /**
-   * 受け取ったフレームの数とバイト数。`reportStats` が読んで 0 に戻す
-   * （増える一方の入れ物にしない）。取り込みが効いているかを見る唯一の手段。
-   * これが無いと同期の改善を評価できない。
-   * 数える以上のことはしない — フレームは高頻度パスなので。
-   */
-  private frameCount = 0;
-  private frameBytes = 0;
-  /** webview の描画待ちは 1 枚だけにし、到着中は最新フレームへ上書きする。 */
-  private pendingFrame: string | null = null;
-  private frameInFlight: number | null = null;
-  private frameSentAtMs = 0;
-  private frameSeq = 0;
-  /**
-   * ack がこの時間返らなければ次を送る。ack を 1 つ取りこぼすと中継表示が
-   * 止まったままになり、`MjpegCapture` の死活監視（端末側のフレーム到着）では拾えない。
-   */
-  private static readonly FRAME_ACK_TIMEOUT_MS = 1000;
-  private lastStatsAtMs = Date.now();
+  /** 中継経路のフレーム（描画待ち 1 枚・最新 1 枚）と受信 fps / 帯域の計測。 */
+  private readonly frames = new FrameRelay((message) => {
+    if (!this.view) return false;
+    this.postMessage(message);
+    return true;
+  });
   /**
    * 直結表示中か。フレームが拡張ホストを通らないので、**受信 fps と帯域は測れない**。
    * 測れないものを 0 と出すと「止まっている」と誤解されるため、webview 側へ伝えて
@@ -121,25 +105,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   /** 非表示のまま残した入力コントローラを解放するまでの猶予。 */
   private inputReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly INPUT_RELEASE_MS = 120_000;
-  // 未接続のあいだだけ回すデバイス探索。接続したら止める。
-  private autoConnectTimer: ReturnType<typeof setInterval> | null = null;
-  /** 今のタイマーに使っている間隔。失敗で伸びたら張り直す合図になる。 */
-  private autoConnectDelayMs = 0;
-  /**
-   * 一覧の取得に連続して失敗した回数。**間隔とログの両方を絞るために持つ。**
-   * 1 回でも成功したら 0 に戻す。
-   */
-  private deviceListFailures = 0;
-  /**
-   * 直近に webview へ送った「一覧が取れない」の文言。同じものを送り直さない。
-   *
-   * **この探索の失敗だけを対象にする。** `sendError` 全体で畳むと、いちど画面が
-   * 出て（フレームが届いてオーバーレイが消えて）から同じ失敗が再発したときに、
-   * 何も表示されないまま黙ることになる。
-   */
-  private lastDeviceListError: string | null = null;
-  /** 失敗を記録し続ける回数。これを超えたら黙る（出力チャンネルは消えない）。 */
-  private static readonly MAX_DEVICE_LIST_ERROR_LOGS = 3;
+  /** デバイス一覧の定期取得（5 秒〜30 秒）。失敗が続くと間隔とログを絞る。 */
+  private readonly poller = new DevicePoller(
+    () => void this.refreshDevices(),
+    (text) => this.sendError(text)
+  );
   /** 開閉の後、点いているパネルが変わるまで読み直す回数（500ms 間隔）。 */
   private static readonly FOLD_SETTLE_READS = 6;
   // device.boot 後に Booted を待つ上限（2 秒 × 45 = 90 秒）
@@ -255,7 +225,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       portMapping,
     };
 
-    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+    webviewView.webview.html = buildWebviewHtml(webviewView.webview, this.extensionUri);
 
     // イベントリスナーを保持して、dispose時にクリーンアップできるようにする
     this.messageDisposable = webviewView.webview.onDidReceiveMessage(
@@ -267,7 +237,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.disposeDisposable = webviewView.onDidDispose(() => {
       this.stopCapture();
       this.stopStatsTimer();
-      this.stopAutoConnectTimer();
+      this.poller.stop();
       // 破棄されたビューを持ち続けない（webview の内容ごと参照が残る）。
       // 差し替えで resolveWebviewView が先に走っている場合は新しい方を消さない。
       if (this.view === webviewView) {
@@ -324,7 +294,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     // 署名は「この webview へ送った」の記録。作り直されたら捨てる（同じ一覧でも送る）
     this.lastDevicesSignature = '';
     // エラーの写しも同じ理由で捨てる（新しい webview はまだ何も受け取っていない）
-    this.lastDeviceListError = null;
+    this.poller.forgetError();
     this.postAutoConnectState();
     this.postSettings();
     {
@@ -435,58 +405,24 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 表示中かつ、接続中または Auto ON のときだけタイマーを回す。
+   * 表示中かつ、接続中または Auto ON のときだけ一覧の取得を回す。
    * 接続中も一覧を更新し、端末が停止したら MJPEG の再接続を止める。
-   *
-   * 間隔は連続失敗数で伸びる（`autoConnectDelayFor`）。伸びたときはタイマーを
-   * 張り直す —— mobilecli が起動できない環境で 5 秒ごとに失敗し続けると、
-   * ログも webview へのエラー送信も止まらないため。
    */
   private syncAutoConnectTimer(): void {
-    const wanted =
+    const change = this.poller.sync(
       this.isViewVisible() &&
-      (this.currentDeviceId !== null || this.isAutoConnectEnabled());
-    const running = this.autoConnectTimer !== null;
-    const delay = autoConnectDelayFor(this.deviceListFailures);
-    // 回っていないときに間隔だけ比べない（毎回 else へ落ちて searching を送り直す）
-    if (wanted === running && (!running || delay === this.autoConnectDelayMs)) {
-      return;
+        (this.currentDeviceId !== null || this.isAutoConnectEnabled())
+    );
+    // 繋がって止まったときは「Connecting…」を消さない。探すのをやめた場合だけ戻す。
+    if (change && !this.currentDeviceId) {
+      this.postMessage({type: 'searching', active: change === 'started'});
     }
-    if (wanted) {
-      this.stopAutoConnectTimer();
-      this.autoConnectDelayMs = delay;
-      this.autoConnectTimer = setInterval(
-        () => void this.refreshDevices(),
-        delay
-      );
-      if (!this.currentDeviceId) {
-        this.postMessage({type: 'searching', active: true});
-      }
-    } else {
-      this.stopAutoConnectTimer();
-      // 繋がって止まったときは「Connecting…」を消さない。探すのをやめた場合だけ戻す。
-      if (!this.currentDeviceId) {
-        this.postMessage({type: 'searching', active: false});
-      }
-    }
-  }
-
-  private stopAutoConnectTimer(): void {
-    this.autoConnectDelayMs = 0;
-    if (!this.autoConnectTimer) return;
-    clearInterval(this.autoConnectTimer);
-    this.autoConnectTimer = null;
   }
 
   private async reportStats(): Promise<void> {
     if (!this.view) return;
     // 計測値は取得の成否に関わらず、この tick で必ず 0 に戻す（次の期間と混ぜない）
-    const now = Date.now();
-    const elapsedMs = now - this.lastStatsAtMs;
-    const rate = captureRate(this.frameCount, this.frameBytes, elapsedMs);
-    this.frameCount = 0;
-    this.frameBytes = 0;
-    this.lastStatsAtMs = now;
+    const {rate, elapsedMs} = this.frames.takeRate();
 
     const pids = [
       this.mobileCliServer.getPid(),
@@ -534,7 +470,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         case 'refresh':
           // 明示的な更新。「差分なし」で黙って何も送らないと押しても直らない。
           this.lastDevicesSignature = '';
-          this.lastDeviceListError = null;
+          this.poller.forgetError();
           this.postAutoConnectState();
           this.postSettings();
           await this.refreshDevices();
@@ -544,7 +480,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         case 'retry':
           this.lastDevicesSignature = '';
           // 押した以上は同じ失敗でも出し直す（黙って待たせない）
-          this.lastDeviceListError = null;
+          this.poller.forgetError();
           this.postSettings();
           await this.refreshDevices();
           if (this.currentDeviceId) {
@@ -687,9 +623,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
 
         case 'frameAck': {
           const seq = asIndex(message.seq);
-          if (seq === null || seq !== this.frameInFlight) break;
-          this.frameInFlight = null;
-          this.sendPendingFrame();
+          if (seq !== null) this.frames.ack(seq);
           break;
         }
 
@@ -788,7 +722,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     await this.mobileCliServer.launchServer();
     this.mjpegProxy = new MjpegProxy(this.mobileCliServer.getServerPort());
     const port = await this.mjpegProxy.start(
-      SimulatorWebviewProvider.PROXY_BASE_PORT
+      MjpegProxy.BASE_PORT
     );
     // 上書きにするとサイドカー配信の許可を消してしまう。追記に寄せる。
     this.allowStreamPort(port);
@@ -808,7 +742,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         );
         this.mobileCliClient = new MobileCliClient(jsonRpcClient);
       } catch (error) {
-        this.onDeviceListFailure(
+        this.poller.failed(
           'Failed to initialize mobilecli client',
           error as Error,
           `Failed to initialize mobilecli: ${(error as Error).message}`
@@ -842,12 +776,11 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
         this.postMessage({type: 'devices', devices: this.devices});
       }
       // 1 回でも取れたら間隔もログも元に戻す
-      this.deviceListFailures = 0;
-      this.lastDeviceListError = null;
+      this.poller.succeeded();
       await this.autoConnect();
       if (this.fold && current?.state === 'Booted') void this.refreshFold(current);
     } catch (error) {
-      this.onDeviceListFailure(
+      this.poller.failed(
         'Failed to list devices via mobilecli',
         error as Error,
         `Failed to list devices: ${(error as Error).message}`
@@ -860,32 +793,6 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       this.postMessage({type: 'devices', devices: []});
     }
     this.syncAutoConnectTimer();
-  }
-
-  /**
-   * 一覧の取得に失敗したときの記録。**失敗が続く間は黙る。**
-   *
-   * この探索は未接続のあいだ回り続けるので、mobilecli が起動できない環境では
-   * 毎回ここへ来る。出力チャンネルは全文がメモリに残り、拡張から古い行を捨てる
-   * 手段が無い（`docs/project-review.md` §3.5.7）。記録するのは最初の数回だけにし、
-   * 間隔そのものは `syncAutoConnectTimer` が伸ばす。
-   */
-  private onDeviceListFailure(
-    logMessage: string,
-    error: Error,
-    userText: string
-  ): void {
-    this.deviceListFailures++;
-    if (
-      this.deviceListFailures <=
-      SimulatorWebviewProvider.MAX_DEVICE_LIST_ERROR_LOGS
-    ) {
-      Logger.error(logMessage, error);
-    }
-    // 同じ失敗を 5 秒ごとに送り直しても表示は変わらない（往復が増えるだけ）
-    if (userText === this.lastDeviceListError) return;
-    this.lastDeviceListError = userText;
-    this.sendError(userText);
   }
 
   async selectDevice(deviceId: string): Promise<void> {
@@ -1462,10 +1369,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
       // base64 の文字列で渡す。Uint8Array のまま postMessage すると、シリアライザ次第で
       // `{"0":255,"1":216,...}` や `{type:'Buffer',data:[...]}` に化けて数倍に膨らむ
       // （webview 側が 3 通りの形を推測していたのはこのため）。
-      this.frameCount++;
-      this.frameBytes += frameBase64.length;
-      this.pendingFrame = frameBase64;
-      this.sendPendingFrame();
+      this.frames.push(frameBase64);
     });
 
     try {
@@ -2014,9 +1918,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
    *   やり直さないため。
    */
   private stopCapture(options?: {keepInput?: boolean}): void {
-    this.pendingFrame = null;
-    this.frameInFlight = null;
-    this.frameSeq++;
+    this.frames.reset();
     if (this.currentCapture) {
       this.currentCapture.dispose();
       this.currentCapture = null;
@@ -2128,81 +2030,8 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
     this.view?.webview.postMessage(message);
   }
 
-  /** 描画完了の ack が返るまで送らず、IPC に古い映像を溜めない。 */
-  private sendPendingFrame(): void {
-    if (!this.pendingFrame || !this.view) return;
-    const now = Date.now();
-    if (
-      this.frameInFlight !== null &&
-      now - this.frameSentAtMs < SimulatorWebviewProvider.FRAME_ACK_TIMEOUT_MS
-    ) {
-      return;
-    }
-    const seq = ++this.frameSeq;
-    const data = this.pendingFrame;
-    this.pendingFrame = null;
-    this.frameInFlight = seq;
-    this.frameSentAtMs = now;
-    this.postMessage({type: 'frame', encoding: 'base64', data, seq});
-  }
-
   private sendError(text: string): void {
     this.postMessage({type: 'error', text});
-  }
-
-  private getHtmlContent(webview: vscode.Webview): string {
-    const nonce = this.getNonce();
-    const htmlPath = vscode.Uri.joinPath(
-      this.extensionUri,
-      'media',
-      'webview',
-      'index.html'
-    );
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'media', 'webview', 'main.js')
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'media', 'webview', 'style.css')
-    );
-    // 直結ストリームは preferredPort から最大 20 ポートを試すため、範囲を CSP に含める。
-    // 設定の ON/OFF で HTML を作り直さないので、使わないときも範囲を許可しておく
-    // （トークンが無いと絵は取れない。localhost 以外には開かない）。
-    const range = (base: number, count: number) =>
-      Array.from({length: count}, (_, i) => ` http://localhost:${base + i}`).join('');
-    const proxyOrigins = range(
-      SimulatorWebviewProvider.PROXY_BASE_PORT,
-      MjpegProxy.MAX_PORT_TRIES
-    );
-    // サイドカーの直結配信も同じ理由で範囲を許可する（開始時にポートが未定のため）
-    const sidecarOrigins = range(
-      SidecarCapture.STREAM_BASE_PORT,
-      SidecarCapture.MAX_PORT_TRIES
-    );
-    const extra = proxyOrigins + sidecarOrigins;
-    const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:${extra}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
-
-    const html = fs.readFileSync(htmlPath.fsPath, 'utf8');
-    return html
-      .replace('{{scriptUri}}', scriptUri.toString())
-      .replace('{{styleUri}}', styleUri.toString())
-      .replace('{{nonce}}', nonce)
-      .replace('{{cspMeta}}', cspMeta)
-      .replace('{{l10n}}', SimulatorWebviewProvider.embedJson(webviewStrings()));
-  }
-
-  /**
-   * `<script type="application/json">` へ埋める JSON。
-   *
-   * `<` を `\u003c` へ逃がす。文言に `</script>` が入るとその場でブロックが閉じ、
-   * 後続が HTML として解釈されてしまう（今の文言には無いが、翻訳を足すのは人なので
-   * 埋め込む側で断つ）。
-   */
-  private static embedJson(value: unknown): string {
-    return JSON.stringify(value).replace(/</g, '\\u003c');
-  }
-
-  private getNonce(): string {
-    return randomUUID().replace(/-/g, '');
   }
 
   /**
@@ -2266,7 +2095,7 @@ export class SimulatorWebviewProvider implements vscode.WebviewViewProvider {
   async dispose(): Promise<void> {
     // タイマーだけ先に止める（放置すると後始末の途中で発火する）
     this.stopStatsTimer();
-    this.stopAutoConnectTimer();
+    this.poller.stop();
     this.clearInputReleaseTimer();
     this.connectionGeneration++;
     // 録画の後始末（上限つきで待つ・書き込み先を閉じる）
