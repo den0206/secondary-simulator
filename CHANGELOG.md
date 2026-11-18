@@ -10,6 +10,10 @@ so **there is no need to move entries by hand**.
 
 ## [Unreleased]
 
+### Changed
+
+- Update bundled mobilecli to 1.0.24.
+
 ## [1.0.1] — 2026-11-03
 
 ### Changed
