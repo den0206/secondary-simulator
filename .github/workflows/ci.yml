@@ -49,7 +49,7 @@ jobs:
   # 自動スキップされ、そもそも iOS Simulator も動かない。
   build-and-test:
     name: TypeCheck, Test & Package
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v7
@@ -156,7 +156,7 @@ jobs:
           xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
           xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 
-  # build-and-test は macos-14 固定なので、新しい Xcode を積んだイメージでは回らない。
+  # build-and-test は macos-15 固定なので、新しい Xcode を積んだイメージでは回らない。
   # こちらは macos-latest（＝より新しい Xcode）で私有 API の解決だけを確認する。
   # 週次 cron で回るので、push が無い週の Xcode 更新にも気づける。
   xcode-canary:

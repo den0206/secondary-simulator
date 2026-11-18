@@ -12,7 +12,7 @@ jobs:
   release:
     name: Package & Publish
     # simhid-server (Objective-C) の universal build に macOS が要る
-    runs-on: macos-14
+    runs-on: macos-15
     permissions:
       contents: write
 
